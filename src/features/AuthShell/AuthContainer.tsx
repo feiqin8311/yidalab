@@ -8,7 +8,6 @@ import { type FC, type PropsWithChildren } from 'react';
 import { ProductLogo } from '@/components/Branding';
 import { useIsDark } from '@/hooks/useIsDark';
 
-import AuthFooterLinks from './AuthFooterLinks';
 import AuthLangButton from './AuthLangButton';
 import AuthThemeButton from './AuthThemeButton';
 import { styles } from './style';
@@ -36,7 +35,6 @@ const AuthContainer: FC<PropsWithChildren> = ({ children }) => {
             <Divider className={styles.divider} orientation={'vertical'} />
             <AuthThemeButton size={18} />
           </Flexbox>
-          <AuthFooterLinks />
         </Flexbox>
       </Flexbox>
     </Flexbox>
