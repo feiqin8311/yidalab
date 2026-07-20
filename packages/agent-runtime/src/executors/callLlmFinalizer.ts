@@ -17,6 +17,7 @@ import type {
   GeneralAgentCallLLMResultPayload,
   InstructionExecutionResult,
 } from '../types';
+import { applyMaxTotalTokensBrake } from '../utils/runBrakes';
 
 export const VISIBLE_OUTPUT_END_PUBLISHED_STEP_INDEX_METADATA_KEY =
   'visibleOutputEndPublishedStepIndex';
@@ -178,6 +179,7 @@ const buildFinalState = ({
 
     newState.usage = usage;
     if (cost) newState.cost = cost;
+    applyMaxTotalTokensBrake(newState);
   }
 
   if (stepLabel || visibleOutputEndPublishedStepIndex !== undefined) {

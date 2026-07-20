@@ -3,14 +3,18 @@ import { parseMemoryExtractionConfig } from '@/server/globalConfig/parseMemoryEx
 
 const { upstashWorkflowExtraHeaders } = parseMemoryExtractionConfig();
 
-// NOTICE(@nekomeowww): Scenarios like Vercel Deployment Protection require custom headers on
-// intermediate `context.run(...)` calls (which don't accept per-call headers). We inject them via
-// a shared QStash client. See:
-// https://upstash.com/docs/workflow/troubleshooting/vercel#step-2-pass-header-when-triggering
-export const createWorkflowQstashClient = () =>
-  new OtelQstashClient({
+/**
+ * Optional legacy helper for Upstash Workflow `serve()`.
+ * Returns null when QSTASH_TOKEN is unset (YidaLab default: Redis jobs).
+ */
+export const createWorkflowQstashClient = (): OtelQstashClient | null => {
+  const token = process.env.QSTASH_TOKEN?.trim();
+  if (!token) return null;
+
+  return new OtelQstashClient({
     headers: { ...upstashWorkflowExtraHeaders },
-    token: process.env.QSTASH_TOKEN!,
+    token,
   });
+};
 
 export { upstashWorkflowExtraHeaders };

@@ -10,7 +10,6 @@ import { CheckCircle2, KeyRound, X } from 'lucide-react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { usePermission } from '@/hooks/usePermission';
 import { lambdaClient, lambdaQuery } from '@/libs/trpc/client';
 
@@ -30,15 +29,6 @@ const styles = createStaticStyles(({ css }) => ({
     display: flex;
     gap: 8px;
     align-items: center;
-  `,
-  manageLink: css`
-    cursor: pointer;
-    font-size: 12px;
-    color: ${cssVar.colorPrimary};
-
-    &:hover {
-      text-decoration: underline;
-    }
   `,
   repoItem: css`
     cursor: pointer;
@@ -290,7 +280,6 @@ const RepoListSection = memo<RepoListSectionProps>(({ repos, onReposChange }) =>
 const CloudHeterogeneousConfig = memo<CloudHeterogeneousConfigProps>(
   ({ provider, onEnvChange }) => {
     const { t } = useTranslation('setting');
-    const navigate = useWorkspaceAwareNavigate();
     const { allowed: canEdit } = usePermission('edit_own_content');
 
     const currentEnv = provider.env ?? {};
@@ -369,9 +358,6 @@ const CloudHeterogeneousConfig = memo<CloudHeterogeneousConfigProps>(
                   {t('heterogeneousStatus.cloud.githubLabel')}
                 </span>
               </Flexbox>
-              <span className={styles.manageLink} onClick={() => navigate('/settings/creds')}>
-                {t('heterogeneousStatus.cloud.manageCredentials')}
-              </span>
             </Flexbox>
 
             <Select

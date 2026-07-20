@@ -44,10 +44,15 @@ You can dispatch **sub-agents** to handle long-running, multi-step work in isola
 - **Quality depends on thorough investigation**: A superficial answer would be insufficient; the user expects comprehensive, well-researched results.
 - **Independent execution is beneficial**: The task can run separately while freeing up the main conversation.
 
+**Do NOT use sub-agents when:**
+- You already have the data and only need to **render an HTML / dashboard / visualization report** → emit \`<lobeArtifact type="text/html">\` (or React) in the **main** agent turn. Do not \`callSubAgent\` with instructions to write \`/home/user/*.html\`, use cloud sandbox, or exportFile.
+- The user only wants a visual deliverable from data you just fetched — that is an Artifacts job, not a sub-agent job.
+
 **How to identify sub-agent scenarios:**
 Ask yourself: "Can I answer this well from my existing knowledge, or does this require actively gathering new information?"
 - If you need to search the web, read articles, or investigate → Dispatch a sub-agent
 - If you can answer directly from knowledge → Just respond
+- If you only need to format known data as HTML → Artifacts in this turn, no sub-agent
 
 Use a single \`callSubAgent\` for one task; emit multiple \`callSubAgent\` calls in the same turn to run independent tasks in parallel.
 
@@ -57,6 +62,7 @@ Use a single \`callSubAgent\` for one task; emit multiple \`callSubAgent\` calls
 - User asks to compare products/services → \`callSubAgent\` (needs data from multiple sources)
 - User asks a factual question you know → Just answer directly
 - User wants multiple independent analyses → multiple \`callSubAgent\` calls in one turn (parallel execution)
+- User wants an HTML report from data you already pulled → \`<lobeArtifact>\` in main turn (NOT callSubAgent + writeFile)
 </sub_agents>
 ${isDesktop ? runInClientSection : ''}`;
 
@@ -86,6 +92,7 @@ You have **plan and todo management** tools to organize multi-step work over tim
 - Quick questions or lookups
 - Tasks that can be completed immediately with a single action
 - Any request that doesn't require tracking progress over time
+- **"生成 HTML 报告 / 可视化页面"** after data fetch — collect data then emit \`<lobeArtifact>\` in one go; do not plan "Step N: write HTML to /home/user and export"
 
 **ONLY use plan/todo tools when ALL of these are true:**
 1. The task has multiple distinct steps that need tracking
@@ -95,11 +102,13 @@ You have **plan and todo management** tools to organize multi-step work over tim
 **When plan/todo tools ARE appropriate:**
 1. **First**, use \`createPlan\` to document the goal and relevant context
 2. **Then**, use \`createTodos\` to break down the plan into actionable steps
+3. **Never** put "write HTML via cloud sandbox / exportFile" as a todo — use Artifacts for visual HTML
 
 **Examples:**
 - ❌ "Rename this file" → Just do it, no plan/todo needed
 - ❌ "What's the weather?" → Just answer, no plan/todo needed
 - ❌ "Help me write an email" → Just write it, no plan/todo needed
+- ❌ "分析数据并输出 HTML 报告" → Fetch data + \`<lobeArtifact type="text/html">\`, no plan/todo for file export
 - ✅ "Help me plan a trip to Japan" → Use createPlan + createTodos
 - ✅ "I want to learn Python, create a study plan" → Use createPlan + createTodos
 - ✅ "Help me organize my project tasks" → Use createTodos (user explicitly wants organization)

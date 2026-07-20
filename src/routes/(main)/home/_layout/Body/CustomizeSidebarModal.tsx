@@ -67,13 +67,10 @@ const ALL_SIDEBAR_ITEMS: SidebarItemConfig[] = [
   { id: 'memory', labelKey: 'tab.memory', routeId: 'memory' },
 ];
 
-// Private is workspace-only; in personal mode every row is implicitly
-// owner-private, so hide it from the customizer where toggling it on
-// would render an empty accordion no user can populate.
-export const getAvailableSidebarItems = (isWorkspaceMode: boolean): SidebarItemConfig[] =>
+export const getAvailableSidebarItems = (_isWorkspaceMode: boolean): SidebarItemConfig[] =>
   ALL_SIDEBAR_ITEMS.filter((item) => {
-    if (isWorkspaceMode && item.id === 'memory') return false;
-    if (!isWorkspaceMode && item.id === 'private') return false;
+    // Always show Memory (personal + workspace). Keep private personal-only.
+    if (item.id === 'private') return false;
     return true;
   });
 

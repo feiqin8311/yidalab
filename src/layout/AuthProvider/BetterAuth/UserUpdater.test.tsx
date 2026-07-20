@@ -41,8 +41,7 @@ describe('UserUpdater', () => {
       user: {
         id: 'u1',
         email: 'a@b.com',
-        fullName: 'Alice',
-        username: 'alice',
+        username: 'Alice',
         interests: ['内容创作', '编程'],
         firstName: 'A',
         latestName: 'lice',
@@ -68,14 +67,56 @@ describe('UserUpdater', () => {
     expect(useUserStore.getState().user?.latestName).toBe('lice');
   });
 
+  it('preserves a username updated in profile settings when better-auth refetches the session', () => {
+    useUserStore.setState({
+      user: {
+        id: 'u1',
+        email: 'a@b.com',
+        username: 'Manual Name',
+      },
+    });
+
+    useSessionMock.mockReturnValue(sampleSession({ name: 'Alice From Login' }));
+    render(<UserUpdater />);
+
+    expect(useUserStore.getState().user?.username).toBe('Manual Name');
+  });
+
+  it('does not wipe username when session username is empty and only name is set', () => {
+    useUserStore.setState({
+      user: {
+        id: 'u1',
+        email: 'a@b.com',
+        username: 'Saved Name',
+      },
+    });
+
+    useSessionMock.mockReturnValue(
+      sampleSession({ username: undefined, name: 'Stale Cookie Name' }),
+    );
+    render(<UserUpdater />);
+
+    expect(useUserStore.getState().user?.username).toBe('Saved Name');
+  });
+
+  it('falls back to session name when store has no username yet', () => {
+    useUserStore.setState({ user: undefined });
+
+    useSessionMock.mockReturnValue(
+      sampleSession({ username: undefined, name: 'From Session Name' }),
+    );
+    render(<UserUpdater />);
+
+    expect(useUserStore.getState().user?.username).toBe('From Session Name');
+  });
+
   it('drops the previous user profile fields when the session switches to a different account', () => {
     // Simulate user A is signed in with profile fields populated.
     useUserStore.setState({
       user: {
         id: 'userA',
         email: 'a@b.com',
-        fullName: 'Alice',
-        username: 'alice',
+        username: 'Alice',
         avatar: 'avatar-a',
         interests: ['内容创作', '编程'],
         firstName: 'A',

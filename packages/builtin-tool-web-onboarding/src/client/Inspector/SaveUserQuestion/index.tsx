@@ -18,11 +18,11 @@ export const SaveUserQuestionInspector = memo<
   const data = (args ?? partialArgs ?? {}) as SaveUserQuestionInput;
   const agentName = data.agentName?.trim();
   const agentEmoji = data.agentEmoji?.trim();
-  const fullName = data.fullName?.trim();
+  const username = data.username?.trim();
   const interestsCount =
     (Array.isArray(data.interests) ? data.interests.length : 0) +
     (Array.isArray(data.customInterests) ? data.customInterests.length : 0);
-  const hasAnyField = Boolean(agentName || agentEmoji || fullName || interestsCount > 0);
+  const hasAnyField = Boolean(agentName || agentEmoji || username || interestsCount > 0);
 
   if (isArgumentsStreaming && !hasAnyField) {
     return (
@@ -47,7 +47,7 @@ export const SaveUserQuestionInspector = memo<
           {agentName && <span>{agentName}</span>}
         </span>
       )}
-      {fullName && <span className={styles.chip}>{fullName}</span>}
+      {username && <span className={styles.chip}>{username}</span>}
       {interestsCount > 0 && (
         <span className={styles.meta}>
           {t('builtins.lobe-web-onboarding.inspector.interests', { count: interestsCount })}

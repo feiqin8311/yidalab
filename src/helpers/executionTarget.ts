@@ -7,6 +7,42 @@ import type {
 import { RequestTrigger } from '@lobechat/types';
 
 /**
+ * yidalab product gate: cloud sandbox is temporarily off (hidden in the
+ * execution-target picker and never selected by resolve/plan).
+ *
+ * Re-enable when ready:
+ * - server: `ENABLE_CLOUD_SANDBOX=1`
+ * - client: `NEXT_PUBLIC_ENABLE_CLOUD_SANDBOX=1`
+ *
+ * Under vitest the gate stays open so the monorepo's sandbox unit tests keep
+ * upstream semantics (set `ENABLE_CLOUD_SANDBOX=0` to exercise the kill-switch).
+ */
+export const isCloudSandboxExecutionEnabled = (): boolean => {
+  if (
+    process.env.ENABLE_CLOUD_SANDBOX === '0' ||
+    process.env.NEXT_PUBLIC_ENABLE_CLOUD_SANDBOX === '0'
+  ) {
+    return false;
+  }
+  if (process.env.VITEST) return true;
+  return (
+    process.env.ENABLE_CLOUD_SANDBOX === '1' || process.env.NEXT_PUBLIC_ENABLE_CLOUD_SANDBOX === '1'
+  );
+};
+
+/** When sandbox is disabled, map it to a non-cloud target. */
+const coerceAwayFromSandbox = (
+  target: DeviceExecutionTarget,
+  opts: { boundDeviceId?: string; clientAvailable: boolean },
+): DeviceExecutionTarget => {
+  if (isCloudSandboxExecutionEnabled() || target !== 'sandbox') return target;
+  if (opts.boundDeviceId) return 'device';
+  if (opts.clientAvailable) return 'local';
+  // Prefer auto so workspace/public devices can still be used.
+  return 'auto';
+};
+
+/**
  * The agent's tool mode — explicit `chatConfig.toolMode` wins; otherwise derive
  * from `enableAgentMode` (undefined = agent). `chat` = no execution
  * environment (plain chat); `custom` = toolset is exactly the agent's plugins.
@@ -154,8 +190,16 @@ export const resolveExecutionTarget = (
   ) {
     return 'device';
   }
-  if (isHetero && effective === 'none') effective = clientAvailable ? 'local' : 'sandbox';
-  if (!clientAvailable && effective === 'local') return 'sandbox';
+  if (isHetero && effective === 'none') {
+    effective = clientAvailable ? 'local' : isCloudSandboxExecutionEnabled() ? 'sandbox' : 'auto';
+  }
+  if (!clientAvailable && effective === 'local') {
+    effective = isCloudSandboxExecutionEnabled()
+      ? 'sandbox'
+      : agencyConfig?.boundDeviceId
+        ? 'device'
+        : 'auto';
+  }
   // Bot trigger: a `local` target can't run in-process from the cloud bot
   // server, so it has to reach a real device. If the user pinned a specific
   // machine (the switcher persists that desktop's own `deviceId` as
@@ -167,7 +211,10 @@ export const resolveExecutionTarget = (
   if (trigger === RequestTrigger.Bot && effective === 'local') {
     return agencyConfig?.boundDeviceId ? 'device' : 'auto';
   }
-  return effective;
+  return coerceAwayFromSandbox(effective, {
+    boundDeviceId: agencyConfig?.boundDeviceId,
+    clientAvailable,
+  });
 };
 
 /**
@@ -183,7 +230,8 @@ export const executionTargetToRuntimeMode = (target: DeviceExecutionTarget): Run
       return 'local';
     }
     case 'sandbox': {
-      return 'cloud';
+      // Kill-switch: never open the cloud-sandbox tool gate.
+      return isCloudSandboxExecutionEnabled() ? 'cloud' : 'none';
     }
     default: {
       return 'none';
@@ -364,11 +412,18 @@ export const resolveExecutionPlan = (params: ResolveExecutionPlanParams): Execut
     !!requestedDeviceId || target === 'device' || target === 'local' || target === 'auto';
 
   if (!wantsDevice || !canUseDevice) {
-    if (target === 'sandbox') return { kind: 'sandbox', target: 'sandbox' };
+    if (target === 'sandbox' && isCloudSandboxExecutionEnabled()) {
+      return { kind: 'sandbox', target: 'sandbox' };
+    }
     // Hetero agents must execute somewhere — a device-capable target denied
     // by the access policy falls back to the cloud sandbox (which never
-    // touches user machines) instead of the hetero-invalid `none`.
-    if (isHetero) return { kind: 'sandbox', target: 'sandbox' };
+    // touches user machines) instead of the hetero-invalid `none`. When
+    // sandbox is product-disabled, leave the run unrouted so a device can be
+    // chosen rather than silently entering the cloud.
+    if (isHetero) {
+      if (isCloudSandboxExecutionEnabled()) return { kind: 'sandbox', target: 'sandbox' };
+      return { kind: 'device-unrouted', reason: 'no-bound-device', target: 'auto' };
+    }
     // a device-capable target denied by the access policy degrades to plain
     // chat — the effective target is `none`, not the stored one
     return { kind: 'none', target: 'none' };
@@ -401,6 +456,12 @@ export const resolveExecutionPlan = (params: ResolveExecutionPlanParams): Execut
   // exclusive to the opt-in `auto` mode: one online device is used directly;
   // with several, stay unrouted so the model selects one via the remote-device
   // tool.
+  //
+  // YidaLab exception: when cloud sandbox is product-disabled, unbound
+  // `local` / `device` with exactly one online device also auto-routes there.
+  // Otherwise shell/file work has nowhere to run (sandbox is gone) and the
+  // model wastes turns on MARKET_AUTH_REQUIRED `/home/user` paths even though
+  // a public workspace device is already online.
   if (target === 'auto') {
     if (onlineDeviceIds.length === 1) {
       return { deviceId: onlineDeviceIds[0], kind: 'device', target: effectiveTarget };
@@ -412,7 +473,13 @@ export const resolveExecutionPlan = (params: ResolveExecutionPlanParams): Execut
     };
   }
 
-  // `local` / `device` with nothing bound: never auto-grab a device — stay
-  // unrouted until the user binds/requests one (or switches to `auto`).
+  // `local` / `device` with nothing bound: never auto-grab a device when
+  // sandbox is available — stay unrouted until the user binds/requests one
+  // (or switches to `auto`). When sandbox is off, the single online device
+  // is the only viable execution environment, so use it.
+  if (!isCloudSandboxExecutionEnabled() && onlineDeviceIds.length === 1) {
+    return { deviceId: onlineDeviceIds[0], kind: 'device', target: effectiveTarget };
+  }
+
   return { kind: 'device-unrouted', reason: 'no-bound-device', target: effectiveTarget };
 };

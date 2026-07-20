@@ -42,6 +42,36 @@ afterEach(() => {
 
 describe('PluginSlice Actions', () => {
   describe('togglePlugin', () => {
+    it('never pins company market skills (stays unpinned / auto)', async () => {
+      const { result } = renderHook(() => useAgentStore());
+
+      vi.mocked(agentService.updateAgentConfig).mockResolvedValue({
+        agent: { plugins: [] } as any,
+        success: true,
+      });
+
+      act(() => {
+        useAgentStore.setState({
+          activeAgentId: 'agent-1',
+          agentMap: {
+            'agent-1': { plugins: [{ identifier: 'company.abc', mode: 'pinned' }] } as any,
+          },
+        });
+      });
+
+      await act(async () => {
+        await result.current.togglePlugin('company.abc', true);
+      });
+
+      expect(agentService.updateAgentConfig).toHaveBeenCalledWith(
+        'agent-1',
+        expect.objectContaining({
+          plugins: [],
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+
     it('should add plugin when not in list', async () => {
       const { result } = renderHook(() => useAgentStore());
 

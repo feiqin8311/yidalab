@@ -29,7 +29,6 @@ type GenerationBatchColumns = Pick<
 
 interface BatchUser {
   avatar: string | null;
-  fullName: string | null;
   id: string;
   username: string | null;
 }
@@ -153,9 +152,8 @@ export class GenerationBatchModel {
         user: {
           columns: {
             avatar: true,
-            fullName: true,
-            id: true,
             username: true,
+            id: true,
           },
         },
       },
@@ -214,9 +212,8 @@ export class GenerationBatchModel {
           createdAt: batch.createdAt,
           creator: {
             avatar: batchUser?.avatar ?? null,
-            fullName: batchUser?.fullName ?? null,
-            id: batch.userId,
             username: batchUser?.username ?? null,
+            id: batch.userId,
           },
           generations,
           height: batch.height,

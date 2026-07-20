@@ -7,6 +7,7 @@ import type {
 } from '@lobechat/electron-client-ipc';
 
 import type { AppBrowsersIdentifiers, WindowTemplateIdentifiers } from '@/appBrowsers';
+import { isPersonalSettingsHidden } from '@/utils/featureFlags';
 import { getIpcContext } from '@/utils/ipc';
 import { findMatchingRoute } from '~common/routes';
 
@@ -33,6 +34,11 @@ export default class BrowserWindowsCtr extends ControllerModule {
 
   @IpcMethod()
   async openSettingsWindow(options?: string | OpenSettingsWindowOptions) {
+    if (isPersonalSettingsHidden()) {
+      console.info('[BrowserWindowsCtr] Personal settings disabled; ignoring openSettingsWindow');
+      return { error: 'personal-settings-disabled', success: false };
+    }
+
     const normalizedOptions: OpenSettingsWindowOptions =
       typeof options === 'string' || options === undefined
         ? { tab: typeof options === 'string' ? options : undefined }

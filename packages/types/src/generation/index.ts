@@ -2,7 +2,6 @@ import type { AsyncTaskError, AsyncTaskStatus } from '../asyncTask';
 
 export interface GenerationTopicCreator {
   avatar?: string | null;
-  fullName?: string | null;
   id: string;
   username?: string | null;
 }

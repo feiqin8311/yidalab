@@ -1,4 +1,3 @@
-import { MAX_ONBOARDING_STEPS } from '@lobechat/types';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -7,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ClassicOnboardingPage from './index';
 
 const metrics = vi.hoisted(() => ({
+  trackOnboardingCompleted: vi.fn(),
   trackOnboardingStepCompleted: vi.fn(),
   trackOnboardingStepViewed: vi.fn(),
 }));
@@ -33,23 +33,8 @@ vi.mock('@/features/Onboarding/components/ModeSwitch', () => ({
   default: () => <div>ModeSwitch</div>,
 }));
 
-vi.mock('@/hooks/useOnboardingAgentTemplates', () => ({
-  useOnboardingAgentTemplates: vi.fn(),
-}));
-
 vi.mock('@/routes/onboarding/_layout', () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-
-vi.mock('@/routes/onboarding/features/AgentPickerStep', () => ({
-  default: ({ onBack }: { onBack: () => void }) => (
-    <div>
-      AgentPickerStep
-      <button type="button" onClick={onBack}>
-        agent-back
-      </button>
-    </div>
-  ),
 }));
 
 vi.mock('@/routes/onboarding/features/FullNameStep', () => ({
@@ -95,6 +80,7 @@ vi.mock('@/routes/onboarding/features/ProSettingsStep', () => ({
 }));
 
 vi.mock('@/services/onboardingMetrics', () => ({
+  trackOnboardingCompleted: metrics.trackOnboardingCompleted,
   trackOnboardingStepCompleted: metrics.trackOnboardingStepCompleted,
   trackOnboardingStepViewed: metrics.trackOnboardingStepViewed,
 }));
@@ -121,6 +107,7 @@ vi.mock('@/store/user', () => ({
     selector: (state: {
       commonStepsCompleted: boolean;
       currentStep: number;
+      finishOnboarding: () => Promise<void>;
       goToNextStep: () => void;
       goToPreviousStep: () => void;
       isUserStateInit: boolean;
@@ -129,10 +116,15 @@ vi.mock('@/store/user', () => ({
     selector({
       commonStepsCompleted: mocks.commonStepsCompleted,
       currentStep: mocks.currentStep,
+      finishOnboarding: vi.fn(),
       goToNextStep: mocks.goToNextStep,
       goToPreviousStep: mocks.goToPreviousStep,
       isUserStateInit: mocks.isUserStateInit,
     }),
+}));
+
+vi.mock('@/utils/onboardingRedirect', () => ({
+  consumeOnboardingCallbackUrl: () => undefined,
 }));
 
 vi.mock('@/store/user/selectors', () => ({
@@ -159,6 +151,7 @@ beforeEach(() => {
   mocks.serverConfigInit = true;
   metrics.trackOnboardingStepCompleted.mockReset();
   metrics.trackOnboardingStepViewed.mockReset();
+  metrics.trackOnboardingCompleted.mockReset();
 });
 
 afterEach(() => {
@@ -190,7 +183,7 @@ describe('ClassicOnboardingPage', () => {
     expect(mocks.goToNextStep).toHaveBeenCalledTimes(1);
   });
 
-  it('skips ProSettings when moving forward from interests without Composio', () => {
+  it('finishes after interests when ProSettings is unavailable', async () => {
     mocks.currentStep = 2;
     mocks.enableComposio = false;
 
@@ -203,17 +196,13 @@ describe('ClassicOnboardingPage', () => {
       step: 'interests',
       stepIndex: 2,
     });
-    expect(mocks.goToNextStep).toHaveBeenCalledTimes(2);
-  });
-
-  it('moves back from the agent picker to interests when ProSettings is skipped', () => {
-    mocks.currentStep = MAX_ONBOARDING_STEPS;
-    mocks.enableComposio = false;
-
-    renderClassic();
-    fireEvent.click(screen.getByText('agent-back'));
-
-    expect(mocks.goToPreviousStep).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(metrics.trackOnboardingCompleted).toHaveBeenCalledWith({
+        flow: 'classic',
+        targetUrl: '/',
+      }),
+    );
+    expect(mocks.goToNextStep).not.toHaveBeenCalled();
   });
 
   it('waits for server config before deciding whether to skip ProSettings', () => {
@@ -244,7 +233,7 @@ describe('ClassicOnboardingPage', () => {
 
     renderClassic();
 
-    await waitFor(() => expect(mocks.goToNextStep).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(metrics.trackOnboardingCompleted).toHaveBeenCalledTimes(1));
     expect(metrics.trackOnboardingStepCompleted).toHaveBeenCalledWith({
       action: 'auto_skip',
       flow: 'classic',
@@ -263,22 +252,21 @@ describe('ClassicOnboardingPage', () => {
     renderClassic();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(mocks.goToNextStep).not.toHaveBeenCalled();
+    expect(metrics.trackOnboardingCompleted).not.toHaveBeenCalled();
   });
 
-  it('keeps ProSettings in the flow when Composio is enabled', () => {
+  it('finishes after ProSettings when Composio is enabled', async () => {
     mocks.currentStep = 3;
     mocks.enableComposio = true;
 
     renderClassic();
     fireEvent.click(screen.getByText('pro-next'));
 
-    expect(screen.getByText('ProSettingsStep')).toBeInTheDocument();
     expect(metrics.trackOnboardingStepCompleted).toHaveBeenCalledWith({
       flow: 'classic',
       step: 'prosettings',
       stepIndex: 3,
     });
-    expect(mocks.goToNextStep).toHaveBeenCalled();
+    await waitFor(() => expect(metrics.trackOnboardingCompleted).toHaveBeenCalledTimes(1));
   });
 });

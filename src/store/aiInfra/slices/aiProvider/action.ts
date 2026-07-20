@@ -132,10 +132,18 @@ export const normalizeEmbeddingModel = async (
   };
 };
 
+const hasUsableImageParameters = (
+  parameters: ModelParamsSchema | null | undefined,
+): parameters is ModelParamsSchema => {
+  if (!parameters || typeof parameters !== 'object') return false;
+  // Empty `{}` is truthy but fails extractDefaultValues (requires `prompt`).
+  return Object.keys(parameters).length > 0 && 'prompt' in parameters;
+};
+
 export const normalizeImageModel = async (
   model: EnabledAiModel,
 ): Promise<ProviderModelListItem> => {
-  const fallbackParametersPromise = model.parameters
+  const fallbackParametersPromise = hasUsableImageParameters(model.parameters)
     ? Promise.resolve<ModelParamsSchema | undefined>(model.parameters)
     : getModelPropertyWithFallback<ModelParamsSchema | undefined>(
         model.id,
@@ -152,7 +160,9 @@ export const normalizeImageModel = async (
     fallbackDescriptionPromise,
   ]);
 
-  const parameters = model.parameters ?? fallbackParameters;
+  const parameters = hasUsableImageParameters(model.parameters)
+    ? model.parameters
+    : fallbackParameters;
   const pricing = fallbackPricing;
   const description = fallbackDescription;
   const { price, approximatePrice } = resolveImageSinglePrice(pricing);

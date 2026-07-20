@@ -4,6 +4,8 @@
 import { NextRequest } from 'next/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import { config as proxyConfig } from '@/proxy';
+
 import { defineConfig } from './define-config';
 
 vi.mock('@/auth', () => ({
@@ -23,6 +25,11 @@ describe('defineConfig locale path-traversal hardening', () => {
     expect(new URL(rewrite!).pathname).toBe('/spa-auth/ja-JP/signin');
   });
 
+  it('keeps company invitation links public and routes them to the main SPA', async () => {
+    const rewrite = await run('http://localhost:3010/company/invite/token-1');
+    expect(new URL(rewrite!).pathname).toBe('/spa/en-US__0/company/invite/token-1');
+  });
+
   it('falls back to en-US for a traversal locale (plain)', async () => {
     const rewrite = await run('http://localhost:3010/signin?hl=../../api/dev/x');
     const { pathname } = new URL(rewrite!);
@@ -35,5 +42,11 @@ describe('defineConfig locale path-traversal hardening', () => {
     const { pathname } = new URL(rewrite!);
     expect(pathname.startsWith('/spa-auth/')).toBe(true);
     expect(pathname).toBe('/spa-auth/en-US/signin');
+  });
+});
+
+describe('company invitation proxy coverage', () => {
+  it('runs the proxy for invitation deep links', () => {
+    expect(proxyConfig.matcher).toEqual(expect.arrayContaining(['/company', '/company(.*)']));
   });
 });

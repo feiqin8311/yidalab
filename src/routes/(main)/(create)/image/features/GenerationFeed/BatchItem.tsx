@@ -72,7 +72,7 @@ export const GenerationBatchItem = memo<GenerationBatchItemProps>(({ batch }) =>
 
   const creator = batch.creator;
   const showCreator = Boolean(activeWorkspaceId && creator?.id);
-  const creatorName = creator?.fullName || creator?.username || '';
+  const creatorName = creator?.username || creator?.username || '';
 
   const time = useMemo(() => {
     return dayjs(batch.createdAt).format('YYYY-MM-DD HH:mm:ss');

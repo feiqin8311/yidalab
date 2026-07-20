@@ -9,7 +9,7 @@ import { useUserStore } from '@/store/user';
 
 import { useCategory } from './useCategory';
 
-vi.hoisted(() => {
+const mocks = vi.hoisted(() => {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
@@ -18,12 +18,18 @@ vi.hoisted(() => {
       setItem: vi.fn(),
     },
   });
+
+  return { company: null as { role: string } | null };
 });
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+}));
+
+vi.mock('@/features/Company/hooks', () => ({
+  useMyCompany: () => ({ data: mocks.company }),
 }));
 
 const createWrapper = (showProvider: boolean) => {
@@ -58,6 +64,7 @@ const getItemKeys = () => {
 const initialUserStoreState = useUserStore.getState();
 
 afterEach(() => {
+  mocks.company = null;
   useUserStore.setState(initialUserStoreState, true);
 });
 
@@ -74,5 +81,14 @@ describe('settings useCategory', () => {
     const keys = result.current.flatMap((group) => group.items.map((item) => item.key));
 
     expect(keys).not.toContain(SettingsTabs.Provider);
+  });
+
+  it('hides centrally managed AI settings for company members', () => {
+    mocks.company = { role: 'member' };
+
+    const keys = getItemKeys();
+
+    expect(keys).not.toContain(SettingsTabs.Provider);
+    expect(keys).not.toContain(SettingsTabs.ServiceModel);
   });
 });

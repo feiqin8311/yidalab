@@ -17,6 +17,7 @@ export const serverConfigSelectors = {
   enableVisualUnderstanding: (s: ServerConfigStore) =>
     s.serverConfig.enableVisualUnderstanding || false,
   enabledTelemetryChat: (s: ServerConfigStore) => s.serverConfig.telemetry.langfuse || false,
+  hidePersonalSettings: (s: ServerConfigStore) => !!s.featureFlags.hiddenPersonalSettings,
   isMobile: (s: ServerConfigStore) => s.isMobile || false,
   oAuthSSOProviders: (s: ServerConfigStore) => s.serverConfig.oAuthSSOProviders,
   visualUnderstanding: (s: ServerConfigStore) => s.serverConfig.visualUnderstanding,

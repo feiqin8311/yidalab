@@ -483,6 +483,36 @@ describe('useSignIn', () => {
     });
   });
 
+  describe('handleGoToSignup', () => {
+    it('should pass an email identifier to signup as email', async () => {
+      mockGetFieldValue.mockReturnValue(' New@Example.com ');
+
+      const { result } = renderHook(() => useSignIn());
+
+      await act(async () => {
+        result.current.handleGoToSignup();
+      });
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.stringContaining('/signup?email=new%40example.com'),
+      );
+    });
+
+    it('should pass a username identifier to signup as username', async () => {
+      mockGetFieldValue.mockReturnValue('new_user');
+
+      const { result } = renderHook(() => useSignIn());
+
+      await act(async () => {
+        result.current.handleGoToSignup();
+      });
+
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.stringContaining('/signup?username=new_user'),
+      );
+    });
+  });
+
   describe('handleForgotPassword', () => {
     it('should call requestPasswordReset and land on the email-sent state', async () => {
       mockRequestPasswordReset.mockResolvedValue(undefined);

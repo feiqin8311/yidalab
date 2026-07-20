@@ -6,9 +6,20 @@
 
 export type CredType = 'kv-env' | 'kv-header' | 'oauth' | 'file';
 
+/**
+ * personal — owned by the signed-in user (workspaceId is null)
+ * company  — shared company/public credential (workspaceId = company workspace)
+ */
+export type CredScope = 'personal' | 'company';
+
 // ===== Credential Summary (for list display) =====
 
 export interface UserCredSummary {
+  /**
+   * Whether the current caller may view plaintext / edit / delete this credential.
+   * Company members who are not admin/owner get `false` for company-scoped rows.
+   */
+  canManage?: boolean;
   createdAt: string;
   description?: string;
   // File type specific
@@ -44,6 +55,8 @@ export interface UserCredSummary {
    * populated in organization-scoped list/get responses.
    */
   ownerType?: 'organization' | 'user';
+  /** personal | company — localCreds list always sets this */
+  scope?: CredScope;
   /**
    * Timestamp when `visibility` last became 'public'. Unset while only
    * draft-linked (`organizationAccountId` set, `visibility` still 'private').

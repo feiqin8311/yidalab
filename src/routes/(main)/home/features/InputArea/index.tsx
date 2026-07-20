@@ -9,12 +9,9 @@ import { useInitAgentConfig } from '@/hooks/useInitAgentConfig';
 import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors } from '@/store/agent/selectors';
 import { useChatStore } from '@/store/chat';
-import { useGlobalStore } from '@/store/global';
-import { systemStatusSelectors } from '@/store/global/selectors';
 
 import { stripMarkdownLinks } from './hintFormat';
 import InputDragUpload from './InputDragUpload';
-import MessengerBanner, { MESSENGER_BANNER_ID } from './MessengerBanner';
 import { useSend } from './useSend';
 
 const leftActions: ActionKeys[] = ['agentMode', 'plus'];
@@ -33,15 +30,7 @@ const InputArea = () => {
   const isAgentConfigLoading = useAgentStore((s) =>
     agentByIdSelectors.isAgentConfigLoadingById(agentId ?? '')(s),
   );
-  const isMessengerBannerDismissed = useGlobalStore(
-    systemStatusSelectors.isBannerDismissed(MESSENGER_BANNER_ID),
-  );
-  // Wait for the persisted status to hydrate so users who already dismissed
-  // the banner never see it flash on mount.
-  const isStatusInit = useGlobalStore(systemStatusSelectors.isStatusInit);
   const chatInputRef = useRef<HTMLDivElement>(null);
-
-  const showMessengerBanner = isStatusInit && !isMessengerBannerDismissed;
 
   // Get agent's model info for vision support check. Falls back to an empty
   // id while the agent id resolves; the selectors return DEFAULT_MODEL /
@@ -75,11 +64,7 @@ const InputArea = () => {
 
   return (
     <Flexbox gap={16} style={{ marginBottom: 16 }}>
-      <Flexbox
-        ref={chatInputRef}
-        style={{ paddingBottom: showMessengerBanner ? 32 : 0, position: 'relative' }}
-      >
-        {showMessengerBanner && <MessengerBanner />}
+      <Flexbox ref={chatInputRef}>
         <InputDragUpload
           radius={20}
           style={{ position: 'relative', zIndex: 1 }}

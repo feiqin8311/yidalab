@@ -7,7 +7,7 @@
  * Clears:
  *   users.onboarding         (currentStep, finishedAt, version)
  *   users.agent_onboarding   (agent flow state)
- *   users.full_name          (so FullNameStep is unfilled again)
+ *   users.username          (so FullNameStep is unfilled again)
  *   users.interests          (so InterestsStep is unfilled again)
  *   user_settings.general.responseLanguage  (so commonStepsCompleted=false)
  *   user_settings.general.telemetry         (so privacy switch defaults again)
@@ -42,7 +42,7 @@ const main = async () => {
     .select({
       id: users.id,
       email: users.email,
-      fullName: users.fullName,
+      username: users.username,
       interests: users.interests,
       onboarding: users.onboarding,
       agentOnboarding: users.agentOnboarding,
@@ -62,7 +62,7 @@ const main = async () => {
   console.log('   Before:');
   console.log('     onboarding       =', target.onboarding ?? null);
   console.log('     agent_onboarding =', target.agentOnboarding ?? null);
-  console.log('     full_name        =', target.fullName ?? null);
+  console.log('     username        =', target.username ?? null);
   console.log('     interests        =', target.interests ?? null);
 
   const settingsBefore = await serverDB
@@ -85,7 +85,7 @@ const main = async () => {
       .set({
         onboarding: null,
         agentOnboarding: null,
-        fullName: null,
+        username: null,
         interests: null,
       })
       .where(eq(users.id, target.id));

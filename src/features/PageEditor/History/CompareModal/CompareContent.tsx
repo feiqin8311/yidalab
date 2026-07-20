@@ -133,9 +133,9 @@ const CompareContent = memo<CompareContentProps>(
                 {dayjs(selectedItem.savedAt).fromNow()} ·{' '}
                 {saveSourceLabels[selectedItem.saveSource]}
               </Text>
-              {authorInfo?.fullName && (
-                <Text className={styles.meta} title={authorInfo.fullName} type={'secondary'}>
-                  · {authorInfo.fullName}
+              {authorInfo?.username && (
+                <Text className={styles.meta} title={authorInfo.username} type={'secondary'}>
+                  · {authorInfo.username}
                 </Text>
               )}
             </Flexbox>

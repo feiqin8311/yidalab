@@ -3,7 +3,6 @@ import { type ToolManifest } from '@lobechat/types';
 import { type PluginItem, type PluginListResponse } from '@lobehub/market-sdk';
 import { type TRPCClientError } from '@trpc/client';
 import debug from 'debug';
-import { uniqBy } from 'es-toolkit/compat';
 import { produce } from 'immer';
 import { gt, valid } from 'semver';
 import { type SWRResponse } from 'swr';
@@ -13,6 +12,7 @@ import { type MCPErrorData } from '@/libs/mcp/types';
 import { parseStdioErrorMessage } from '@/libs/mcp/types';
 import { toolKeys } from '@/libs/swr/keys';
 import { discoverService } from '@/services/discover';
+import { persistMcpSecretsToLocalCreds } from '@/services/localCreds';
 import { mcpService } from '@/services/mcp';
 import { pluginService } from '@/services/plugin';
 import { globalHelpers } from '@/store/global/helpers';
@@ -567,6 +567,15 @@ export class PluginMCPStoreActionImpl {
         type: 'plugin',
       });
 
+      // Mirror secrets into Settings → Credentials (localCreds vault).
+      // Best-effort: install already succeeded; vault failure must not roll back.
+      await persistMcpSecretsToLocalCreds({
+        config: normalizedConfig,
+        connection: finalConnection,
+        identifier: plugin.identifier,
+        name: typeof data?.name === 'string' ? data.name : plugin.name,
+      });
+
       // Check if already cancelled
       if (abortController.signal.aborted) {
         return;
@@ -866,6 +875,14 @@ export class PluginMCPStoreActionImpl {
       ? params
       : { ...params, connectionType: McpConnectionType.http };
     const page = requestParams.page ?? 1;
+    const emptyMarket: PluginListResponse = {
+      categories: [],
+      currentPage: page,
+      items: [],
+      pageSize: requestParams.pageSize ?? 20,
+      totalCount: 0,
+      totalPages: 0,
+    };
 
     return useSWR<PluginListResponse>(
       toolKeys.mcpPluginList(locale, {
@@ -874,7 +891,7 @@ export class PluginMCPStoreActionImpl {
         pageSize: requestParams.pageSize,
         q: requestParams.q,
       }),
-      () => discoverService.getMCPPluginList(requestParams),
+      () => Promise.resolve(emptyMarket),
       {
         onSuccess: (data) => {
           this.#set(
@@ -883,7 +900,7 @@ export class PluginMCPStoreActionImpl {
 
               // Set basic information
               if (!draft.isMcpListInit) {
-                draft.activeMCPIdentifier = data.items?.[0]?.identifier;
+                draft.activeMCPIdentifier = undefined;
 
                 draft.isMcpListInit = true;
                 draft.categories = data.categories;
@@ -894,13 +911,10 @@ export class PluginMCPStoreActionImpl {
               // Accumulate data logic
               if (page === 1) {
                 // First page, set directly
-                draft.mcpPluginItems = uniqBy(data.items, 'identifier');
+                draft.mcpPluginItems = data.items;
               } else {
                 // Subsequent pages, accumulate data
-                draft.mcpPluginItems = uniqBy(
-                  [...draft.mcpPluginItems, ...data.items],
-                  'identifier',
-                );
+                draft.mcpPluginItems = [...draft.mcpPluginItems, ...data.items];
               }
             }),
             false,

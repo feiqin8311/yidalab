@@ -83,13 +83,10 @@ describe('buildWorkspaceAwarePath', () => {
   });
 
   it('skips prefix for personal-only settings sub-paths', () => {
-    expect(buildWorkspaceAwarePath('/settings/profile', 'acme')).toBe('/settings/profile');
     expect(buildWorkspaceAwarePath('/settings/llm', 'acme')).toBe('/settings/llm');
-    expect(buildWorkspaceAwarePath('/settings/memory', 'acme')).toBe('/settings/memory');
-    expect(buildWorkspaceAwarePath('/settings/referral', 'acme')).toBe('/settings/referral');
-    expect(buildWorkspaceAwarePath('/settings/system-tools', 'acme')).toBe(
-      '/settings/system-tools',
-    );
+    expect(buildWorkspaceAwarePath('/settings/security', 'acme')).toBe('/settings/security');
+    expect(buildWorkspaceAwarePath('/settings/tts', 'acme')).toBe('/settings/tts');
+    expect(buildWorkspaceAwarePath('/settings/company', 'acme')).toBe('/settings/company');
   });
 
   it('prefixes the `/settings` index — both personal and workspace have a meaningful redirect', () => {

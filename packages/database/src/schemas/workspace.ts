@@ -1,4 +1,5 @@
 import type { WorkspaceUserPreference } from '@lobechat/types';
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -52,6 +53,32 @@ export const workspaces = pgTable(
 export type WorkspaceItem = typeof workspaces.$inferSelect;
 export type NewWorkspace = typeof workspaces.$inferInsert;
 
+/** A flat department belonging to one company workspace. */
+export const departments = pgTable(
+  'departments',
+  {
+    id: text('id')
+      .$defaultFn(() => createNanoId(16)())
+      .notNull()
+      .primaryKey(),
+    workspaceId: text('workspace_id')
+      .references(() => workspaces.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('departments_workspace_id_name_unique').on(t.workspaceId, t.name),
+    index('departments_workspace_id_idx').on(t.workspaceId),
+  ],
+);
+
+export type DepartmentItem = typeof departments.$inferSelect;
+export type NewDepartment = typeof departments.$inferInsert;
+
+export type WorkspaceMemberRole = 'admin' | 'editor' | 'member' | 'owner' | 'viewer';
+
 export const workspaceMembers = pgTable(
   'workspace_members',
   {
@@ -61,7 +88,9 @@ export const workspaceMembers = pgTable(
     userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
-    role: text('role').notNull().default('member'),
+    departmentId: text('department_id').references(() => departments.id, { onDelete: 'set null' }),
+    position: varchar('position', { length: 128 }),
+    role: text('role').$type<WorkspaceMemberRole>().notNull().default('member'),
     joinedAt: timestamptz('joined_at').notNull().defaultNow(),
     updatedAt: updatedAt(),
     deletedAt: timestamptz('deleted_at'),
@@ -72,6 +101,9 @@ export const workspaceMembers = pgTable(
     // user can be inserted into the same workspace multiple times.
     primaryKey({ columns: [t.workspaceId, t.userId] }),
     index('workspace_members_user_id_idx').on(t.userId),
+    uniqueIndex('workspace_members_active_user_id_unique')
+      .on(t.userId)
+      .where(sql`${t.deletedAt} IS NULL`),
   ],
 );
 
@@ -92,7 +124,9 @@ export const workspaceInvitations = pgTable(
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     email: text('email'),
-    role: text('role').notNull().default('member'),
+    departmentId: text('department_id').references(() => departments.id, { onDelete: 'set null' }),
+    position: varchar('position', { length: 128 }),
+    role: text('role').$type<WorkspaceMemberRole>().notNull().default('member'),
     token: text('token').unique().notNull(),
     status: text('status').notNull().default('pending'),
     expiresAt: timestamptz('expires_at').notNull(),

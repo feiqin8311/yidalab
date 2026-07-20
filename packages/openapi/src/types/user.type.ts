@@ -31,7 +31,6 @@ export interface CreateUserRequest {
   avatar?: string;
   email: string;
   firstName?: string;
-  fullName?: string;
   id?: string;
   lastName?: string;
   phone?: string;
@@ -43,7 +42,6 @@ export const CreateUserRequestSchema = z.object({
   avatar: z.string().nullish(),
   email: z.string().email('Invalid email format').nullish(),
   firstName: z.string().nullish(),
-  fullName: z.string().nullish(),
   id: z.string().nullish(),
   lastName: z.string().nullish(),
   phone: z.string().nullish(),
@@ -58,7 +56,6 @@ export interface UpdateUserRequest {
   avatar?: string;
   email?: string;
   firstName?: string;
-  fullName?: string;
   isOnboarded?: boolean;
   lastName?: string;
   phone?: string;
@@ -74,7 +71,6 @@ export const UpdateUserRequestSchema = z.object({
   avatar: z.string().nullish(),
   email: z.string().email('Invalid email format').nullish(),
   firstName: z.string().nullish(),
-  fullName: z.string().nullish(),
   isOnboarded: z.boolean().nullish(),
   lastName: z.string().nullish(),
   phone: z.string().nullish(),

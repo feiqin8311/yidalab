@@ -1,5 +1,5 @@
 'use client';
 
-import WorkspaceBillingCredits from '@/business/client/BusinessSettingPages/WorkspaceBillingCredits';
+import CreditsSetting from '@/business/client/BusinessSettingPages/Credits';
 
-export default WorkspaceBillingCredits;
+export default CreditsSetting;

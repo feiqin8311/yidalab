@@ -10,7 +10,6 @@ import { filterToolIds } from '@/helpers/toolFilters';
 import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors, agentSelectors, builtinAgentSelectors } from '@/store/agent/selectors';
 
-import pkg from '../../../../package.json';
 import { containerStyles } from '../style';
 import ChatList from './ChatList';
 import { styles } from './style';
@@ -127,7 +126,6 @@ const Preview = memo<PreviewProps>(
             {withFooter ? (
               <Flexbox align={'center'} className={styles.footer} gap={4}>
                 <ProductLogo type={'combine'} />
-                <div className={styles.url}>{pkg.homepage}</div>
               </Flexbox>
             ) : (
               <div />

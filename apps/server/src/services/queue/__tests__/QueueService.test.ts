@@ -21,6 +21,16 @@ vi.mock('@/libs/qstash', () => ({
   })),
 }));
 
+// Prevent Redis workers from starting during unit tests
+vi.mock('@/server/services/internalJob/handlers', () => ({
+  ensureInternalJobWorkersStarted: vi.fn(),
+  executeAgentRuntimeStepJob: vi.fn(),
+}));
+
+vi.mock('@/server/modules/AgentRuntime/redis', () => ({
+  getAgentRuntimeRedisClient: () => null,
+}));
+
 describe('QueueService', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -123,42 +133,23 @@ describe('QueueService', () => {
   });
 
   describe('Queue Mode (AGENT_RUNTIME_MODE=queue)', () => {
-    it('should throw error when QSTASH_TOKEN is not set', async () => {
+    it('should create RedisQueueServiceImpl without QSTASH_TOKEN', async () => {
       mockAppEnv.enableQueueAgentRuntime = true;
       delete process.env.QSTASH_TOKEN;
 
-      const { createQueueServiceModule } = await import('../impls');
-
-      expect(() => createQueueServiceModule()).toThrow(
-        'QSTASH_TOKEN is required when AGENT_RUNTIME_MODE=queue',
-      );
-    });
-
-    it('should create QStashQueueServiceImpl when QSTASH_TOKEN is set', async () => {
-      mockAppEnv.enableQueueAgentRuntime = true;
-      process.env.QSTASH_TOKEN = 'test-qstash-token';
-
-      const { createQueueServiceModule } = await import('../impls');
+      const { createQueueServiceModule, RedisQueueServiceImpl } = await import('../impls');
       const impl = createQueueServiceModule();
 
-      expect(impl).not.toBeNull();
-      expect(impl?.constructor.name).toBe('QStashQueueServiceImpl');
-
-      // Cleanup
-      delete process.env.QSTASH_TOKEN;
+      expect(impl).toBeInstanceOf(RedisQueueServiceImpl);
     });
 
     it('should return false for isLocalExecution when in queue mode', async () => {
       mockAppEnv.enableQueueAgentRuntime = true;
-      process.env.QSTASH_TOKEN = 'test-qstash-token';
 
       const { QueueService } = await import('../QueueService');
       const service = new QueueService();
 
       expect(service.isLocalExecution()).toBe(false);
-
-      // Cleanup
-      delete process.env.QSTASH_TOKEN;
     });
 
     it('should round sub-second delays up to 1s for QStash', async () => {

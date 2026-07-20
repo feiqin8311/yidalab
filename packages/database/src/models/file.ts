@@ -359,9 +359,8 @@ export class FileModel {
         updatedAt: files.updatedAt,
         uploader: {
           avatar: users.avatar,
-          fullName: users.fullName,
-          id: users.id,
           username: users.username,
+          id: users.id,
         },
         url: files.url,
         userId: files.userId,
@@ -412,8 +411,58 @@ export class FileModel {
 
   findById = async (id: string, trx?: Transaction) => {
     const database = trx || this.db;
+
+    // Personal mode: creator-only.
+    if (!this.workspaceId) {
+      return database.query.files.findFirst({
+        where: and(eq(files.id, id), this.ownership()),
+      });
+    }
+
+    // Workspace: creator / public / grant / admin can read.
+    const { loadResourceAccessContext } = await import('../utils/resource-access');
+    const accessCtx = await loadResourceAccessContext(
+      database as LobeChatDatabase,
+      this.userId,
+      this.workspaceId,
+    );
+    if (!accessCtx) return undefined;
+
+    if (accessCtx.isAdmin) {
+      return database.query.files.findFirst({
+        where: and(eq(files.id, id), eq(files.workspaceId, this.workspaceId)),
+      });
+    }
+
+    const { sql } = await import('drizzle-orm');
+    const deptClause =
+      accessCtx.departmentId === null
+        ? sql`(g.grantee_type = 'user' AND g.grantee_id = ${this.userId})`
+        : sql`(
+            (g.grantee_type = 'user' AND g.grantee_id = ${this.userId})
+            OR (g.grantee_type = 'department' AND g.grantee_id = ${accessCtx.departmentId})
+          )`;
+
     return database.query.files.findFirst({
-      where: and(eq(files.id, id), this.ownership()),
+      where: and(
+        eq(files.id, id),
+        eq(files.workspaceId, this.workspaceId),
+        or(
+          sql`${files.visibility} IS NULL`,
+          eq(files.visibility, 'public'),
+          and(eq(files.visibility, 'private'), eq(files.userId, this.userId)),
+          and(
+            eq(files.visibility, 'private'),
+            sql`EXISTS (
+              SELECT 1 FROM resource_grants g
+              WHERE g.workspace_id = ${this.workspaceId}
+                AND g.resource_type = 'file'
+                AND g.resource_id = ${files.id}
+                AND ${deptClause}
+            )`,
+          ),
+        ),
+      ),
     });
   };
 
@@ -492,7 +541,7 @@ export class FileModel {
   setVisibility = async (fileId: string, visibility: 'private' | 'public') => {
     const fromVisibility = visibility === 'public' ? 'private' : 'public';
 
-    return this.db
+    const result = await this.db
       .update(files)
       .set({ updatedAt: new Date(), visibility })
       .where(
@@ -503,6 +552,14 @@ export class FileModel {
           eq(files.visibility, fromVisibility),
         ),
       );
+
+    // public and grants are mutually exclusive — clear grants when publishing
+    if (visibility === 'public' && this.workspaceId) {
+      const { ResourceGrantModel } = await import('./resourceGrant');
+      await new ResourceGrantModel(this.db, this.userId, this.workspaceId).clear('file', fileId);
+    }
+
+    return result;
   };
 
   /**

@@ -92,6 +92,7 @@ const SkillList = memo<SkillListProps>(
   ({ onSelect, onDeleteSelected, selectedIdentifier, viewMode = 'connector' }) => {
     const { t } = useTranslation('setting');
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const isConnectorView = viewMode === 'connector';
 
     const isLobehubSkillEnabled = useServerConfigStore(serverConfigSelectors.enableLobehubSkill);
     const isComposioEnabled = useServerConfigStore(serverConfigSelectors.enableComposio);
@@ -192,13 +193,19 @@ const SkillList = memo<SkillListProps>(
               integrationItems.push({ builtinTool, type: 'builtin' });
               addedBuiltinIds.add(skill.id);
             }
-          } else if (skill.type === RecommendedSkillType.Lobehub && isLobehubSkillEnabled) {
+          } else if (
+            skill.type === RecommendedSkillType.Lobehub &&
+            (isLobehubSkillEnabled || isConnectorView)
+          ) {
             const provider = getLobehubSkillProviderById(skill.id);
             if (provider) {
               integrationItems.push({ provider, type: 'lobehub' });
               addedLobehubIds.add(skill.id);
             }
-          } else if (skill.type === RecommendedSkillType.Composio && isComposioEnabled) {
+          } else if (
+            skill.type === RecommendedSkillType.Composio &&
+            (isComposioEnabled || isConnectorView)
+          ) {
             const serverType = getComposioAppByIdentifier(skill.id);
             if (serverType) {
               integrationItems.push({ serverType, type: 'composio' });
@@ -222,7 +229,7 @@ const SkillList = memo<SkillListProps>(
         // connect integrations beyond the curated RECOMMENDED_SKILLS set —
         // otherwise a provider like Vercel or Linear never appears until it's
         // already connected, and a disconnected one has no way to be found.
-        if (isLobehubSkillEnabled) {
+        if (isLobehubSkillEnabled || isConnectorView) {
           for (const provider of LOBEHUB_SKILL_PROVIDERS) {
             if (!addedLobehubIds.has(provider.id)) {
               integrationItems.push({ provider, type: 'lobehub' });
@@ -234,7 +241,7 @@ const SkillList = memo<SkillListProps>(
         // Also add every other Composio app so users can discover and connect
         // integrations beyond the curated RECOMMENDED_SKILLS set — otherwise an
         // app like Jira never appears until it's already connected.
-        if (isComposioEnabled) {
+        if (isComposioEnabled || isConnectorView) {
           for (const serverType of COMPOSIO_APP_TYPES) {
             if (!addedComposioIds.has(serverType.identifier)) {
               integrationItems.push({ serverType, type: 'composio' });
@@ -251,14 +258,14 @@ const SkillList = memo<SkillListProps>(
         }
 
         // Add lobehub skills
-        if (isLobehubSkillEnabled) {
+        if (isLobehubSkillEnabled || isConnectorView) {
           for (const provider of LOBEHUB_SKILL_PROVIDERS) {
             integrationItems.push({ provider, type: 'lobehub' });
           }
         }
 
         // Add composio skills
-        if (isComposioEnabled) {
+        if (isComposioEnabled || isConnectorView) {
           for (const serverType of COMPOSIO_APP_TYPES) {
             integrationItems.push({ serverType, type: 'composio' });
           }
@@ -321,6 +328,7 @@ const SkillList = memo<SkillListProps>(
       installedPluginList,
       isLobehubSkillEnabled,
       isComposioEnabled,
+      isConnectorView,
       allLobehubSkillServers,
       allComposioServers,
       allBuiltinTools,
@@ -446,8 +454,6 @@ const SkillList = memo<SkillListProps>(
         </>
       );
     };
-
-    const isConnectorView = viewMode === 'connector';
 
     // Connectors tab: tools/MCP items (provide API-level permissions)
     // Skills tab: prompt/agent-based skills (show description/content)

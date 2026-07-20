@@ -5,8 +5,8 @@ import { Button } from '@lobehub/ui/base-ui';
 import { memo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useIsWorkspaceAdmin } from '@/business/client/hooks/useIsWorkspaceAdmin';
 import { useIsWorkspaceLoading } from '@/business/client/hooks/useIsWorkspaceLoading';
-import { useIsWorkspaceOwner } from '@/business/client/hooks/useIsWorkspaceOwner';
 import { MAX_WIDTH } from '@/const/layoutTokens';
 
 const Forbidden = memo(() => {
@@ -44,13 +44,13 @@ Forbidden.displayName = 'WorkspaceAdminOnlyForbidden';
 
 const AdminOnly = memo<{ children: ReactNode }>(({ children }) => {
   const isLoading = useIsWorkspaceLoading();
-  const isOwner = useIsWorkspaceOwner();
+  // Owner and workspace admin can access admin-only settings (e.g. storage).
+  const isAdmin = useIsWorkspaceAdmin();
 
-  // Don't paint the 403 before workspace context resolves — `myRole` is `null`
-  // during bootstrap, which would briefly flash the forbidden screen for owners
-  // landing directly on the URL.
+  // Don't paint the 403 before workspace context resolves — role is `null`
+  // during bootstrap, which would briefly flash the forbidden screen.
   if (isLoading) return null;
-  if (!isOwner) return <Forbidden />;
+  if (!isAdmin) return <Forbidden />;
   return <>{children}</>;
 });
 

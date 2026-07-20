@@ -179,7 +179,7 @@ export const ConfirmCard = memo<ConfirmCardProps>(
     const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
     const scopeWorkspaceId = scope === PERSONAL_SCOPE ? null : scope;
     const userDisplayName = useUserStore(userProfileSelectors.displayUserName);
-    const userFullName = useUserStore(userProfileSelectors.fullName);
+    const username = useUserStore(userProfileSelectors.username);
 
     useEffect(() => {
       if (enableWorkspaceScopes || scope === PERSONAL_SCOPE) return;
@@ -208,7 +208,7 @@ export const ConfirmCard = memo<ConfirmCardProps>(
     const scopeOptions = useMemo(() => {
       const personalLabel = resolvePersonalScopeLabel({
         fallbackLabel: userDisplayName || t('messenger.scopePersonal'),
-        fullName: userFullName,
+        username,
       });
 
       return buildMessengerScopeOptions({
@@ -217,7 +217,7 @@ export const ConfirmCard = memo<ConfirmCardProps>(
         personalTagLabel: t('messenger.scopePersonalTag', { defaultValue: 'personal' }),
         workspaces: scopesSWR.data,
       });
-    }, [scopesSWR.data, t, userAvatar, userDisplayName, userFullName]);
+    }, [scopesSWR.data, t, userAvatar, userDisplayName, username]);
 
     // Personal-only deployments (OSS) return no workspaces — hide the scope
     // selector entirely so the experience is unchanged there.

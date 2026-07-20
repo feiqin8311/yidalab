@@ -246,6 +246,15 @@ export const BuiltinToolManifestSchema = z.object({
  */
 export interface BuiltinToolResolveContext {
   /**
+   * Whether the deployment can actually run cloud-sandbox exec (market /
+   * onlyboxes provisioned). When false, tools that would fall back to
+   * `/home/user` sandbox paths must hide those APIs instead of advertising a
+   * path that only fails with MARKET_AUTH_REQUIRED.
+   *
+   * Omitted / undefined keeps upstream semantics (sandbox available).
+   */
+  cloudSandboxAvailable?: boolean;
+  /**
    * Where this run executes, mirroring the resolved `ExecutionPlan.kind`
    * (`device` / `device-unrouted` / `sandbox` / `none`) plus `local` for the
    * desktop in-process engine. Lets exec-capable tools (e.g. lobe-skills)

@@ -12,6 +12,25 @@ const zhipuChatModels: AIChatModelCard[] = [
     abilities: {
       functionCall: true,
       reasoning: true,
+    },
+    contextWindowTokens: 1_000_000,
+    description:
+      'GLM-5.2 is Zhipu’s flagship model for long-horizon agentic engineering, with a 1M-token context window for project-scale coding tasks.',
+    displayName: 'GLM-5.2',
+    enabled: true,
+    family: 'glm',
+    generation: 'glm-5.2',
+    id: 'glm-5.2',
+    maxOutput: 131_072,
+    settings: {
+      extendParams: ['enableReasoning'],
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
       search: true,
     },
     contextWindowTokens: 200_000,

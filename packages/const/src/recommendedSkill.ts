@@ -13,10 +13,13 @@ export const RECOMMENDED_SKILLS: RecommendedSkillItem[] = [
   // Builtin skills
   { id: 'lobe-artifacts', type: RecommendedSkillType.Builtin },
   { id: 'lobe-user-memory', type: RecommendedSkillType.Builtin },
-  { id: 'lobe-cloud-sandbox', type: RecommendedSkillType.Builtin },
+  // lobe-cloud-sandbox omitted: YidaLab has no market cloud sandbox provisioned
+  // (ENABLE_CLOUD_SANDBOX off). Re-add when sandbox is re-enabled.
   { id: 'lobe-task', type: RecommendedSkillType.Builtin },
   { id: 'lobe-agent-documents', type: RecommendedSkillType.Builtin },
   { id: 'lobe-message', type: RecommendedSkillType.Builtin },
+  // Company DingTalk Drive upload (YidaLab / second-party)
+  { id: 'lobe-dingpan', type: RecommendedSkillType.Builtin },
   // LobeHub skills
   { id: 'notion', type: RecommendedSkillType.Lobehub },
   { id: 'posthog', type: RecommendedSkillType.Lobehub },

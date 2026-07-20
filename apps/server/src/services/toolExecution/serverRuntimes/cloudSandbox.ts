@@ -3,6 +3,7 @@ import {
   CloudSandboxIdentifier,
 } from '@lobechat/builtin-tool-cloud-sandbox';
 
+import { isCloudSandboxExecutionEnabled } from '@/helpers/executionTarget';
 import { FileService } from '@/server/services/file';
 import { MarketService } from '@/server/services/market';
 import { createSandboxService } from '@/server/services/sandbox';
@@ -15,6 +16,12 @@ import { type ServerRuntimeRegistration } from './types';
  */
 export const cloudSandboxRuntime: ServerRuntimeRegistration = {
   factory: (context) => {
+    if (!isCloudSandboxExecutionEnabled()) {
+      throw new Error(
+        'Cloud sandbox is disabled in this deployment. Use Artifacts for HTML reports, or select an online execution device for shell work.',
+      );
+    }
+
     if (!context.userId || !context.topicId) {
       throw new Error('userId and topicId are required for Cloud Sandbox execution');
     }

@@ -154,3 +154,6 @@ docs/superpowers/
 
 # Kagura agent runtime
 .kagura/
+
+# Local CodeGraph index (do not publish)
+.codegraph/

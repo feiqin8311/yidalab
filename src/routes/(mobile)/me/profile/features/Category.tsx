@@ -8,21 +8,23 @@ import { type CellProps } from '@/components/Cell';
 import Cell from '@/components/Cell';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { ProfileTabs } from '@/store/global/initialState';
+import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
 import { useUserStore } from '@/store/user';
 import { authSelectors } from '@/store/user/selectors';
 
 const Category = memo(() => {
   const [isLogin, signOut] = useUserStore((s) => [authSelectors.isLogin(s), s.logout]);
   const navigate = useWorkspaceAwareNavigate();
+  const hidePersonalSettings = useServerConfigStore(serverConfigSelectors.hidePersonalSettings);
   const { t } = useTranslation('auth');
   const items: CellProps[] = [
-    {
+    !hidePersonalSettings && {
       icon: UserCircle,
       key: ProfileTabs.Profile,
       label: t('profile.title'),
       onClick: () => navigate('/settings/profile'),
     },
-    {
+    !hidePersonalSettings && {
       icon: ChartColumnBigIcon,
       key: ProfileTabs.Stats,
       label: t('tab.stats'),

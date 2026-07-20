@@ -1,9 +1,14 @@
-import type { KnowledgeBaseItem } from '@lobechat/types';
-import { and, count, desc, eq, inArray, or, sum } from 'drizzle-orm';
+import type { KnowledgeBaseItem, ResourceListScope } from '@lobechat/types';
+import { and, count, desc, eq, inArray, or, sql, sum } from 'drizzle-orm';
 
 import type { NewDocument, NewFile, NewKnowledgeBase } from '../schemas';
 import { documents, files, knowledgeBaseFiles, knowledgeBases } from '../schemas';
 import type { LobeChatDatabase } from '../type';
+import {
+  loadResourceAccessContext,
+  resolveListScope,
+  type ResourceAccessContext,
+} from '../utils/resource-access';
 import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 import { FileModel } from './file';
 
@@ -165,12 +170,44 @@ export class KnowledgeBaseModel {
   // query
   query = async (options?: {
     callerAgentVisibility?: 'private' | 'public' | null;
+    listScope?: ResourceListScope;
     visibility?: 'private' | 'public';
   }) => {
-    const ownershipWhere = this.ownership(options?.callerAgentVisibility);
-    const conditions = options?.visibility
-      ? and(ownershipWhere, eq(knowledgeBases.visibility, options.visibility))
-      : ownershipWhere;
+    // Personal mode / public-agent: keep the historical ownership filter.
+    if (!this.workspaceId || options?.callerAgentVisibility === 'public') {
+      const ownershipWhere = this.ownership(options?.callerAgentVisibility);
+      const conditions = options?.visibility
+        ? and(ownershipWhere, eq(knowledgeBases.visibility, options.visibility))
+        : ownershipWhere;
+
+      const data = await this.db
+        .select({
+          avatar: knowledgeBases.avatar,
+          createdAt: knowledgeBases.createdAt,
+          description: knowledgeBases.description,
+          id: knowledgeBases.id,
+          isPublic: knowledgeBases.isPublic,
+          name: knowledgeBases.name,
+          settings: knowledgeBases.settings,
+          type: knowledgeBases.type,
+          updatedAt: knowledgeBases.updatedAt,
+          userId: knowledgeBases.userId,
+          visibility: knowledgeBases.visibility,
+        })
+        .from(knowledgeBases)
+        .where(conditions)
+        .orderBy(desc(knowledgeBases.updatedAt));
+
+      return data as KnowledgeBaseItem[];
+    }
+
+    const accessCtx = await loadResourceAccessContext(this.db, this.userId, this.workspaceId);
+    if (!accessCtx) return [];
+
+    const scope = resolveListScope(options?.listScope, options?.visibility);
+    const effectiveScope = scope === 'admin_all' && !accessCtx.isAdmin ? undefined : scope;
+
+    const whereSql = this.buildKbListWhereSql(accessCtx, effectiveScope);
 
     const data = await this.db
       .select({
@@ -187,15 +224,107 @@ export class KnowledgeBaseModel {
         visibility: knowledgeBases.visibility,
       })
       .from(knowledgeBases)
-      .where(conditions)
+      .where(whereSql)
       .orderBy(desc(knowledgeBases.updatedAt));
 
     return data as KnowledgeBaseItem[];
   };
 
+  private buildKbListWhereSql = (
+    ctx: ResourceAccessContext,
+    scope: ResourceListScope | undefined,
+  ) => {
+    const deptClause =
+      ctx.departmentId === null
+        ? sql`(g.grantee_type = 'user' AND g.grantee_id = ${ctx.userId})`
+        : sql`(
+            (g.grantee_type = 'user' AND g.grantee_id = ${ctx.userId})
+            OR (g.grantee_type = 'department' AND g.grantee_id = ${ctx.departmentId})
+          )`;
+
+    const grantExists = sql`EXISTS (
+      SELECT 1 FROM resource_grants g
+      WHERE g.workspace_id = ${ctx.workspaceId}
+        AND g.resource_type = 'knowledge_base'
+        AND g.resource_id = ${knowledgeBases.id}
+        AND ${deptClause}
+    )`;
+
+    const readable = ctx.isAdmin
+      ? sql`${knowledgeBases.workspaceId} = ${ctx.workspaceId}`
+      : sql`${knowledgeBases.workspaceId} = ${ctx.workspaceId} AND (
+          ${knowledgeBases.visibility} IS NULL
+          OR ${knowledgeBases.visibility} = 'public'
+          OR (${knowledgeBases.visibility} = 'private' AND ${knowledgeBases.userId} = ${ctx.userId})
+          OR (${knowledgeBases.visibility} = 'private' AND ${grantExists})
+        )`;
+
+    if (!scope || scope === 'admin_all') return readable;
+
+    if (scope === 'mine') {
+      return and(readable, eq(knowledgeBases.userId, ctx.userId));
+    }
+
+    if (scope === 'workspace') {
+      return and(
+        readable,
+        or(eq(knowledgeBases.visibility, 'public'), sql`${knowledgeBases.visibility} IS NULL`),
+      );
+    }
+
+    // shared_with_me
+    return and(
+      readable,
+      eq(knowledgeBases.visibility, 'private'),
+      sql`${knowledgeBases.userId} <> ${ctx.userId}`,
+      grantExists,
+    );
+  };
+
   findById = async (id: string) => {
+    if (!this.workspaceId) {
+      return this.db.query.knowledgeBases.findFirst({
+        where: and(eq(knowledgeBases.id, id), this.ownership()),
+      });
+    }
+
+    const accessCtx = await loadResourceAccessContext(this.db, this.userId, this.workspaceId);
+    if (!accessCtx) return undefined;
+
+    if (accessCtx.isAdmin) {
+      return this.db.query.knowledgeBases.findFirst({
+        where: and(eq(knowledgeBases.id, id), eq(knowledgeBases.workspaceId, this.workspaceId)),
+      });
+    }
+
+    const deptClause =
+      accessCtx.departmentId === null
+        ? sql`(g.grantee_type = 'user' AND g.grantee_id = ${this.userId})`
+        : sql`(
+            (g.grantee_type = 'user' AND g.grantee_id = ${this.userId})
+            OR (g.grantee_type = 'department' AND g.grantee_id = ${accessCtx.departmentId})
+          )`;
+
     return this.db.query.knowledgeBases.findFirst({
-      where: and(eq(knowledgeBases.id, id), this.ownership()),
+      where: and(
+        eq(knowledgeBases.id, id),
+        eq(knowledgeBases.workspaceId, this.workspaceId),
+        or(
+          sql`${knowledgeBases.visibility} IS NULL`,
+          eq(knowledgeBases.visibility, 'public'),
+          and(eq(knowledgeBases.visibility, 'private'), eq(knowledgeBases.userId, this.userId)),
+          and(
+            eq(knowledgeBases.visibility, 'private'),
+            sql`EXISTS (
+              SELECT 1 FROM resource_grants g
+              WHERE g.workspace_id = ${this.workspaceId}
+                AND g.resource_type = 'knowledge_base'
+                AND g.resource_id = ${knowledgeBases.id}
+                AND ${deptClause}
+            )`,
+          ),
+        ),
+      ),
     });
   };
 
@@ -244,7 +373,7 @@ export class KnowledgeBaseModel {
   setVisibility = async (id: string, visibility: 'private' | 'public') => {
     const fromVisibility = visibility === 'public' ? 'private' : 'public';
 
-    return this.db
+    const result = await this.db
       .update(knowledgeBases)
       .set({ updatedAt: new Date(), visibility })
       .where(
@@ -255,6 +384,16 @@ export class KnowledgeBaseModel {
           eq(knowledgeBases.visibility, fromVisibility),
         ),
       );
+
+    if (visibility === 'public' && this.workspaceId) {
+      const { ResourceGrantModel } = await import('./resourceGrant');
+      await new ResourceGrantModel(this.db, this.userId, this.workspaceId).clear(
+        'knowledge_base',
+        id,
+      );
+    }
+
+    return result;
   };
 
   private resolveAvailableName = async (

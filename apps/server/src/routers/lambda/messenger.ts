@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPermission';
+import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
 import {
   getEnabledMessengerPlatforms,
   getMessengerDiscordConfig,
@@ -23,7 +24,7 @@ import { RbacModel } from '@/database/models/rbac';
 import { WorkspaceModel } from '@/database/models/workspace';
 import { agents, users } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
-import { authedProcedure, publicProcedure, router } from '@/libs/trpc/lambda';
+import { publicProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { getServerFeatureFlagsStateFromRuntimeConfig } from '@/server/featureFlags';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
@@ -111,20 +112,16 @@ const maskEmail = (email: string): string => {
   return `${head}***@${domain}`;
 };
 
-const messengerProcedure = authedProcedure.use(serverDatabase).use(async (opts) => {
+const messengerProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
   return opts.next({
     ctx: {
       // The System Bot is a single shared bot; the workspace a conversation
-      // runs in is derived from the *active agent*, not the ambient
-      // `X-Workspace-Id` header. So the link model is identity-scoped (by
-      // userId), and per-agent authorization happens in-handler via
-      // `resolveAuthorizedAgentScope`.
+      // runs in is derived from the active company workspace resolved by
+      // `wsCompatProcedure`, not from a client-supplied header.
       messengerLinkModel: new MessengerAccountLinkModel(ctx.serverDB, ctx.userId),
-      // The bindable-agents scope is request-driven — the cascading scope
-      // picker passes the workspace via input, not the ambient header — so
-      // expose a workspace-parameterized AgentModel factory rather than a
-      // single pre-scoped instance.
+      // Keep a factory for the few handlers that resolve an agent's stored
+      // workspace first, but ordinary reads use ctx.workspaceId.
       getAgentModel: (workspaceId?: string | null) =>
         new AgentModel(ctx.serverDB, ctx.userId, workspaceId ?? undefined),
     },
@@ -139,18 +136,18 @@ const messengerWriteProcedure = messengerProcedure.use(withScopedPermission('age
  * agent*, every place that sets the active agent must re-authorize against
  * that agent's own workspace:
  *
- * - personal agent (`workspace_id IS NULL`): must be owned by the caller.
+ * - personal agents (`workspace_id IS NULL`) are not routable in company mode.
  * - workspace agent: caller must be a member AND hold `agent:update` in that
  *   workspace (mirrors `withScopedPermission('agent:update')`).
  *
- * Returns the derived `workspaceId` (null for personal) + the agent title.
+ * Returns the derived `workspaceId` + the agent title.
  * Throws `NOT_FOUND` / `FORBIDDEN`.
  */
 const resolveAuthorizedAgentScope = async (
   serverDB: LobeChatDatabase,
   userId: string,
   agentId: string,
-): Promise<{ title: string | null; workspaceId: string | null }> => {
+): Promise<{ title: string | null; workspaceId: string }> => {
   const [agentRow] = await serverDB
     .select({ title: agents.title, userId: agents.userId, workspaceId: agents.workspaceId })
     .from(agents)
@@ -160,12 +157,8 @@ const resolveAuthorizedAgentScope = async (
     throw new TRPCError({ code: 'NOT_FOUND', message: 'messenger.error.agentNotFound' });
   }
 
-  // Personal agent — only the owner may route the bot to it.
   if (!agentRow.workspaceId) {
-    if (agentRow.userId !== userId) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'messenger.error.agentNotFound' });
-    }
-    return { title: agentRow.title, workspaceId: null };
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'messenger.error.agentNotFound' });
   }
 
   // Workspace agent — caller must be a member with `agent:update`.
@@ -442,21 +435,17 @@ export const messengerRouter = router({
     .input(z.object({ workspaceId: z.string().nullish() }).optional())
     .query(async ({ ctx, input }) => {
       const { serverDB, userId } = ctx;
-      // Cascading scope: the caller picks a scope (personal or one of the
-      // workspaces they belong to) and we return just that scope's agents.
-      // Omitting `workspaceId` (or `null`) means personal.
-      const workspaceId = input?.workspaceId ?? null;
+      const workspaceId = ctx.workspaceId;
 
-      // Authorize the requested scope. Personal is always the caller's own; a
-      // workspace scope requires membership, otherwise the caller could
-      // enumerate another workspace's agents.
-      if (workspaceId) {
-        await assertWorkspaceFeatureEnabledForUser(userId);
+      if (input?.workspaceId && input.workspaceId !== workspaceId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'messenger.error.agentNotFound' });
+      }
 
-        const userWorkspaces = await new WorkspaceModel(serverDB, userId).listUserWorkspaces();
-        if (!userWorkspaces.some((w) => w.id === workspaceId)) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'messenger.error.agentNotFound' });
-        }
+      await assertWorkspaceFeatureEnabledForUser(userId);
+
+      const userWorkspaces = await new WorkspaceModel(serverDB, userId).listUserWorkspaces();
+      if (!userWorkspaces.some((w) => w.id === workspaceId)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'messenger.error.agentNotFound' });
       }
 
       // Inbox meta fallback, the virtual-or-inbox filter, inbox pinning, and the
@@ -466,12 +455,7 @@ export const messengerRouter = router({
     }),
 
   /**
-   * List the scopes the user can route the System Bot to: their personal space
-   * plus every workspace they belong to. Drives the connection card's
-   * first-level "scope" selector; the second level then calls
-   * `listAgentsForBinding({ workspaceId })` for the picked scope. Personal scope
-   * is implicit (the client prepends it) — this only returns workspaces, so in
-   * OSS / personal-only deployments it's simply an empty array.
+   * List the company scopes the user can route the System Bot to.
    */
   listBindingScopes: messengerProcedure.query(async ({ ctx }) => {
     if (!(await isWorkspaceFeatureEnabledForUser(ctx.userId))) return [];
@@ -509,9 +493,8 @@ export const messengerRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      // Authorize the target agent against its own workspace and derive the
-      // active scope (personal → null). Clearing (`agentId: null`) resets to
-      // personal scope.
+      // Authorize the target agent against its own company workspace and derive
+      // the active scope. Clearing keeps no active agent.
       let workspaceId: string | null = null;
       if (input.agentId !== null) {
         const scope = await resolveAuthorizedAgentScope(ctx.serverDB, ctx.userId, input.agentId);

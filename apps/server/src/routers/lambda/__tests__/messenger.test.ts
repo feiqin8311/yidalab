@@ -14,6 +14,7 @@ const {
   mockGetServerFeatureFlagsStateFromRuntimeConfig,
   mockHasAnyPermission,
   mockInitWithEnvKey,
+  mockGetMyCompany,
   mockListUserWorkspaces,
   mockListByInstallerUserId,
   mockMarkRevoked,
@@ -30,6 +31,7 @@ const {
   mockGetServerFeatureFlagsStateFromRuntimeConfig: vi.fn(),
   mockHasAnyPermission: vi.fn(),
   mockInitWithEnvKey: vi.fn(),
+  mockGetMyCompany: vi.fn(),
   mockListUserWorkspaces: vi.fn(),
   mockListByInstallerUserId: vi.fn(),
   mockMarkRevoked: vi.fn(),
@@ -47,6 +49,12 @@ vi.mock('@/database/core/db-adaptor', () => ({
 vi.mock('@/database/models/workspace', () => ({
   WorkspaceModel: class {
     listUserWorkspaces = (...args: any[]) => mockListUserWorkspaces(...args);
+  },
+}));
+
+vi.mock('@/database/models/company', () => ({
+  CompanyModel: class {
+    getMyCompany = (...args: any[]) => mockGetMyCompany(...args);
   },
 }));
 
@@ -106,6 +114,18 @@ vi.mock('@/server/services/bot/platforms/slack/api', () => ({
 }));
 
 const createCaller = createCallerFactory(messengerRouter);
+
+beforeEach(() => {
+  mockGetMyCompany.mockResolvedValue({
+    id: 'workspace-1',
+    name: 'YidaLab',
+    role: 'owner',
+    slug: 'company-yida',
+  });
+  mockGetServerFeatureFlagsStateFromRuntimeConfig.mockResolvedValue({ enableWorkspace: true });
+  mockHasAnyPermission.mockResolvedValue(true);
+  mockListUserWorkspaces.mockResolvedValue([{ id: 'workspace-1', name: 'YidaLab' }]);
+});
 
 const buildSlackInstall = () => ({
   accountId: null,
@@ -357,7 +377,7 @@ describe('messengerRouter.confirmLink', () => {
 
   it('allows re-confirming the same Telegram account', async () => {
     const selectBuilder = createSelectBuilder([
-      { id: 'agent-1', title: 'Agent 1', userId: 'user-1', workspaceId: null },
+      { id: 'agent-1', title: 'Agent 1', userId: 'user-1', workspaceId: 'workspace-1' },
     ]);
     const serverDB = { select: vi.fn(() => selectBuilder) };
     const linkPayload = {
@@ -389,7 +409,7 @@ describe('messengerRouter.confirmLink', () => {
       platformUserId: 'tg-same',
       platformUsername: '@same',
       tenantId: '',
-      workspaceId: null,
+      workspaceId: 'workspace-1',
     });
   });
 

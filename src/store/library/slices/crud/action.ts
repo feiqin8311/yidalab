@@ -44,13 +44,15 @@ export class KnowledgeBaseCrudActionImpl {
 
   refreshKnowledgeBaseList = async (): Promise<void> => {
     const workspaceId = getActiveWorkspaceId();
-    // The KB list is keyed by (workspaceId, visibility?), so we invalidate the
-    // three surfaces that can be currently rendered — unscoped, private-only,
-    // workspace-only — to keep both modes in sync after a mutation.
+    // Invalidate every list surface that can be rendered (legacy visibility + listScope).
     await Promise.all([
       mutate(knowledgeBaseKeys.list(workspaceId)),
       mutate(knowledgeBaseKeys.list(workspaceId, 'private')),
       mutate(knowledgeBaseKeys.list(workspaceId, 'public')),
+      mutate(knowledgeBaseKeys.list(workspaceId, 'mine')),
+      mutate(knowledgeBaseKeys.list(workspaceId, 'shared_with_me')),
+      mutate(knowledgeBaseKeys.list(workspaceId, 'workspace')),
+      mutate(knowledgeBaseKeys.list(workspaceId, 'admin_all')),
     ]);
   };
 
@@ -101,12 +103,24 @@ export class KnowledgeBaseCrudActionImpl {
   };
 
   useFetchKnowledgeBaseList = (
-    visibility?: 'private' | 'public',
+    filter?: 'private' | 'public' | 'mine' | 'shared_with_me' | 'workspace' | 'admin_all',
   ): SWRResponse<KnowledgeBaseItem[]> => {
     const workspaceId = getActiveWorkspaceId();
+    const isListScope =
+      filter === 'mine' ||
+      filter === 'shared_with_me' ||
+      filter === 'workspace' ||
+      filter === 'admin_all';
     return useClientDataSWR<KnowledgeBaseItem[]>(
-      knowledgeBaseKeys.list(workspaceId, visibility),
-      () => knowledgeBaseService.getKnowledgeBaseList(visibility),
+      knowledgeBaseKeys.list(workspaceId, filter),
+      () =>
+        knowledgeBaseService.getKnowledgeBaseList(
+          filter
+            ? isListScope
+              ? { listScope: filter }
+              : { visibility: filter as 'private' | 'public' }
+            : undefined,
+        ),
       {
         fallbackData: [],
         onSuccess: () => {

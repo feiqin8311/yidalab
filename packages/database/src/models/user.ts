@@ -1,3 +1,4 @@
+import { INBOX_SESSION_ID } from '@lobechat/const';
 import type {
   SSOProvider,
   UserGeneralConfig,
@@ -15,7 +16,7 @@ import { merge } from '@/utils/merge';
 import { today } from '@/utils/time';
 
 import type { NewUser, UserItem, UserSettingsItem } from '../schemas';
-import { messages, nextauthAccounts, topics, users, userSettings } from '../schemas';
+import { agents, messages, nextauthAccounts, topics, users, userSettings } from '../schemas';
 import type { LobeChatDatabase } from '../type';
 
 type DecryptUserKeyVaults = (
@@ -40,7 +41,15 @@ export type ListUsersForMemoryExtractorOptions = {
   whitelist?: string[];
 };
 
-export type ListUsersForHourlyMemoryExtractorOptions = ListUsersForMemoryExtractorOptions;
+export type ListUsersForHourlyMemoryExtractorOptions = ListUsersForMemoryExtractorOptions & {
+  /**
+   * When set, only users with at least one user-role message in
+   * `[messageActivityFrom, messageActivityUntil]` (inclusive) are eligible.
+   * Used by the daily memory cron: skip users with no conversation that day.
+   */
+  messageActivityFrom?: Date;
+  messageActivityUntil?: Date;
+};
 
 export interface UserInfoForAIGeneration {
   responseLanguage: string;
@@ -106,14 +115,15 @@ export class UserModel {
       .select({
         avatar: users.avatar,
         agentOnboarding: users.agentOnboarding,
+        company: users.company,
         email: users.email,
         firstName: users.firstName,
-        fullName: users.fullName,
         interests: users.interests,
         isOnboarded: users.isOnboarded,
         lastName: users.lastName,
         onboarding: users.onboarding,
         preference: users.preference,
+        position: users.position,
         settingsDefaultAgent: userSettings.defaultAgent,
 
         settingsGeneral: userSettings.general,
@@ -167,14 +177,15 @@ export class UserModel {
     return {
       avatar: state.avatar || undefined,
       agentOnboarding: state.agentOnboarding || undefined,
+      company: state.company || undefined,
       email: state.email || undefined,
       firstName: state.firstName || undefined,
-      fullName: state.fullName || undefined,
       interests: state.interests || undefined,
       isOnboarded: state.isOnboarded,
       lastName: state.lastName || undefined,
       onboarding: state.onboarding || undefined,
       preference: state.preference as UserPreference,
+      position: state.position || undefined,
       settings,
       userId: this.userId,
       username: state.username || undefined,
@@ -216,11 +227,32 @@ export class UserModel {
 
   updateUser = async (value: Partial<UserItem>) => {
     const nextValue = UserModel.normalizeUniqueUserFields(value);
+    const updatedAt = new Date();
 
-    return this.db
-      .update(users)
-      .set({ ...nextValue, updatedAt: new Date() })
-      .where(eq(users.id, this.userId));
+    return this.db.transaction(async (tx) => {
+      const result = await tx
+        .update(users)
+        .set({ ...nextValue, updatedAt })
+        .where(eq(users.id, this.userId));
+
+      if (value.username !== undefined) {
+        const [user] = await tx
+          .select({ username: users.username })
+          .from(users)
+          .where(eq(users.id, this.userId))
+          .limit(1);
+        const title = user?.username?.trim();
+
+        if (title) {
+          await tx
+            .update(agents)
+            .set({ title, updatedAt })
+            .where(and(eq(agents.userId, this.userId), eq(agents.slug, INBOX_SESSION_ID)));
+        }
+      }
+
+      return result;
+    });
   };
 
   /**
@@ -433,7 +465,25 @@ export class UserModel {
     // User memory defaults to enabled=true when user settings are missing.
     const memoryEnabledCondition = sql`COALESCE((${userSettings.memory} ->> 'enabled')::boolean, true) = true`;
     // Eligible users must have at least one topic with at least one user message.
-    const hasChattedTopicCondition = sql`
+    // Optional window: only messages created in [from, until] count (daily cron).
+    const activityFrom = options.messageActivityFrom;
+    const activityUntil = options.messageActivityUntil;
+    const hasChattedTopicCondition =
+      activityFrom && activityUntil
+        ? sql`
+      EXISTS (
+        SELECT 1
+        FROM ${topics}
+        INNER JOIN ${messages}
+          ON ${messages.topicId} = ${topics.id}
+          AND ${messages.userId} = ${users.id}
+          AND ${messages.role} = 'user'
+          AND ${messages.createdAt} >= ${activityFrom}
+          AND ${messages.createdAt} <= ${activityUntil}
+        WHERE ${topics.userId} = ${users.id}
+      )
+    `
+        : sql`
       EXISTS (
         SELECT 1
         FROM ${topics}
@@ -470,7 +520,7 @@ export class UserModel {
     const result = await db
       .select({
         firstName: users.firstName,
-        fullName: users.fullName,
+        username: users.username,
         general: userSettings.general,
       })
       .from(users)
@@ -483,7 +533,7 @@ export class UserModel {
 
     return {
       responseLanguage: general?.responseLanguage || 'en-US',
-      userName: user?.fullName || user?.firstName || 'User',
+      userName: user?.username || user?.firstName || 'User',
     };
   };
 }

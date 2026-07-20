@@ -7,7 +7,6 @@ import NavHeader from '@/features/NavHeader';
 
 import CreateButton from '../features/CreateButton';
 import StoreSearchBar from '../features/Search';
-import UserAvatar from '../features/UserAvatar';
 import { styles } from './Header/style';
 
 const Header = memo(() => {
@@ -27,7 +26,6 @@ const Header = memo(() => {
       right={
         <Flexbox horizontal align="center" gap={8}>
           {!isCustomBranding && <CreateButton />}
-          <UserAvatar />
         </Flexbox>
       }
       styles={{

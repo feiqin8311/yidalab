@@ -12,10 +12,8 @@ import {
   BoxIcon,
   CheckIcon,
   ChevronDownIcon,
-  ExternalLinkIcon,
   InfoIcon,
   LaptopIcon,
-  MonitorDownIcon,
   MonitorIcon,
   MonitorOffIcon,
   SettingsIcon,
@@ -26,7 +24,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useSelectExecutionTarget } from '@/features/ChatInput/hooks/useSelectExecutionTarget';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
-import { resolveExecutionTarget } from '@/helpers/executionTarget';
+import { isCloudSandboxExecutionEnabled, resolveExecutionTarget } from '@/helpers/executionTarget';
 import { useIsGatewayModeEnabled } from '@/helpers/gatewayMode';
 import { lambdaQuery } from '@/libs/trpc/client';
 import { useAgentStore } from '@/store/agent';
@@ -112,30 +110,6 @@ const styles = createStaticStyles(({ css }) => ({
     padding-block: 8px;
     padding-inline: 8px;
     font-size: 12px;
-    color: ${cssVar.colorTextQuaternary};
-  `,
-  downloadCard: css`
-    cursor: pointer;
-
-    display: flex;
-    gap: 10px;
-    align-items: center;
-
-    padding-block: 8px;
-    padding-inline: 8px;
-    border-radius: ${cssVar.borderRadius};
-
-    text-decoration: none;
-
-    transition: background-color 0.2s;
-
-    &:hover {
-      background: ${cssVar.colorFillTertiary};
-    }
-  `,
-  downloadCardArrow: css`
-    flex: none;
-    margin-inline-start: auto;
     color: ${cssVar.colorTextQuaternary};
   `,
   option: css`
@@ -227,21 +201,6 @@ const styles = createStaticStyles(({ css }) => ({
 
     &:hover {
       color: ${cssVar.colorTextSecondary};
-    }
-  `,
-  headerLink: css`
-    display: flex;
-    gap: 3px;
-    align-items: center;
-
-    font-size: 11px;
-    color: ${cssVar.colorTextQuaternary};
-    text-decoration: none;
-
-    transition: color 0.2s;
-
-    &:hover {
-      color: ${cssVar.colorPrimary};
     }
   `,
   headerTitle: css`
@@ -480,17 +439,16 @@ const HeteroDeviceSwitcher = memo<HeteroDeviceSwitcherProps>(({ agentId }) => {
     ? [...privateDevices, ...workspaceDevices]
     : [...personalOnlyDevices];
   const hasNoDevices = deviceRows.length === 0;
-  // On web with no device, the prominent download card below replaces the small
-  // header link — avoid showing the same CTA twice. Workspace agents get the
-  // enroll hint instead: downloading the desktop app wouldn't help until the
-  // machine is enrolled into the workspace pool.
-  const showWebDownloadCard = !isDesktop && !isWorkspaceAgent && hasNoDevices && !isLoading;
   const showWorkspaceEnrollHint = isWorkspaceAgent && hasNoDevices && !isLoading;
 
-  // Compute chip
-  let chipIcon: ReactNode = <Icon icon={BoxIcon} size={14} />;
-  let chipLabel = t('heteroAgent.executionTarget.sandbox');
-  if (executionTarget === 'none') {
+  // Compute chip. Default is "none" (not sandbox) so a disabled cloud-sandbox
+  // product gate never flashes the sandbox label while resolving.
+  let chipIcon: ReactNode = <Icon icon={MonitorOffIcon} size={14} />;
+  let chipLabel = t('heteroAgent.executionTarget.none');
+  if (executionTarget === 'sandbox' && isCloudSandboxExecutionEnabled()) {
+    chipIcon = <Icon icon={BoxIcon} size={14} />;
+    chipLabel = t('heteroAgent.executionTarget.sandbox');
+  } else if (executionTarget === 'none') {
     chipIcon = <Icon icon={MonitorOffIcon} size={14} />;
     chipLabel = t('heteroAgent.executionTarget.none');
   } else if (executionTarget === 'auto') {
@@ -553,7 +511,7 @@ const HeteroDeviceSwitcher = memo<HeteroDeviceSwitcherProps>(({ agentId }) => {
             </span>
           </Tooltip>
         </Flexbox>
-        {isDesktop || showWebDownloadCard ? (
+        {isDesktop ? (
           <button
             className={styles.manageButton}
             type="button"
@@ -565,17 +523,7 @@ const HeteroDeviceSwitcher = memo<HeteroDeviceSwitcherProps>(({ agentId }) => {
             <Icon icon={SettingsIcon} size={11} />
             <span>{t('heteroAgent.executionTarget.manage')}</span>
           </button>
-        ) : (
-          <a
-            className={styles.headerLink}
-            href="https://lobehub.com/downloads"
-            rel="noreferrer"
-            target="_blank"
-          >
-            <Icon icon={ExternalLinkIcon} size={11} />
-            <span>{t('heteroAgent.executionTarget.downloadDesktop')}</span>
-          </a>
-        )}
+        ) : null}
       </div>
       {isHetero ? null : (
         <OptionRow
@@ -610,13 +558,15 @@ const HeteroDeviceSwitcher = memo<HeteroDeviceSwitcherProps>(({ agentId }) => {
           onClick={() => void handleSelect('local')}
         />
       ) : null}
-      <OptionRow
-        active={isActive('sandbox')}
-        desc={t('heteroAgent.executionTarget.sandboxDesc')}
-        icon={<Icon icon={BoxIcon} size={14} />}
-        label={t('heteroAgent.executionTarget.sandbox')}
-        onClick={() => void handleSelect('sandbox')}
-      />
+      {isCloudSandboxExecutionEnabled() ? (
+        <OptionRow
+          active={isActive('sandbox')}
+          desc={t('heteroAgent.executionTarget.sandboxDesc')}
+          icon={<Icon icon={BoxIcon} size={14} />}
+          label={t('heteroAgent.executionTarget.sandbox')}
+          onClick={() => void handleSelect('sandbox')}
+        />
+      ) : null}
       {deviceRows.length > 0 ? (
         <div className={styles.deviceList}>
           {showDeviceGroups ? (
@@ -655,29 +605,6 @@ const HeteroDeviceSwitcher = memo<HeteroDeviceSwitcherProps>(({ agentId }) => {
             cmd: `lh connect --workspace ${agentWorkspaceId}`,
           })}
         </div>
-      ) : null}
-      {/* On web with no remote device, guide the user to the desktop app (which
-          unlocks local execution + `lh connect`) rather than a muted dead-end. */}
-      {showWebDownloadCard ? (
-        <a
-          className={styles.downloadCard}
-          href="https://lobehub.com/downloads"
-          rel="noreferrer"
-          target="_blank"
-        >
-          <div className={styles.optionIcon}>
-            <Icon icon={MonitorDownIcon} size={14} />
-          </div>
-          <div className={styles.optionMeta}>
-            <div className={styles.optionTitle}>
-              {t('heteroAgent.executionTarget.downloadDesktopTitle')}
-            </div>
-            <div className={styles.desc}>
-              {t('heteroAgent.executionTarget.downloadDesktopDesc')}
-            </div>
-          </div>
-          <Icon className={styles.downloadCardArrow} icon={ExternalLinkIcon} size={13} />
-        </a>
       ) : null}
       {hasNoDevices && !isLoading && isDesktop && !isWorkspaceAgent ? (
         <div className={styles.empty}>{t('heteroAgent.executionTarget.noDevices')}</div>

@@ -23,8 +23,9 @@ interface PromptsProps {
 const Prompts = memo<PromptsProps>(({ mode, activeKey = [], setActiveKey }) => {
   const { t } = useTranslation(['discover', 'plugin']);
   const { prompts } = useDetailContext();
+  const list = prompts || [];
 
-  if (!prompts)
+  if (!list.length)
     return (
       <Block variant={'outlined'}>
         <Empty
@@ -42,7 +43,7 @@ const Prompts = memo<PromptsProps>(({ mode, activeKey = [], setActiveKey }) => {
       expandIconPlacement={'end'}
       gap={8}
       variant={'outlined'}
-      items={prompts.map((item) => {
+      items={list.map((item) => {
         return {
           children: (
             <CollapseLayout

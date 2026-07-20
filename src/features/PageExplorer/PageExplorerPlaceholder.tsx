@@ -3,12 +3,13 @@ import { Notion } from '@lobehub/icons';
 import { Center, FileTypeIcon, Flexbox, Icon, Text } from '@lobehub/ui';
 import { Upload } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
-import { ArrowUpIcon, PlusIcon } from 'lucide-react';
+import { ArrowUpIcon, BookMarked, PlusIcon } from 'lucide-react';
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import NavHeader from '@/features/NavHeader';
 import useNotionImport from '@/features/ResourceManager/components/Header/hooks/useNotionImport';
+import useObsidianImport from '@/features/ResourceManager/components/Header/hooks/useObsidianImport';
 import { usePermission } from '@/hooks/usePermission';
 import { useFileStore } from '@/store/file';
 import { usePageStore } from '@/store/page';
@@ -104,13 +105,29 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
       t,
     });
 
-    // Wrap handleNotionImport to ensure UI updates
+    const obsidianImport = useObsidianImport({
+      createDocument,
+      currentFolderId: null,
+      libraryId: knowledgeBaseId ?? null,
+      refetchResources: fetchDocuments,
+      t,
+    });
+
+    // Wrap import handlers so permission is checked before file handling
     const handleNotionImportWithLocalUpdate = async (
       event: React.ChangeEvent<HTMLInputElement>,
     ) => {
       if (!canCreate) return;
 
       await notionImport.handleNotionImport(event);
+    };
+
+    const handleObsidianImportWithLocalUpdate = async (
+      event: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+      if (!canCreate) return;
+
+      await obsidianImport.handleObsidianImport(event);
     };
 
     const handleCreateDocument = async (content: string, title: string) => {
@@ -329,6 +346,28 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
                 type={'file'}
               />
             </Flexbox>
+
+            {/* Import from Obsidian */}
+            <Flexbox
+              className={styles.card}
+              padding={16}
+              style={canCreate ? undefined : { cursor: 'not-allowed', opacity: 0.5 }}
+              onClick={() => {
+                if (!canCreate) return;
+
+                obsidianImport.handleOpenObsidianGuide();
+              }}
+            >
+              <span className={styles.actionTitle}>{t('pageEditor.empty.importObsidian')}</span>
+              <div className={styles.glow} style={{ background: cssVar.magenta }} />
+              <FileTypeIcon
+                className={styles.icon}
+                color={cssVar.magenta}
+                icon={<Icon color={'#fff'} icon={BookMarked} />}
+                size={ICON_SIZE}
+                type={'file'}
+              />
+            </Flexbox>
           </Flexbox>
         </Center>
         <input
@@ -337,6 +376,13 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
           style={{ display: 'none' }}
           type="file"
           onChange={handleNotionImportWithLocalUpdate}
+        />
+        <input
+          accept=".zip"
+          ref={obsidianImport.obsidianInputRef}
+          style={{ display: 'none' }}
+          type="file"
+          onChange={handleObsidianImportWithLocalUpdate}
         />
       </>
     );

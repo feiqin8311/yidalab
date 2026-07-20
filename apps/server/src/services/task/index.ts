@@ -18,6 +18,7 @@ import { TaskTopicModel } from '@/database/models/taskTopic';
 import { TopicModel } from '@/database/models/topic';
 import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
+import { assertTaskAssigneeUsableBy } from '@/database/utils/agent-access';
 
 import { AiAgentService } from '../aiAgent';
 import { extractFileIdsFromEditorData } from '../file/extractFileIdsFromEditorData';
@@ -126,30 +127,44 @@ export class TaskService {
     // SQL — both are needed for the same `tasks.create` row, and a second
     // round-trip would just retrace the same primary-key path.
     let agentVisibility: 'private' | 'public' | null = null;
+    let assigneeIsColleagueInbox = false;
     if (input.assigneeAgentId) {
       const agentInfo = await this.agentModel.getAgentSnapshotForTaskCreate(input.assigneeAgentId);
       if (agentInfo) {
         if (agentInfo.snapshot) createData.config = agentInfo.snapshot;
         agentVisibility = agentInfo.visibility;
+        assigneeIsColleagueInbox = !!agentInfo.isColleagueInbox;
       }
     }
 
     // Resolve visibility precedence: explicit caller value > parent task
     // (subtasks inherit) > assignee agent (private agent → private task) >
-    // schema default ('public').
+    // schema default ('public'). Colleague inboxes do NOT force private tasks.
     if (createData.visibility === undefined) {
       if (parentVisibility) {
         createData.visibility = parentVisibility;
-      } else if (agentVisibility === 'private') {
+      } else if (agentVisibility === 'private' && !assigneeIsColleagueInbox) {
         createData.visibility = 'private';
       }
     }
 
-    // Invariant: a public task can never be executed by a private agent. The
-    // explicit-override branch above can produce this combination if the
-    // caller passes `visibility='public'` while picking a private agent, so
-    // we have to assert here even though the inference path can't.
-    this.assertAgentVisibilityCompat(createData.visibility, agentVisibility);
+    // Clients (e.g. workspace inline create) often default tasks to public.
+    // Own private assistants (inbox / private agents) cannot run public tasks —
+    // coerce rather than reject so "assign my assistant" just works. Colleague
+    // inboxes already may stay on public tasks (company handoff).
+    if (
+      createData.visibility === 'public' &&
+      agentVisibility === 'private' &&
+      !assigneeIsColleagueInbox
+    ) {
+      createData.visibility = 'private';
+    }
+
+    // Invariant: a public task can never be executed by a private agent.
+    // Exception: workspace member inboxes (colleague assistants).
+    if (!assigneeIsColleagueInbox) {
+      this.assertAgentVisibilityCompat(createData.visibility, agentVisibility);
+    }
 
     // Invariant: a subtask can never be more public than its parent.
     // Otherwise workspace members see an orphaned child whose parent is
@@ -474,12 +489,19 @@ export class TaskService {
 
   private async assertAssigneeAgentBelongsToUser(assigneeAgentId?: string | null): Promise<void> {
     if (!assigneeAgentId) return;
-    // `existsById` already applies the workspace + visibility predicate, so a
-    // cross-user private agent never resolves. NOT_FOUND (not BAD_REQUEST or
-    // FORBIDDEN) keeps every private-agent leak path returning the same code.
-    const exists = await this.agentModel.existsById(assigneeAgentId);
-    if (!exists) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Assignee agent not found' });
+    // Same grant as task.listAssignableAgents / router create+update: public or
+    // own agents, plus same-workspace member inboxes (colleague assistants).
+    // NOT_FOUND (not FORBIDDEN) so private non-inbox agents cannot be probed.
+    try {
+      await assertTaskAssigneeUsableBy(this.db, assigneeAgentId, {
+        userId: this.userId,
+        workspaceId: this.workspaceId,
+      });
+    } catch (error) {
+      if (error instanceof TRPCError && error.code === 'NOT_FOUND') {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Assignee agent not found' });
+      }
+      throw error;
     }
   }
 
@@ -851,7 +873,7 @@ export class TaskService {
       map.set(a.id, { avatar: a.avatar, id: a.id, name: a.title, type: 'agent' });
     }
     for (const u of userRows) {
-      map.set(u.id, { avatar: u.avatar, id: u.id, name: u.fullName, type: 'user' });
+      map.set(u.id, { avatar: u.avatar, id: u.id, name: u.username, type: 'user' });
     }
 
     return map;

@@ -74,10 +74,6 @@ vi.mock('antd', () => ({
   ),
 }));
 
-vi.mock('@/business/client/features/AccountDeletion', () => ({
-  default: () => <div />,
-}));
-
 vi.mock('@/features/DataImporter', () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));

@@ -6,6 +6,29 @@ const minimaxCodingPlanChatModels: AIChatModelCard[] = [
   {
     abilities: {
       functionCall: true,
+      reasoning: true,
+      video: true,
+      vision: true,
+    },
+    contextWindowTokens: 1_000_000,
+    description:
+      "MiniMax M3 is MiniMax's multimodal flagship model with native image and video understanding, coding, and agentic capabilities.",
+    displayName: 'MiniMax M3',
+    enabled: true,
+    family: 'minimax',
+    generation: 'minimax-m3',
+    id: 'MiniMax-M3',
+    maxOutput: 524_288,
+    organization: 'MiniMax',
+    releasedAt: '2026-06-01',
+    settings: {
+      extendParams: ['enableReasoning'],
+    },
+    type: 'chat',
+  },
+  {
+    abilities: {
+      functionCall: true,
     },
     contextWindowTokens: 204_800,
     description:

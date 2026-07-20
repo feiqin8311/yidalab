@@ -112,12 +112,8 @@ export class OnboardingActionHintInjector extends BaseVirtualLastUserContentProv
       hints.push(
         'When the user says "call you X", "your name is X", "叫你 X", "你叫 X", or equivalent phrasing, X is agentName. When the user says "use Y as the avatar", "头像用 Y", or equivalent phrasing, Y is agentEmoji. Save those assistant identity fields before discussing the user profile.',
       );
-      if (ctx.userInfo?.displayName || ctx.userInfo?.fullName || ctx.userInfo?.username) {
-        const userInfoHints = [
-          ctx.userInfo.displayName,
-          ctx.userInfo.fullName,
-          ctx.userInfo.username,
-        ]
+      if (ctx.userInfo?.displayName || ctx.userInfo?.username) {
+        const userInfoHints = [ctx.userInfo.displayName, ctx.userInfo.username]
           .filter(Boolean)
           .map((value) => JSON.stringify(value).replaceAll('<', '\\u003c'));
         hints.push(
@@ -125,17 +121,17 @@ export class OnboardingActionHintInjector extends BaseVirtualLastUserContentProv
         );
       }
       hints.push(
-        'When the user settles on a name and emoji: call saveUserQuestion with agentName and agentEmoji only, then persist SOUL.md. Do NOT include fullName in the same saveUserQuestion call unless the user explicitly says that value is their own name. If SOUL.md is already non-empty, call updateDocument(type="soul") with the hunk mode that matches your edit — `insertAt`/`replaceLines`/`deleteLines` when you can read the line numbers from <current_soul_document>, or `replace` for a textual tweak. If empty, use writeDocument(type="soul") for the initial write.',
+        'When the user settles on a name and emoji: call saveUserQuestion with agentName and agentEmoji only, then persist SOUL.md. Do NOT include username in the same saveUserQuestion call unless the user explicitly says that value is their own username. If SOUL.md is already non-empty, call updateDocument(type="soul") with the hunk mode that matches your edit — `insertAt`/`replaceLines`/`deleteLines` when you can read the line numbers from <current_soul_document>, or `replace` for a textual tweak. If empty, use writeDocument(type="soul") for the initial write.',
       );
     } else if (phase.includes('User Identity')) {
       if (ctx.userInfo?.displayName) {
         const displayName = JSON.stringify(ctx.userInfo.displayName).replaceAll('<', '\\u003c');
         hints.push(
-          `Initial account user_info suggests displayName ${displayName}. Treat it as unconfirmed: ask whether you may use that name, then call saveUserQuestion with fullName only after the user confirms it or gives a correction.`,
+          `Initial account user_info suggests displayName ${displayName}. Treat it as unconfirmed: ask whether the username is correct, then call saveUserQuestion with username only after the user confirms it or gives a correction.`,
         );
       }
       hints.push(
-        'THIS TURN, as soon as the user tells you their name, call saveUserQuestion with fullName — do NOT wait until you also know their role. Persist the name immediately.',
+        'THIS TURN, as soon as the user confirms their username, call saveUserQuestion with username — do NOT wait until you also know their role. Persist it immediately.',
       );
       hints.push(
         'Seed the persona document the moment you have ANY useful fact about the user (just a name, just a role, or both). If empty, call writeDocument(type="persona") with a short initial draft containing whatever you know so far (even one line). If already non-empty, call updateDocument(type="persona") with `insertAt` at the end of the right section (use `line = totalLines + 1` to append) or `replace` for a textual tweak. Do NOT defer persistence until more facts arrive.',

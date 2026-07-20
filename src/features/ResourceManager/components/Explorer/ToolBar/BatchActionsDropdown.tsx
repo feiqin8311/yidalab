@@ -77,14 +77,12 @@ const BatchActionsDropdown = memo<BatchActionsDropdownProps>(({ selectCount, onA
       return items;
     }
 
-    // Filter out current knowledge base and constrain by visibility scope in
-    // workspace mode: the top-level list is already scoped by `listVisibility`,
-    // so all selected files share that scope and can only join KBs of the
-    // matching visibility. Personal mode (no active workspace) skips the filter.
+    // In workspace mode, only match KBs that fit the current list space:
+    // company tab → public KBs; mine/shared → private KBs (owner or granted).
     const targetKbVisibility: 'private' | 'public' | null = activeWorkspaceId
-      ? listVisibility === 'private'
-        ? 'private'
-        : 'public'
+      ? listVisibility === 'workspace'
+        ? 'public'
+        : 'private'
       : null;
     const availableKnowledgeBases = knowledgeBases.filter((kb) => {
       if (kb.id === libraryId) return false;

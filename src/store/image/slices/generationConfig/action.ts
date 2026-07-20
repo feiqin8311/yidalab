@@ -46,8 +46,18 @@ export function getModelAndDefaults(model: string, provider: string) {
     );
   }
 
-  const parametersSchema = activeModel.parameters as ModelParamsSchema;
-  const defaultValues = extractDefaultValues(parametersSchema);
+  const parametersSchema = (activeModel.parameters ?? {
+    prompt: { default: '' },
+  }) as ModelParamsSchema;
+
+  let defaultValues: RuntimeImageGenParams;
+  try {
+    defaultValues = extractDefaultValues(parametersSchema);
+  } catch {
+    // Corrupt / incomplete schema (e.g. empty `{}` from remote fetch) must not
+    // block model switching — fall back to prompt-only defaults.
+    defaultValues = extractDefaultValues({ prompt: { default: '' } });
+  }
 
   return { defaultValues, activeModel, parametersSchema };
 }

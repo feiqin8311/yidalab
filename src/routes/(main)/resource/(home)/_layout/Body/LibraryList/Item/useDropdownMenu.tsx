@@ -1,13 +1,14 @@
-import { type MenuProps } from '@lobehub/ui';
+import { createRawModal, type MenuProps } from '@lobehub/ui';
 import { Icon } from '@lobehub/ui';
 import { confirmModal } from '@lobehub/ui/base-ui';
 import { App } from 'antd';
-import { EyeOffIcon, FileText, GlobeIcon, PencilLine, Trash } from 'lucide-react';
+import { EyeOffIcon, FileText, GlobeIcon, PencilLine, Share2Icon, Trash } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useKnowledgeBaseTransferMenuItem } from '@/business/client/hooks/useKnowledgeBaseTransferMenuItem';
 import { useCreateNewModal } from '@/features/LibraryModal';
+import ResourceShareModal from '@/features/ResourceManager/components/ResourceShareModal';
 import VisibilityConfirmContent from '@/features/VisibilityConfirmContent';
 import { usePermission } from '@/hooks/usePermission';
 import { useKnowledgeBaseStore } from '@/store/library';
@@ -143,6 +144,41 @@ export const useDropdownMenu = ({
             handleEditDescription();
           },
         },
+        canEdit &&
+          isOwnPrivateKb && {
+            icon: <Icon icon={Share2Icon} />,
+            key: 'manageSharing',
+            label: t('resources.share.menu', { ns: 'chat' }),
+            onClick: (info: any) => {
+              info.domEvent?.stopPropagation();
+              createRawModal(ResourceShareModal, {
+                resourceId: id,
+                resourceType: 'knowledge_base',
+                visibility,
+                onSuccess: () => {
+                  void useKnowledgeBaseStore.getState().refreshKnowledgeBaseList();
+                },
+              });
+            },
+          },
+        canEdit &&
+          isOwnPublicKb && {
+            icon: <Icon icon={Share2Icon} />,
+            key: 'manageSharingPublic',
+            label: t('resources.share.menu', { ns: 'chat' }),
+            onClick: (info: any) => {
+              info.domEvent?.stopPropagation();
+              createRawModal(ResourceShareModal, {
+                resourceId: id,
+                resourceType: 'knowledge_base',
+                visibility,
+                onSuccess: () => {
+                  void useKnowledgeBaseStore.getState().refreshKnowledgeBaseList();
+                },
+              });
+            },
+          },
+        canEdit && (isOwnPrivateKb || isOwnPublicKb) && { type: 'divider' },
         canEdit &&
           isOwnPrivateKb && {
             icon: <Icon icon={GlobeIcon} />,

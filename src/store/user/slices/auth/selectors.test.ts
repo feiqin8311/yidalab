@@ -24,6 +24,15 @@ describe('userProfileSelectors', () => {
       expect(userProfileSelectors.displayUserName(store)).toBe('johndoe');
     });
 
+    it('should prefer username over username', () => {
+      const store: UserStore = {
+        isSignedIn: true,
+        user: { username: 'johndoe' },
+      } as UserStore;
+
+      expect(userProfileSelectors.displayUserName(store)).toBe('johndoe');
+    });
+
     it('should return email when signed in but username is not existed in UserStore', () => {
       const store: UserStore = {
         isSignedIn: true,
@@ -61,41 +70,41 @@ describe('userProfileSelectors', () => {
     });
   });
 
-  describe('fullName', () => {
-    it('should return user fullName if exist', () => {
+  describe('username', () => {
+    it('should return user username if exist', () => {
       const store: UserStore = {
-        user: { fullName: 'John Doe' },
+        user: { username: 'John Doe' },
       } as UserStore;
 
-      expect(userProfileSelectors.fullName(store)).toBe('John Doe');
+      expect(userProfileSelectors.username(store)).toBe('John Doe');
     });
 
     it('should return empty string if not exist', () => {
       const store: UserStore = {
-        user: { fullName: undefined },
+        user: { username: undefined },
       } as UserStore;
 
-      expect(userProfileSelectors.fullName(store)).toBe('');
+      expect(userProfileSelectors.username(store)).toBe('');
     });
   });
 
   describe('nickName', () => {
-    it('should return user fullName when signed in', () => {
-      const store: UserStore = {
-        isSignedIn: true,
-        user: { fullName: 'John Doe' },
-      } as UserStore;
-
-      expect(userProfileSelectors.nickName(store)).toBe('John Doe');
-    });
-
-    it('should return user username when fullName is not available', () => {
+    it('should prefer username when signed in', () => {
       const store: UserStore = {
         isSignedIn: true,
         user: { username: 'johndoe' },
       } as UserStore;
 
       expect(userProfileSelectors.nickName(store)).toBe('johndoe');
+    });
+
+    it('should return user username when username is not available', () => {
+      const store: UserStore = {
+        isSignedIn: true,
+        user: { username: 'John Doe' },
+      } as UserStore;
+
+      expect(userProfileSelectors.nickName(store)).toBe('John Doe');
     });
 
     it('should return anonymous nickname when not signed in', () => {

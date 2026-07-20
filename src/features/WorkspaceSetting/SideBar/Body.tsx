@@ -37,7 +37,7 @@ const Body = memo(() => {
           WorkspaceSettingsGroupKey.General,
           WorkspaceSettingsGroupKey.Subscription,
           WorkspaceSettingsGroupKey.Agent,
-          WorkspaceSettingsGroupKey.Admin,
+          WorkspaceSettingsGroupKey.System,
         ]}
       >
         {groups.map((group) => (

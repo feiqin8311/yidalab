@@ -1,3 +1,4 @@
+import { isCloudSandboxExecutionEnabled } from '@/helpers/executionTarget';
 import { toolsClient } from '@/libs/trpc/client';
 import {
   type CallToolResult,
@@ -6,7 +7,18 @@ import {
   type ExportAndUploadFileResult,
 } from '@/server/routers/tools/market';
 
+const SANDBOX_DISABLED_MESSAGE =
+  'Cloud sandbox is disabled in this deployment (no market sandbox provisioned). ' +
+  'Do not write under /home/user. For interactive HTML reports use Artifacts (<lobeArtifact>). ' +
+  'For shell work, select an online execution device.';
+
 class CloudSandboxService {
+  private assertEnabled(): void {
+    if (!isCloudSandboxExecutionEnabled()) {
+      throw new Error(SANDBOX_DISABLED_MESSAGE);
+    }
+  }
+
   /**
    * Call a cloud sandbox tool
    * @param toolName - The name of the tool to call (e.g., 'runCommand', 'writeFile')
@@ -18,6 +30,7 @@ class CloudSandboxService {
     params: Record<string, any>,
     context: { topicId: string; userId?: string },
   ): Promise<CallToolResult> {
+    this.assertEnabled();
     const input: ExecInSandboxInput = {
       params,
       toolName,
@@ -41,6 +54,7 @@ class CloudSandboxService {
     filename: string,
     topicId: string,
   ): Promise<ExportAndUploadFileResult> {
+    this.assertEnabled();
     const input: ExportAndUploadFileInput = {
       filename,
       path,

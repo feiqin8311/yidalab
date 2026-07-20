@@ -43,7 +43,6 @@ export class GenerationTopicModel {
     const rows = await this.db
       .select({
         avatar: users.avatar,
-        fullName: users.fullName,
         topic: generationTopics,
         username: users.username,
       })
@@ -53,7 +52,7 @@ export class GenerationTopicModel {
       .where(and(...conditions));
 
     return Promise.all(
-      rows.map(async ({ topic, avatar, fullName, username }) => {
+      rows.map(async ({ topic, avatar, username }) => {
         const coverUrl = topic.coverUrl
           ? await this.fileService.getFullFileUrl(topic.coverUrl)
           : topic.coverUrl;
@@ -62,7 +61,6 @@ export class GenerationTopicModel {
           coverUrl,
           creator: {
             avatar,
-            fullName,
             id: topic.userId,
             username,
           },

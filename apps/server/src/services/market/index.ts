@@ -119,6 +119,10 @@ export class MarketService {
     );
   }
 
+  private isUnauthorizedError = (error: unknown) => (error as { status?: number })?.status === 401;
+
+  private publicMarket = () => new MarketService().market;
+
   // ============================== Factory Methods ==============================
 
   /**
@@ -440,7 +444,14 @@ export class MarketService {
   }) {
     log('searchSkill: %O', params);
 
-    const result = await this.market.marketSkills.getSkillList(params);
+    let result;
+    try {
+      result = await this.market.marketSkills.getSkillList(params);
+    } catch (error) {
+      if (!this.isUnauthorizedError(error)) throw error;
+
+      result = await this.publicMarket().marketSkills.getSkillList(params);
+    }
 
     log('searchSkill response: %O', result);
 
@@ -453,7 +464,14 @@ export class MarketService {
   async getSkillDetail(identifier: string, options?: { locale?: string; version?: string }) {
     log('getSkillDetail: %s, options: %O', identifier, options);
 
-    const result = await this.market.marketSkills.getSkillDetail(identifier, options);
+    let result;
+    try {
+      result = await this.market.marketSkills.getSkillDetail(identifier, options);
+    } catch (error) {
+      if (!this.isUnauthorizedError(error)) throw error;
+
+      result = await this.publicMarket().marketSkills.getSkillDetail(identifier, options);
+    }
 
     log('getSkillDetail response: %O', result);
 
@@ -482,7 +500,13 @@ export class MarketService {
   async getSkillCategories() {
     log('getSkillCategories');
 
-    return this.market.marketSkills.getCategories();
+    try {
+      return await this.market.marketSkills.getCategories();
+    } catch (error) {
+      if (!this.isUnauthorizedError(error)) throw error;
+
+      return this.publicMarket().marketSkills.getCategories();
+    }
   }
 
   /**

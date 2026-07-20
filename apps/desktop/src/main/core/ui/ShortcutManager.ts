@@ -1,6 +1,10 @@
-import { DEFAULT_ELECTRON_DESKTOP_SHORTCUTS } from '@lobechat/const/desktopGlobalShortcuts';
+import {
+  DEFAULT_ELECTRON_DESKTOP_SHORTCUTS,
+  DesktopHotkeyEnum,
+} from '@lobechat/const/desktopGlobalShortcuts';
 import { globalShortcut } from 'electron';
 
+import { isPersonalSettingsHidden } from '@/utils/featureFlags';
 import { createLogger } from '@/utils/logger';
 
 import type { App } from '../App';
@@ -10,12 +14,7 @@ const logger = createLogger('core:ShortcutManager');
 
 export interface ShortcutUpdateResult {
   errorType?:
-    | 'INVALID_ID'
-    | 'INVALID_FORMAT'
-    | 'NO_MODIFIER'
-    | 'CONFLICT'
-    | 'SYSTEM_OCCUPIED'
-    | 'UNKNOWN';
+    'INVALID_ID' | 'INVALID_FORMAT' | 'NO_MODIFIER' | 'CONFLICT' | 'SYSTEM_OCCUPIED' | 'UNKNOWN';
   success: boolean;
 }
 
@@ -268,6 +267,13 @@ export class ShortcutManager {
     } catch (error) {
       logger.error('Error loading shortcuts config:', error);
       this.shortcutsConfig = { ...DEFAULT_ELECTRON_DESKTOP_SHORTCUTS };
+      this.saveShortcutsConfig();
+    }
+
+    // Once the workspace-only settings rollout lands, the legacy Cmd+, binding
+    // no longer has anywhere to navigate. Empty accelerator = unregistered.
+    if (isPersonalSettingsHidden() && this.shortcutsConfig[DesktopHotkeyEnum.OpenSettings]) {
+      this.shortcutsConfig[DesktopHotkeyEnum.OpenSettings] = '';
       this.saveShortcutsConfig();
     }
   }

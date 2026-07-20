@@ -2,7 +2,6 @@
 
 import { AGENT_ONBOARDING_ENABLED } from '@lobechat/business-const';
 import { isDesktop } from '@lobechat/const';
-import { MAX_ONBOARDING_STEPS } from '@lobechat/types';
 import { Center, Flexbox, Text } from '@lobehub/ui';
 import { Divider } from 'antd';
 import { cx, useTheme } from 'antd-style';
@@ -18,7 +17,10 @@ import { useIsDark } from '@/hooks/useIsDark';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useServerConfigStore } from '@/store/serverConfig';
 import { useUserStore } from '@/store/user';
-import { stashOnboardingCallbackUrl } from '@/utils/onboardingRedirect';
+import {
+  consumeOnboardingCallbackUrl,
+  stashOnboardingCallbackUrl,
+} from '@/utils/onboardingRedirect';
 
 import { styles } from './style';
 
@@ -36,7 +38,7 @@ const OnBoardingContainer: FC<PropsWithChildren> = ({ children }) => {
     stashOnboardingCallbackUrl(search);
   }, [search]);
 
-  const setOnboardingStep = useUserStore((s) => s.setOnboardingStep);
+  const finishOnboarding = useUserStore((s) => s.finishOnboarding);
   const enableAgentOnboarding = useServerConfigStore((s) => s.featureFlags.enableAgentOnboarding);
   const serverConfigInit = useServerConfigStore((s) => s.serverConfigInit);
   const isAgentOnboarding = pathname.startsWith('/onboarding/agent');
@@ -49,10 +51,10 @@ const OnBoardingContainer: FC<PropsWithChildren> = ({ children }) => {
     !!enableAgentOnboarding &&
     isBranchOnboarding;
 
-  const handleSkip = useCallback(() => {
-    void setOnboardingStep(MAX_ONBOARDING_STEPS);
-    navigate('/onboarding/classic?entry=skip');
-  }, [navigate, setOnboardingStep]);
+  const handleSkip = useCallback(async () => {
+    await finishOnboarding();
+    navigate(consumeOnboardingCallbackUrl() || '/');
+  }, [finishOnboarding, navigate]);
 
   const switchMode = useCallback(
     (e: MouseEvent) => {

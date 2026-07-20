@@ -306,12 +306,12 @@ export function defineConfig(config: CustomNextConfig) {
         source: '/community/plugins',
       },
       {
-        destination: '/community/model',
+        destination: '/community/agent',
         permanent: true,
         source: '/community/models',
       },
       {
-        destination: '/community/provider',
+        destination: '/community/agent',
         permanent: true,
         source: '/community/providers',
       },

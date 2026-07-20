@@ -11,7 +11,7 @@ const isParallelWorker = workerSuffix !== 'local';
 // Test user credentials - these are used for e2e testing only
 export const TEST_USER = {
   email: isParallelWorker ? `e2e-test+${workerSuffix}@lobehub.com` : 'e2e-test@lobehub.com',
-  fullName: isParallelWorker ? `E2E Test User ${workerSuffix}` : 'E2E Test User',
+  username: isParallelWorker ? `E2E Test User ${workerSuffix}` : 'E2E Test User',
   id: isParallelWorker ? `user_e2e_test_user_${workerSuffix}` : 'user_e2e_test_user_001',
   password: 'TestPassword123!',
   username: isParallelWorker ? `e2e_test_user_${workerSuffix}` : 'e2e_test_user',
@@ -61,7 +61,7 @@ export async function seedTestUser(): Promise<void> {
     const onboarding = JSON.stringify({ finishedAt: now, version: 1 });
 
     await client.query(
-      `INSERT INTO users (id, email, normalized_email, username, full_name, email_verified, onboarding, created_at, updated_at, last_active_at)
+      `INSERT INTO users (id, email, normalized_email, username, username, email_verified, onboarding, created_at, updated_at, last_active_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $8)
        ON CONFLICT (id) DO UPDATE SET onboarding = $7, updated_at = $8`,
       [
@@ -69,7 +69,7 @@ export async function seedTestUser(): Promise<void> {
         TEST_USER.email,
         TEST_USER.email.toLowerCase(),
         TEST_USER.username,
-        TEST_USER.fullName,
+        TEST_USER.username,
         true, // email_verified
         onboarding,
         now,

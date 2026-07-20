@@ -752,9 +752,8 @@ export const deviceRouter = router({
         u.id,
         {
           avatar: u.avatar ?? null,
-          fullName: u.fullName ?? null,
-          userId: u.id,
           username: u.username ?? null,
+          userId: u.id,
         },
       ]),
     );
@@ -814,9 +813,8 @@ export const deviceRouter = router({
           // a stub keeps the gate fail-closed).
           enroller: enrollerById.get(d.userId) ?? {
             avatar: null,
-            fullName: null,
-            userId: d.userId,
             username: null,
+            userId: d.userId,
           },
           friendlyName: d.friendlyName,
           hostname: d.hostname ?? live?.hostname ?? null,

@@ -10,6 +10,7 @@ interface InboxAgentMeta {
 }
 
 const isBlank = (value: string | null | undefined) => !value || value.trim().length === 0;
+const LEGACY_DEFAULT_INBOX_TITLE = 'Lobe AI';
 
 export const isInboxAgentIdentity = ({ slug }: InboxAgentIdentity) => slug === INBOX_SESSION_ID;
 
@@ -25,7 +26,9 @@ export function normalizeInboxAgentTitle(
   title: string | null | undefined,
   identity: InboxAgentIdentity,
 ) {
-  return isInboxAgentIdentity(identity) && isBlank(title) ? DEFAULT_INBOX_TITLE : title;
+  return isInboxAgentIdentity(identity) && (isBlank(title) || title === LEGACY_DEFAULT_INBOX_TITLE)
+    ? DEFAULT_INBOX_TITLE
+    : title;
 }
 
 export function normalizeInboxAgentAvatar(

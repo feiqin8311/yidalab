@@ -65,6 +65,12 @@ export interface AgentState {
    */
   maxSteps?: number;
 
+  /**
+   * Optional hard cap on cumulative LLM tokens (input+output) for this run.
+   * When exceeded, execution stops (same family of brakes as costLimit).
+   */
+  maxTotalTokens?: number;
+
   // --- Core Context ---
   messages: any[];
 
@@ -87,10 +93,11 @@ export interface AgentState {
       provider: string;
     };
   };
-  operationId: string;
 
+  operationId: string;
   /** Operation-level tool set snapshot (immutable after creation) */
   operationToolSet?: OperationToolSet;
+
   // --- HIL ---
   /**
    * Assistant placeholder seeded for a resume that starts by executing a tool
@@ -101,13 +108,13 @@ export interface AgentState {
    */
   pendingAssistantMessageId?: string;
   pendingHumanPrompt?: { metadata?: Record<string, unknown>; prompt: string };
-
   pendingHumanSelect?: {
     metadata?: Record<string, unknown>;
     multi?: boolean;
     options: Array<{ label: string; value: string }>;
     prompt?: string;
   };
+
   /**
    * When status is 'waiting_for_human', this stores pending requests
    * for human-in-the-loop operations.
@@ -129,7 +136,6 @@ export interface AgentState {
     | 'done'
     | 'error'
     | 'interrupted';
-
   // --- Execution Tracking ---
   /**
    * Number of execution steps in this session.
@@ -138,8 +144,14 @@ export interface AgentState {
   stepCount: number;
 
   systemRole?: string;
+
   /** Tool executor map for routing tool execution between server and client */
   toolExecutorMap?: Record<string, ToolExecutor>;
+  /**
+   * Consecutive failures of the same tool+error signature before forceFinish.
+   * Tracked in `metadata.toolFailStreaks`. Default is applied by the host.
+   */
+  toolFailStreakLimit?: number;
 
   toolManifestMap: Record<string, any>;
 

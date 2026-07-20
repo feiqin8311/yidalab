@@ -1,6 +1,6 @@
 'use client';
 
-import { AGENT_CHAT_URL, DEFAULT_INBOX_AVATAR } from '@lobechat/const';
+import { AGENT_CHAT_URL, DEFAULT_INBOX_AVATAR, DEFAULT_INBOX_TITLE } from '@lobechat/const';
 import { Avatar, Icon } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import { Loader2 } from 'lucide-react';
@@ -50,7 +50,7 @@ const InboxEntry = memo(() => {
     inboxAgentId ? operationSelectors.isAgentVisiblyRunning(inboxAgentId) : () => false,
   );
 
-  const title = inboxMeta.title || 'Lobe AI';
+  const title = inboxMeta.title || DEFAULT_INBOX_TITLE;
   const avatar = inboxMeta.avatar || DEFAULT_INBOX_AVATAR;
   const url = AGENT_CHAT_URL(inboxAgentId, false);
 

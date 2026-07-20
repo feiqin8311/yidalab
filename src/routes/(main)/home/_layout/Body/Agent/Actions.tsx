@@ -15,9 +15,11 @@ const Actions = memo<ActionsProps>(({ dropdownMenu, addMenuItems, isLoading }) =
       <DropdownMenu items={dropdownMenu} nativeButton={false}>
         <ActionIcon icon={MoreHorizontalIcon} size={'small'} style={{ flex: 'none' }} />
       </DropdownMenu>
-      <DropdownMenu items={addMenuItems} nativeButton={false}>
-        <ActionIcon icon={PlusIcon} loading={isLoading} size={'small'} style={{ flex: 'none' }} />
-      </DropdownMenu>
+      {!!addMenuItems?.length && (
+        <DropdownMenu items={addMenuItems} nativeButton={false}>
+          <ActionIcon icon={PlusIcon} loading={isLoading} size={'small'} style={{ flex: 'none' }} />
+        </DropdownMenu>
+      )}
     </Flexbox>
   );
 });

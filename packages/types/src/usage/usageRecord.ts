@@ -101,3 +101,49 @@ export interface AgentUsageStats {
     totalTokens: number;
   };
 }
+
+/** One tool identifier row in workspace tool/skill usage stats. */
+export interface ToolUsageToolRow {
+  calls: number;
+  failed: number;
+  identifier: string;
+}
+
+/** activateSkill breakdown by skill name (from tool arguments). */
+export interface ToolUsageSkillRow {
+  activations: number;
+  failed: number;
+  name: string;
+}
+
+/** Per-user tool call totals (admin/owner dimension). */
+export interface ToolUsageUserRow {
+  calls: number;
+  failed: number;
+  userId: string;
+}
+
+/** API-level detail under tools (identifier + apiName). */
+export interface ToolUsageApiRow {
+  apiName: string;
+  calls: number;
+  failed: number;
+  identifier: string;
+}
+
+/**
+ * Aggregated tool / skill call stats from message_plugins.
+ * Counts explicit tool invocations only (not silent skill pin injection).
+ */
+export interface ToolUsageStats {
+  byApi: ToolUsageApiRow[];
+  bySkill: ToolUsageSkillRow[];
+  byTool: ToolUsageToolRow[];
+  byUser: ToolUsageUserRow[];
+  summary: {
+    companyMcpCalls: number;
+    failedCalls: number;
+    skillActivations: number;
+    totalCalls: number;
+  };
+}

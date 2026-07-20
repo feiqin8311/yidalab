@@ -2,7 +2,6 @@
 
 import {
   BrainCircuit,
-  Download,
   FilePenIcon,
   Home,
   Image,
@@ -239,35 +238,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
             children: [
               {
                 element: dynamicElement(
-                  () => import('@/routes/(main)/community/(list)/model'),
-                  'Desktop > Discover > List > Model',
-                ),
-                handle: {
-                  meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discoverModels' }),
-                },
-                index: true,
-              },
-            ],
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(list)/model/_layout'),
-              'Desktop > Discover > List > Model > Layout',
-            ),
-            path: 'model',
-          },
-          {
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(list)/provider'),
-              'Desktop > Discover > List > Provider',
-            ),
-            handle: {
-              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discoverProviders' }),
-            },
-            path: 'provider',
-          },
-          {
-            children: [
-              {
-                element: dynamicElement(
                   () => import('@/routes/(main)/community/(list)/skill'),
                   'Desktop > Discover > List > Skill',
                 ),
@@ -309,16 +279,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
             ),
             path: 'workspace',
           },
-          {
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(list)/(home)'),
-              'Desktop > Discover > List > Home',
-            ),
-            handle: {
-              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
-            },
-            index: true,
-          },
+          { element: redirectElement('agent'), index: true },
         ],
         element: dynamicElement(
           () => import('@/routes/(main)/community/(list)/_layout'),
@@ -341,20 +302,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
               'Desktop > Discover > Detail > Group Agent',
             ),
             path: 'group_agent/:slug',
-          },
-          {
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(detail)/model'),
-              'Desktop > Discover > Detail > Model',
-            ),
-            path: 'model/:slug',
-          },
-          {
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(detail)/provider'),
-              'Desktop > Discover > Detail > Provider',
-            ),
-            path: 'provider/:slug',
           },
           {
             element: dynamicElement(
@@ -707,14 +654,6 @@ export const desktopRoutes: RouteObject[] = [
     children: [
       ...sharedMainAreaChildren,
 
-      // Downloads page (personal-only — never mirrored under /:workspaceSlug)
-      {
-        element: dynamicElement(() => import('@/routes/(main)/downloads'), 'Desktop > Downloads'),
-        errorElement: <ErrorBoundary />,
-        handle: { meta: routeMeta({ icon: Download, titleKey: 'navigation.downloads' }) },
-        path: 'downloads',
-      },
-
       // Settings routes (personal-only — never mirrored under /:workspaceSlug)
       {
         children: [
@@ -758,6 +697,14 @@ export const desktopRoutes: RouteObject[] = [
             handle: { settingsTab: SettingsTabs.Memory },
             path: 'memory',
           },
+          {
+            element: redirectElement('/agent/channel'),
+            path: 'messenger',
+          },
+          {
+            element: redirectElement('/agent/channel'),
+            path: 'messenger/:sub',
+          },
           // Other settings tabs
           {
             element: dynamicElement(
@@ -767,8 +714,8 @@ export const desktopRoutes: RouteObject[] = [
             handle: { meta: settingsRouteMeta },
             path: ':tab',
           },
-          // Tabs that need a sub-segment (e.g. /settings/messenger/discord) reuse
-          // the same tab page; nested feature components read `:sub` via useParams.
+          // Tabs that need a sub-segment reuse the same tab page; nested feature
+          // components read `:sub` via useParams.
           {
             element: dynamicElement(
               () => import('@/routes/(main)/settings'),
@@ -784,6 +731,13 @@ export const desktopRoutes: RouteObject[] = [
         ),
         errorElement: <ErrorBoundary />,
         path: 'settings',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/company/invite/[token]'),
+          'Desktop > Company > Invitation',
+        ),
+        path: 'company/invite/:token',
       },
 
       // Workspace slug routes — `/:workspaceSlug/*` mirrors the shared main area.
@@ -839,6 +793,13 @@ export const desktopRoutes: RouteObject[] = [
                       'Desktop > Workspace > Settings > General',
                     ),
                     path: 'general',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/departments'),
+                      'Desktop > Workspace > Settings > Departments',
+                    ),
+                    path: 'departments',
                   },
                   {
                     element: dynamicElement(
@@ -923,6 +884,69 @@ export const desktopRoutes: RouteObject[] = [
                       'Desktop > Workspace > Settings > Devices',
                     ),
                     path: 'devices',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/profile'),
+                      'Desktop > Workspace > Settings > Profile',
+                    ),
+                    path: 'profile',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/appearance'),
+                      'Desktop > Workspace > Settings > Appearance',
+                    ),
+                    path: 'appearance',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/hotkey'),
+                      'Desktop > Workspace > Settings > Hotkey',
+                    ),
+                    path: 'hotkey',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/notification'),
+                      'Desktop > Workspace > Settings > Notification',
+                    ),
+                    path: 'notification',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/memory'),
+                      'Desktop > Workspace > Settings > Memory',
+                    ),
+                    path: 'memory',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/referral'),
+                      'Desktop > Workspace > Settings > Referral',
+                    ),
+                    path: 'referral',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/proxy'),
+                      'Desktop > Workspace > Settings > Proxy',
+                    ),
+                    path: 'proxy',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/system-tools'),
+                      'Desktop > Workspace > Settings > System Tools',
+                    ),
+                    path: 'system-tools',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/advanced'),
+                      'Desktop > Workspace > Settings > Advanced',
+                    ),
+                    path: 'advanced',
                   },
                 ],
                 element: dynamicLayout(

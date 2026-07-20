@@ -1,6 +1,8 @@
 'use client';
 
 import { Collapse, Flexbox, Markdown, ScrollShadow, Tag } from '@lobehub/ui';
+import { Alert } from 'antd';
+import { LockIcon } from 'lucide-react';
 import qs from 'query-string';
 import { memo, type PropsWithChildren } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +14,8 @@ import { useDetailContext } from '../../DetailProvider';
 const Overview = memo<PropsWithChildren>(({ children }) => {
   const { t } = useTranslation('discover');
   const { tags = [], description, overview, category, related } = useDetailContext();
+  const { content, hideContent } = useDetailContext() as any;
+  const isContentHidden = hideContent && !content;
 
   return (
     <Flexbox gap={24}>
@@ -19,27 +23,37 @@ const Overview = memo<PropsWithChildren>(({ children }) => {
         <Title>{t('skills.details.summary.title')}</Title>
         <Markdown variant={'chat'}>{overview?.summary || description || ''}</Markdown>
       </Flexbox>
-      <Collapse
-        defaultActiveKey={['summary']}
-        expandIconPlacement={'end'}
-        variant={'outlined'}
-        items={[
-          {
-            children: (
-              <ScrollShadow height={240} offset={16} padding={16} size={16}>
-                <Flexbox horizontal gap={12}>
-                  {children}
-                </Flexbox>
-              </ScrollShadow>
-            ),
-            key: 'summary',
-            label: 'SKILL.md',
-          },
-        ]}
-        padding={{
-          body: 0,
-        }}
-      />
+      {isContentHidden ? (
+        <Alert
+          showIcon
+          description={'管理员已限制该技能的详细内容访问，仅可查看摘要描述。'}
+          icon={<LockIcon size={16} />}
+          message={'SKILL.md 内容已隐藏'}
+          type={'warning'}
+        />
+      ) : (
+        <Collapse
+          defaultActiveKey={['summary']}
+          expandIconPlacement={'end'}
+          variant={'outlined'}
+          items={[
+            {
+              children: (
+                <ScrollShadow height={240} offset={16} padding={16} size={16}>
+                  <Flexbox horizontal gap={12}>
+                    {children}
+                  </Flexbox>
+                </ScrollShadow>
+              ),
+              key: 'summary',
+              label: 'SKILL.md',
+            },
+          ]}
+          padding={{
+            body: 0,
+          }}
+        />
+      )}
       {tags.length > 0 && (
         <Flexbox horizontal gap={8} wrap={'wrap'}>
           {tags.map((tag) => (

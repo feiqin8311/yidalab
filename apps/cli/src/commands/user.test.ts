@@ -167,7 +167,7 @@ describe('user command', () => {
       await program.parseAsync(['node', 'test', 'user', 'update-name', '--full-name', 'John Doe']);
 
       expect(mockTrpcClient.user.updateFullName.mutate).toHaveBeenCalledWith('John Doe');
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Full name updated'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Username updated'));
     });
 
     it('should update username', async () => {

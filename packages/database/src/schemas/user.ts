@@ -17,7 +17,8 @@ export const users = pgTable(
     phone: text('phone').unique(),
     firstName: text('first_name'),
     lastName: text('last_name'),
-    fullName: text('full_name'),
+    company: text('company'),
+    position: text('position'),
     interests: varchar('interests', { length: 64 }).array(),
 
     /** @deprecated */

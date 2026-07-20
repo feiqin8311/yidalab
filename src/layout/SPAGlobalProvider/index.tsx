@@ -11,7 +11,6 @@ import { isDesktop } from '@/const/version';
 import AgentMockDevtools from '@/features/AgentMockDevtools';
 import DevFeatureFlagPanel from '@/features/DevFeatureFlagPanel';
 import AuthProvider from '@/layout/AuthProvider';
-import { MarketAuthProvider } from '@/layout/AuthProvider/MarketAuth';
 import AppTheme from '@/layout/GlobalProvider/AppTheme';
 import CacheHydrationGate from '@/layout/GlobalProvider/CacheHydrationGate';
 import DynamicFavicon from '@/layout/GlobalProvider/DynamicFavicon';
@@ -51,33 +50,31 @@ const SPAGlobalProvider = memo<PropsWithChildren>(({ children }) => {
         >
           <QueryProvider>
             <AuthProvider>
-              <MarketAuthProvider isDesktop={isDesktop}>
-                <StoreInitialization />
+              <StoreInitialization />
 
-                {isDesktop && <ServerVersionOutdatedAlert />}
-                <FaviconProvider>
-                  <DynamicFavicon />
-                  <GroupWizardProvider>
-                    <DragUploadProvider>
-                      <LazyMotion features={domMax}>
-                        <TooltipGroup layoutAnimation={false}>
-                          <StyleProvider speedy={import.meta.env.PROD}>
-                            <LobeAnalyticsProviderWrapper>
-                              <CacheHydrationGate>{children}</CacheHydrationGate>
-                            </LobeAnalyticsProviderWrapper>
-                          </StyleProvider>
-                        </TooltipGroup>
-                        <Suspense>
-                          <ModalHost />
-                          <BaseModalHost />
-                          <ToastHost />
-                          <ContextMenuHost />
-                        </Suspense>
-                      </LazyMotion>
-                    </DragUploadProvider>
-                  </GroupWizardProvider>
-                </FaviconProvider>
-              </MarketAuthProvider>
+              {isDesktop && <ServerVersionOutdatedAlert />}
+              <FaviconProvider>
+                <DynamicFavicon />
+                <GroupWizardProvider>
+                  <DragUploadProvider>
+                    <LazyMotion features={domMax}>
+                      <TooltipGroup layoutAnimation={false}>
+                        <StyleProvider speedy={import.meta.env.PROD}>
+                          <LobeAnalyticsProviderWrapper>
+                            <CacheHydrationGate>{children}</CacheHydrationGate>
+                          </LobeAnalyticsProviderWrapper>
+                        </StyleProvider>
+                      </TooltipGroup>
+                      <Suspense>
+                        <ModalHost />
+                        <BaseModalHost />
+                        <ToastHost />
+                        <ContextMenuHost />
+                      </Suspense>
+                    </LazyMotion>
+                  </DragUploadProvider>
+                </GroupWizardProvider>
+              </FaviconProvider>
             </AuthProvider>
           </QueryProvider>
           <Suspense>

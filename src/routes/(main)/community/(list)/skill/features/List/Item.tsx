@@ -12,7 +12,6 @@ import urlJoin from 'url-join';
 import PublishedTime from '@/components/PublishedTime';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
-import { discoverService } from '@/services/discover';
 import { type DiscoverSkillItem } from '@/types/discover';
 
 import MetaInfo from './MetaInfo';
@@ -60,7 +59,6 @@ const SkillItem = memo<DiscoverSkillItem>(
     updatedAt,
     installCount,
     github,
-    homepage,
     ratingAvg,
     commentCount,
     resourcesCount = 0,
@@ -69,17 +67,7 @@ const SkillItem = memo<DiscoverSkillItem>(
     const navigate = useWorkspaceAwareNavigate();
     const link = urlJoin('/community/skill', identifier);
 
-    const handleClick = useCallback(() => {
-      discoverService
-        .reportSkillEvent({
-          event: 'click',
-          identifier,
-          source: location.pathname,
-        })
-        .catch(() => {});
-
-      navigate(link);
-    }, [identifier, link, navigate]);
+    const handleClick = useCallback(() => navigate(link), [link, navigate]);
 
     return (
       <Block

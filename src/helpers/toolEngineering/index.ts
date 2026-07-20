@@ -18,6 +18,7 @@ import {
 } from '@lobechat/types';
 
 import type { ConnectorToolPermission } from '@/database/schemas';
+import { isCloudSandboxExecutionEnabled } from '@/helpers/executionTarget';
 import { isToolAvailableInCurrentEnv } from '@/helpers/toolAvailability';
 import { patchManifestWithPermissions } from '@/libs/mcp/patchManifestPermissions';
 import { getAgentStoreState } from '@/store/agent';
@@ -248,15 +249,26 @@ export const createAgentToolsEngine = (
     [WebBrowsingManifest.identifier]: webBrowsingEnabled,
   };
 
+  const sandboxOn = isCloudSandboxExecutionEnabled();
+  const resolvedDefaultToolIds = (isChatMode ? chatModeAllowedToolIds : defaultToolIds).filter(
+    (id) => sandboxOn || id !== CloudSandboxManifest.identifier,
+  );
+  const resolvedManifestContext: BuiltinToolResolveContext | undefined = manifestContext
+    ? { ...manifestContext, cloudSandboxAvailable: sandboxOn }
+    : { cloudSandboxAvailable: sandboxOn };
+
   return createToolsEngine({
-    defaultToolIds: isChatMode ? chatModeAllowedToolIds : defaultToolIds,
+    defaultToolIds: resolvedDefaultToolIds,
     disabledPluginIds,
-    manifestContext,
+    manifestContext: resolvedManifestContext,
     enableChecker: createEnableChecker({
       allowExplicitActivation: !isChatMode,
       platformFilter: ({ pluginId }) => {
         const toolStoreState = getToolStoreState();
         const installedPlugin = pluginSelectors.getInstalledPluginById(pluginId)(toolStoreState);
+
+        // Hard-block cloud sandbox when the deployment kill-switch is off.
+        if (!sandboxOn && pluginId === CloudSandboxManifest.identifier) return false;
 
         if (
           !isToolAvailableInCurrentEnv(pluginId, {

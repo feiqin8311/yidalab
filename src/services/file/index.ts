@@ -182,6 +182,21 @@ export class FileService {
   setFileVisibility = async (id: string, visibility: 'private' | 'public'): Promise<void> => {
     await lambdaClient.file.setFileVisibility.mutate({ id, visibility });
   };
+
+  listFileGrants = async (id: string) => {
+    return lambdaClient.file.listFileGrants.query({ id });
+  };
+
+  setFileGrants = async (
+    id: string,
+    grants: Array<{
+      granteeId: string;
+      granteeType: 'user' | 'department';
+      role?: 'viewer' | 'editor';
+    }>,
+  ) => {
+    return lambdaClient.file.setFileGrants.mutate({ grants, id });
+  };
 }
 
 export const fileService = new FileService();

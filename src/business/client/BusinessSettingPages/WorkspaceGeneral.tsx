@@ -1,3 +1,5 @@
+import CompanySettings from '@/features/Company/CompanySettings';
+
 export default function WorkspaceGeneral() {
-  return null;
+  return <CompanySettings initialTab="general" showTabs={false} />;
 }

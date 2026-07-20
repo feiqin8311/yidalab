@@ -41,15 +41,20 @@ const UserUpdater = memo(() => {
     if (betterAuthUser) {
       useUserStore.setState((state) => {
         const baseUser = state.user?.id === betterAuthUser.id ? state.user : undefined;
+        // Better Auth maps the DB `username` column to session `name`
+        // (`user.fields.name = 'username'`). Session `username` is an optional
+        // additionalField and is often empty — never let it wipe a profile
+        // username already loaded by getUserState / updateUsername.
+        const sessionName = (betterAuthUser as { name?: string | null }).name;
+        const sessionUsername = betterAuthUser.username || sessionName || '';
         return {
           user: {
             ...baseUser,
             // Preserve avatar from settings, don't override with auth provider value
             avatar: baseUser?.avatar || '',
             email: betterAuthUser.email,
-            fullName: betterAuthUser.name,
             id: betterAuthUser.id,
-            username: betterAuthUser.username,
+            username: baseUser?.username || sessionUsername,
           } as LobeUser,
         };
       });

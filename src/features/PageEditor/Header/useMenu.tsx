@@ -55,7 +55,7 @@ export const useMenu = (): { menuItems: any[] } => {
   );
 
   const pageDocument = usePageStore(pageSelectors.getDocumentById(documentId));
-  const authorName = useAuthorInfo(pageDocument?.userId)?.fullName;
+  const authorName = useAuthorInfo(pageDocument?.userId)?.username;
   const lastUpdatedTime =
     editorUpdatedTime ??
     (pageDocument?.updatedAt ? new Date(pageDocument.updatedAt).toISOString() : null);

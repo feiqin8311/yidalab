@@ -28,6 +28,7 @@ import {
   getSubscriptionPlan,
   onUserActivityForBusiness,
 } from '@/business/server/user';
+import { CompanyModel } from '@/database/models/company';
 import { MessageModel } from '@/database/models/message';
 import { RbacModel } from '@/database/models/rbac';
 import { SessionModel } from '@/database/models/session';
@@ -46,7 +47,7 @@ const usernameSchema = z
   .trim()
   .min(1, { message: 'USERNAME_REQUIRED' })
   .max(64, { message: 'USERNAME_TOO_LONG' })
-  .regex(/^\w+$/, { message: 'USERNAME_INVALID' });
+  .regex(/^[\w\u4E00-\u9FA5\s\-.·]+$/, { message: 'USERNAME_INVALID' });
 
 const AVATAR_WEBAPI_PREFIX = '/webapi/';
 const OWNER_SETTING_KEYS = ['defaultAgent', 'image', 'memory', 'systemAgent', 'tts'] as const;
@@ -157,9 +158,9 @@ export const userRouter = router({
       avatar: state.avatar,
       canEnablePWAGuide: hasMoreThan4Messages,
       canEnableTrace: hasMoreThan4Messages,
+      company: state.company,
       email: state.email,
       firstName: state.firstName,
-      fullName: state.fullName,
 
       // Has conversation if there are messages or has created any assistant
       hasConversation: hasAnyMessages || hasExtraSession,
@@ -172,6 +173,7 @@ export const userRouter = router({
       lastName: state.lastName,
       onboarding: state.onboarding,
       preference: state.preference as UserPreference,
+      position: state.position,
       settings: state.settings,
       userId: ctx.userId,
       username: state.username,
@@ -254,12 +256,6 @@ export const userRouter = router({
     return ctx.userModel.updateUser({ avatar: input });
   }),
 
-  updateFullName: userProcedure
-    .input(z.string().trim().max(64, { message: 'FULLNAME_TOO_LONG' }))
-    .mutation(async ({ ctx, input }) => {
-      return ctx.userModel.updateUser({ fullName: input });
-    }),
-
   updateGuide: userProcedure.input(UserGuideSchema).mutation(async ({ ctx, input }) => {
     return ctx.userModel.updateGuide(input);
   }),
@@ -267,6 +263,20 @@ export const userRouter = router({
   updateInterests: userProcedure.input(z.array(z.string())).mutation(async ({ ctx, input }) => {
     return ctx.userModel.updateUser({ interests: input });
   }),
+
+  updateProfile: userProcedure
+    .input(
+      z.object({
+        company: z.string().trim().max(128, { message: 'COMPANY_TOO_LONG' }).optional(),
+        position: z.string().trim().max(128, { message: 'POSITION_TOO_LONG' }).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.userModel.updateUser({
+        company: input.company === undefined ? undefined : input.company || null,
+        position: input.position === undefined ? undefined : input.position || null,
+      });
+    }),
 
   getOrCreateOnboardingState: userProcedure.query(async ({ ctx }) => {
     const onboardingService = new OnboardingService(ctx.serverDB, ctx.userId);
@@ -511,14 +521,26 @@ export const userRouter = router({
     const { keyVaults, ...res } = input as Partial<UserSettings>;
 
     if (ctx.workspaceId && (hasOwnerSettingChange(res) || hasMemberSettingChange(res))) {
-      const rbac = new RbacModel(ctx.serverDB, ctx.userId);
-      const allowed = hasOwnerSettingChange(res)
-        ? await rbac.hasPermission(WORKSPACE_UPDATE_PERMISSION, {
-            workspaceId: ctx.workspaceId,
-          })
-        : await rbac.hasAnyPermission([...WORKSPACE_CONTENT_PERMISSIONS], {
-            workspaceId: ctx.workspaceId,
-          });
+      // Company service-model settings: owner/admin manage (product rule).
+      // Fall back to RBAC for pure workspaces; RBAC may be unseeded on company.
+      let allowed: boolean;
+      if (hasOwnerSettingChange(res)) {
+        const membership = await new CompanyModel(ctx.serverDB, ctx.userId).getMembership(
+          ctx.workspaceId,
+        );
+        allowed =
+          membership?.role === 'owner' ||
+          membership?.role === 'admin' ||
+          (await new RbacModel(ctx.serverDB, ctx.userId).hasPermission(
+            WORKSPACE_UPDATE_PERMISSION,
+            { workspaceId: ctx.workspaceId },
+          ));
+      } else {
+        allowed = await new RbacModel(ctx.serverDB, ctx.userId).hasAnyPermission(
+          [...WORKSPACE_CONTENT_PERMISSIONS],
+          { workspaceId: ctx.workspaceId },
+        );
+      }
 
       if (!allowed) {
         throw new TRPCError({

@@ -6,7 +6,11 @@ import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspa
 import { getRouteById } from '@/config/routes';
 import { useGlobalStore } from '@/store/global';
 import { SidebarTabKey } from '@/store/global/initialState';
-import { featureFlagsSelectors, useServerConfigStore } from '@/store/serverConfig';
+import {
+  featureFlagsSelectors,
+  serverConfigSelectors,
+  useServerConfigStore,
+} from '@/store/serverConfig';
 
 export interface NavItem {
   hidden?: boolean;
@@ -36,8 +40,12 @@ export interface NavLayout {
 export const useNavLayout = (): NavLayout => {
   const { t } = useTranslation('common');
   const toggleCommandMenu = useGlobalStore((s) => s.toggleCommandMenu);
-  const { showMarket, hideGitHub } = useServerConfigStore(featureFlagsSelectors);
+  const { showAiImage, showMarket, hideGitHub } = useServerConfigStore(featureFlagsSelectors);
+  const hidePersonalSettingsFlag = useServerConfigStore(serverConfigSelectors.hidePersonalSettings);
+  // yidalab: once the user is in a company, personal settings is not a product
+  // surface — only company settings + thin account paths remain.
   const activeWorkspaceSlug = useActiveWorkspaceSlug();
+  const hidePersonalSettings = hidePersonalSettingsFlag || !!activeWorkspaceSlug;
 
   const topNavItems = useMemo(
     () =>
@@ -74,6 +82,7 @@ export const useNavLayout = (): NavLayout => {
     () =>
       [
         {
+          hidden: !showAiImage,
           icon: getRouteById('image')!.icon,
           key: SidebarTabKey.Image,
           title: t('tab.generation'),
@@ -93,14 +102,14 @@ export const useNavLayout = (): NavLayout => {
           url: '/resource',
         },
         {
-          hidden: !!activeWorkspaceSlug,
+          // Always show Memory in personal and workspace modes (YidaLab).
           icon: getRouteById('memory')!.icon,
           key: SidebarTabKey.Memory,
           title: t('tab.memory'),
           url: '/memory',
         },
       ] as NavItem[],
-    [t, showMarket, activeWorkspaceSlug],
+    [t, showAiImage, showMarket],
   );
 
   const footer = useMemo(
@@ -108,9 +117,10 @@ export const useNavLayout = (): NavLayout => {
       hideGitHub: !!hideGitHub,
       layout: 'compact' as const,
       showEvalEntry: false,
-      showSettingsEntry: true,
+      // Hide legacy personal settings when in a company (or flag is on).
+      showSettingsEntry: !hidePersonalSettings,
     }),
-    [hideGitHub],
+    [hideGitHub, hidePersonalSettings],
   );
 
   const userPanel = useMemo(

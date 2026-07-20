@@ -26,7 +26,7 @@ describe('resource manager store actions', () => {
     useFileStore.setState(fileInitialState);
   });
 
-  it('should default workspace resources to private mode when no preference is persisted', () => {
+  it('should hydrate to private (mine) by default when entering a workspace', () => {
     useResourceManagerStore.setState({
       listVisibility: 'workspace',
       selectAllState: 'loaded',
@@ -40,6 +40,14 @@ describe('resource manager store actions', () => {
       selectAllState: 'none',
       selectedFileIds: [],
     });
+  });
+
+  it('should restore a persisted list mode for the workspace', () => {
+    window.localStorage.setItem('lobehub:resource-mode:workspace-1', 'shared');
+
+    useResourceManagerStore.getState().hydrateListVisibility('workspace-1');
+
+    expect(useResourceManagerStore.getState().listVisibility).toBe('shared');
   });
 
   it('should exclude deselected ids when resolving all-selected resources', async () => {

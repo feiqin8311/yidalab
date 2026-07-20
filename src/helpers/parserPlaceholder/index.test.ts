@@ -21,7 +21,7 @@ vi.mock('@/store/user/selectors', () => ({
   userProfileSelectors: {
     displayUserName: () => 'testuser',
     nickName: () => 'Test User',
-    fullName: () => 'Test Full Name',
+    username: () => 'Test Username',
     email: () => 'test@example.com',
   },
 }));

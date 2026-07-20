@@ -42,7 +42,7 @@ const STRUCTURED_FIELD_LABELS: Record<SaveUserQuestionField, string> = {
   agentEmoji: 'agent emoji',
   agentName: 'agent name',
   customInterests: 'custom interests',
-  fullName: 'full name',
+  username: 'username',
   interests: 'interests',
 };
 
@@ -260,16 +260,14 @@ export class OnboardingService {
 
   getInitialUserInfo = async (): Promise<OnboardingUserInfo | undefined> => {
     const userState = await this.getUserState();
-    const fullName = normalizeUserInfoField(userState.fullName);
     const username = normalizeUserInfoField(userState.username);
-    const displayName = fullName || username;
+    const displayName = username;
 
-    if (!displayName && !fullName && !username) return undefined;
+    if (!displayName) return undefined;
 
     return {
-      ...(displayName ? { displayName } : {}),
-      ...(fullName ? { fullName } : {}),
-      ...(username ? { username } : {}),
+      displayName,
+      username: displayName,
     };
   };
 
@@ -301,7 +299,7 @@ export class OnboardingService {
     if (!inboxAgent?.avatar?.trim()) missingFields.push('agentEmoji');
 
     // User fields
-    if (!userState.fullName?.trim()) missingFields.push('fullName');
+    if (!userState.username?.trim()) missingFields.push('username');
 
     return missingFields;
   };
@@ -448,7 +446,7 @@ export class OnboardingService {
     discoveryContext?: { currentUserMessageCount: number; startUserMessageCount: number },
   ): Promise<OnboardingPhase> => {
     if (missingStructuredFields.includes('agentName')) return 'agent_identity';
-    if (missingStructuredFields.includes('fullName')) return 'user_identity';
+    if (missingStructuredFields.includes('username')) return 'user_identity';
 
     // All fields complete — check pacing gate
     if (discoveryContext) {
@@ -519,13 +517,12 @@ export class OnboardingService {
       };
     } else {
       let discoveryContext:
-        | { currentUserMessageCount: number; startUserMessageCount: number }
-        | undefined;
+        { currentUserMessageCount: number; startUserMessageCount: number } | undefined;
 
       if (topicId) {
         const pastPreDiscovery =
           !missingStructuredFields.includes('agentName') &&
-          !missingStructuredFields.includes('fullName');
+          !missingStructuredFields.includes('username');
         if (pastPreDiscovery) {
           const currentUserMessageCount = await this.countTopicUserMessages(topicId);
           // If baseline is not yet persisted, treat current count as the baseline
@@ -653,14 +650,13 @@ export class OnboardingService {
 
     let currentUserMessageCount: number | undefined;
     let discoveryContext:
-      | { currentUserMessageCount: number; startUserMessageCount: number }
-      | undefined;
+      { currentUserMessageCount: number; startUserMessageCount: number } | undefined;
 
     // Build discovery context if we have a topic and are past agent_identity + user_identity
     if (topicId) {
       const pastPreDiscovery =
         !missingStructuredFields.includes('agentName') &&
-        !missingStructuredFields.includes('fullName');
+        !missingStructuredFields.includes('username');
 
       if (pastPreDiscovery) {
         currentUserMessageCount = await this.countTopicUserMessages(topicId);
@@ -719,18 +715,18 @@ export class OnboardingService {
     const savedFields: SaveUserQuestionField[] = [];
     const unchangedFields: SaveUserQuestionField[] = [];
     const userState = await this.getUserState();
-    const userPatch: { fullName?: string; interests?: string[] } = {};
+    const userPatch: { interests?: string[]; username?: string } = {};
 
-    const fullName =
-      typeof parsed.fullName === 'string' && parsed.fullName.trim()
-        ? parsed.fullName.trim()
+    const username =
+      typeof parsed.username === 'string' && parsed.username.trim()
+        ? parsed.username.trim()
         : undefined;
-    if (fullName) {
-      if (fullName === userState.fullName) {
-        unchangedFields.push('fullName');
+    if (username) {
+      if (username === userState.username) {
+        unchangedFields.push('username');
       } else {
-        userPatch.fullName = fullName;
-        savedFields.push('fullName');
+        userPatch.username = username;
+        savedFields.push('username');
       }
     }
 
@@ -763,7 +759,7 @@ export class OnboardingService {
         ? parsed.agentEmoji.trim()
         : undefined;
     const userIdentityNames = new Set(
-      [fullName, userState.fullName, userState.username]
+      [username, userState.username]
         .map((name) => normalizeComparableName(name))
         .filter((name): name is string => Boolean(name)),
     );
@@ -917,10 +913,10 @@ export class OnboardingService {
   reset = async () => {
     const state = defaultAgentOnboardingState();
 
-    // Preserve users.full_name and users.username on reset.
-    // Why: fullName/username are usually seeded from OAuth at signup, and we
+    // Preserve users.username on reset.
+    // Why: usernames are usually seeded from OAuth at signup, and we
     // surface them to the agent via <user_info> so it can ask "May I call you
-    // <displayName>?" each round. Clearing fullName here would erase the
+    // <displayName>?" each round. Clearing username here would erase the
     // OAuth-derived hint and force the agent to fall back to an open-ended
     // name question on every redo.
     // How to apply: only clear scopes that genuinely belong to the agent

@@ -6,16 +6,14 @@ import Referral from '@/business/client/BusinessSettingPages/Referral';
 import Usage from '@/business/client/BusinessSettingPages/Usage';
 import { SettingsTabs } from '@/store/global/initialState';
 
-import About from '../about';
 import Advanced from '../advanced';
 import APIKey from '../apikey';
 import Appearance from '../appearance';
+import Company from '../company';
 import Connector from '../connector';
-import Creds from '../creds';
 import Devices from '../devices';
 import Hotkey from '../hotkey';
 import Memory from '../memory';
-import Messenger from '../messenger';
 import Profile from '../profile';
 import Provider from '../provider';
 import Proxy from '../proxy';
@@ -32,9 +30,7 @@ export const componentMap = {
   [SettingsTabs.Provider]: Provider,
   [SettingsTabs.ServiceModel]: ServiceModel,
   [SettingsTabs.Memory]: Memory,
-  [SettingsTabs.Messenger]: Messenger,
   [SettingsTabs.Notification]: Notification,
-  [SettingsTabs.About]: About,
   [SettingsTabs.Hotkey]: Hotkey,
   [SettingsTabs.Proxy]: Proxy,
   [SettingsTabs.SystemTools]: SystemTools,
@@ -45,10 +41,10 @@ export const componentMap = {
   [SettingsTabs.Stats]: Stats,
   [SettingsTabs.Usage]: Usage,
   [SettingsTabs.APIKey]: APIKey,
-  [SettingsTabs.Creds]: Creds,
   [SettingsTabs.Security]: Security,
   [SettingsTabs.Skill]: Skill,
   [SettingsTabs.Connector]: Connector,
+  [SettingsTabs.Company]: Company,
 
   [SettingsTabs.Plans]: Plans,
   [SettingsTabs.Credits]: Credits,

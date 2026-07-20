@@ -409,4 +409,40 @@ describe('UsageRecordService', () => {
       });
     });
   });
+
+  describe('getToolUsageStats', () => {
+    const setupJoinMock = (rows: any[]) => {
+      const mockWhere = vi.fn().mockResolvedValue(rows);
+      const mockInnerJoin = vi.fn().mockReturnValue({ where: mockWhere });
+      const mockFrom = vi.fn().mockReturnValue({ innerJoin: mockInnerJoin });
+      mockDb.select = vi.fn().mockReturnValue({ from: mockFrom });
+      return { mockWhere };
+    };
+
+    it('aggregates tool rows from message_plugins join', async () => {
+      setupJoinMock([
+        {
+          apiName: 'ops_get_asin_traffic_trend',
+          arguments: null,
+          error: null,
+          identifier: 'company.mcp.sif-mcp',
+          userId,
+        },
+        {
+          apiName: 'activateSkill',
+          arguments: JSON.stringify({ name: 'artifacts' }),
+          error: null,
+          identifier: 'lobe-skills',
+          userId,
+        },
+      ]);
+
+      const result = await service.getToolUsageStats('2026-07-01', '2026-07-31');
+
+      expect(result.summary.totalCalls).toBe(2);
+      expect(result.summary.skillActivations).toBe(1);
+      expect(result.summary.companyMcpCalls).toBe(1);
+      expect(result.bySkill[0]).toMatchObject({ activations: 1, name: 'artifacts' });
+    });
+  });
 });

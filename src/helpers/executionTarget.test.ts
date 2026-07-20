@@ -1,6 +1,6 @@
 import type { LobeAgentAgencyConfig } from '@lobechat/types';
 import { RequestTrigger } from '@lobechat/types';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   type ExecutionPlan,
@@ -391,6 +391,33 @@ describe('resolveExecutionPlan', () => {
           onlineDeviceIds: ONLINE_A,
         }),
       ).toEqual({ kind: 'device-unrouted', reason: 'no-bound-device', target: 'local' });
+    });
+
+    it('auto-routes unbound local to the sole online device when cloud sandbox is off', () => {
+      // YidaLab product gate: with sandbox disabled, shell work needs the only
+      // available machine instead of falling through to MARKET_AUTH_REQUIRED.
+      const prev = process.env.ENABLE_CLOUD_SANDBOX;
+      process.env.ENABLE_CLOUD_SANDBOX = '0';
+      try {
+        expect(
+          resolveExecutionPlan({
+            agencyConfig: cfg({ executionTarget: 'local' }),
+            clientExecutionAvailable: true,
+            onlineDeviceIds: ONLINE_A,
+          }),
+        ).toEqual({ deviceId: 'device-a', kind: 'device', target: 'local' });
+        // still no silent pick when several devices are online
+        expect(
+          resolveExecutionPlan({
+            agencyConfig: cfg({ executionTarget: 'local' }),
+            clientExecutionAvailable: true,
+            onlineDeviceIds: ONLINE_AB,
+          }),
+        ).toEqual({ kind: 'device-unrouted', reason: 'no-bound-device', target: 'local' });
+      } finally {
+        if (prev === undefined) delete process.env.ENABLE_CLOUD_SANDBOX;
+        else process.env.ENABLE_CLOUD_SANDBOX = prev;
+      }
     });
 
     it('resolves the unset web target to none', () => {
@@ -816,5 +843,52 @@ describe('isDeviceLockedPlan', () => {
     ).toBe(false);
     expect(isDeviceLockedPlan({ kind: 'none', target: 'none' })).toBe(false);
     expect(isDeviceLockedPlan({ kind: 'sandbox', target: 'sandbox' })).toBe(false);
+  });
+});
+
+describe('cloud sandbox product kill-switch (ENABLE_CLOUD_SANDBOX=0)', () => {
+  const prev = process.env.ENABLE_CLOUD_SANDBOX;
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env.ENABLE_CLOUD_SANDBOX;
+    else process.env.ENABLE_CLOUD_SANDBOX = prev;
+  });
+
+  it('coerces a stored sandbox target away from the cloud', () => {
+    process.env.ENABLE_CLOUD_SANDBOX = '0';
+    expect(
+      resolveExecutionTarget(cfg({ executionTarget: 'sandbox' }), {
+        clientExecutionAvailable: true,
+      }),
+    ).toBe('local');
+    expect(
+      resolveExecutionTarget(cfg({ executionTarget: 'sandbox' }), {
+        clientExecutionAvailable: false,
+      }),
+    ).toBe('auto');
+    expect(
+      resolveExecutionTarget(cfg({ boundDeviceId: 'd1', executionTarget: 'sandbox' }), {
+        clientExecutionAvailable: false,
+      }),
+    ).toBe('device');
+    expect(executionTargetToRuntimeMode('sandbox')).toBe('none');
+  });
+
+  it('never returns a sandbox execution plan', () => {
+    process.env.ENABLE_CLOUD_SANDBOX = '0';
+    expect(
+      resolveExecutionPlan({
+        agencyConfig: cfg({ executionTarget: 'sandbox' }),
+        clientExecutionAvailable: false,
+      }),
+    ).toEqual({ kind: 'device-unrouted', reason: 'no-bound-device', target: 'auto' });
+
+    expect(
+      resolveExecutionPlan({
+        agencyConfig: cfg({ executionTarget: 'none' }),
+        clientExecutionAvailable: false,
+        isHetero: true,
+      }),
+    ).toEqual({ kind: 'device-unrouted', reason: 'no-bound-device', target: 'auto' });
   });
 });

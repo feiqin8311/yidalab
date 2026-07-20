@@ -1,8 +1,8 @@
 import dayjs from 'dayjs';
 import debug from 'debug';
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 
-import { messages } from '@/database/schemas';
+import { messagePlugins, messages } from '@/database/schemas';
 import { type LobeChatDatabase } from '@/database/type';
 import { genRangeWhere, genWhere } from '@/database/utils/genWhere';
 import { buildWorkspaceWhere } from '@/database/utils/workspace';
@@ -12,24 +12,53 @@ import {
   type AgentUsageGranularity,
   type AgentUsageModelRow,
   type AgentUsageStats,
+  type ToolUsageStats,
   type UsageLog,
   type UsageRecordItem,
 } from '@/types/usage/usageRecord';
 import { formatDate } from '@/utils/format';
 
 import { computeMessageCostSplit } from './cost';
+import { aggregateToolUsageRows } from './toolUsage';
 
 const log = debug('lobe-usage:service');
+
+export type UsageRecordServiceOptions = {
+  /**
+   * When true with a workspace scope, only the caller's own rows are included.
+   * Used so ordinary members see personal usage while admins/owners see the
+   * whole company (yidalab company stats privacy).
+   */
+  restrictToCaller?: boolean;
+};
 
 export class UsageRecordService {
   private userId: string;
   private workspaceId?: string;
   private db: LobeChatDatabase;
-  constructor(db: LobeChatDatabase, userId: string, workspaceId?: string) {
+  private restrictToCaller: boolean;
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    workspaceId?: string,
+    options?: UsageRecordServiceOptions,
+  ) {
     this.userId = userId;
     this.workspaceId = workspaceId;
     this.db = db;
+    this.restrictToCaller = !!options?.restrictToCaller;
   }
+
+  /** Ownership predicate for analytics queries. */
+  private analyticsWhere = () => {
+    if (this.workspaceId && this.restrictToCaller) {
+      return and(eq(messages.workspaceId, this.workspaceId), eq(messages.userId, this.userId));
+    }
+    return buildWorkspaceWhere(
+      { userId: this.userId, workspaceId: this.workspaceId },
+      { userId: messages.userId, workspaceId: messages.workspaceId },
+    );
+  };
 
   /**
    * @description Find usage records by date range.
@@ -55,10 +84,7 @@ export class UsageRecordService {
       .from(messages)
       .where(
         genWhere([
-          buildWorkspaceWhere(
-            { userId: this.userId, workspaceId: this.workspaceId },
-            { userId: messages.userId, workspaceId: messages.workspaceId },
-          ),
+          this.analyticsWhere(),
           eq(messages.role, 'assistant'),
           agentId ? eq(messages.agentId, agentId) : undefined,
           genRangeWhere([startAt, endAt], messages.createdAt, (date) => date.toDate()),
@@ -236,10 +262,7 @@ export class UsageRecordService {
       .from(messages)
       .where(
         genWhere([
-          buildWorkspaceWhere(
-            { userId: this.userId, workspaceId: this.workspaceId },
-            { userId: messages.userId, workspaceId: messages.workspaceId },
-          ),
+          this.analyticsWhere(),
           eq(messages.role, 'assistant'),
           eq(messages.agentId, agentId),
           genRangeWhere([startAt, endAt], messages.createdAt, (date) => date.toDate()),
@@ -360,5 +383,35 @@ export class UsageRecordService {
       byModel: [...models.values()].sort((a, b) => b.totalTokens - a.totalTokens),
       summary,
     };
+  };
+
+  /**
+   * Tool / skill call stats from message_plugins (explicit invocations only).
+   * Permission scope matches token analytics (restrictToCaller for members).
+   */
+  getToolUsageStats = async (
+    startAt: string,
+    endAt: string,
+    agentId?: string,
+  ): Promise<ToolUsageStats> => {
+    const rows = await this.db
+      .select({
+        apiName: messagePlugins.apiName,
+        arguments: messagePlugins.arguments,
+        error: messagePlugins.error,
+        identifier: messagePlugins.identifier,
+        userId: messagePlugins.userId,
+      })
+      .from(messagePlugins)
+      .innerJoin(messages, eq(messages.id, messagePlugins.id))
+      .where(
+        genWhere([
+          this.analyticsWhere(),
+          agentId ? eq(messages.agentId, agentId) : undefined,
+          genRangeWhere([startAt, endAt], messages.createdAt, (date) => date.toDate()),
+        ]),
+      );
+
+    return aggregateToolUsageRows(rows);
   };
 }

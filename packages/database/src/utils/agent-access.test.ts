@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getTestDB } from '../core/getTestDB';
 import { agents, users, workspaces } from '../schemas';
 import type { LobeChatDatabase } from '../type';
-import { assertAgentUsableBy } from './agent-access';
+import { assertAgentUsableBy, assertTaskAssigneeUsableBy } from './agent-access';
 
 const serverDB: LobeChatDatabase = await getTestDB();
 
@@ -137,6 +137,46 @@ describe('assertAgentUsableBy', () => {
       await expect(assertAgentUsableBy(serverDB, agentId, { userId: userA })).rejects.toMatchObject(
         { code: 'NOT_FOUND' },
       );
+    });
+  });
+
+  describe('assertTaskAssigneeUsableBy', () => {
+    it('allows assigning a colleague private inbox in the same workspace', async () => {
+      const agentId = 'agt-colleague-inbox';
+      await serverDB.insert(agents).values({
+        id: agentId,
+        slug: 'inbox',
+        title: 'Colleague',
+        userId: userA,
+        visibility: 'private',
+        virtual: true,
+        workspaceId: workspaceA,
+      });
+
+      await expect(
+        assertTaskAssigneeUsableBy(serverDB, agentId, {
+          userId: userB,
+          workspaceId: workspaceA,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('still rejects a colleague private non-inbox agent', async () => {
+      const agentId = 'agt-colleague-private';
+      await serverDB.insert(agents).values({
+        id: agentId,
+        title: 'Secret',
+        userId: userA,
+        visibility: 'private',
+        workspaceId: workspaceA,
+      });
+
+      await expect(
+        assertTaskAssigneeUsableBy(serverDB, agentId, {
+          userId: userB,
+          workspaceId: workspaceA,
+        }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
   });
 });

@@ -46,8 +46,7 @@ const Body = memo(() => {
   const { t } = useTranslation('file');
 
   // Initialize documents list via SWR; keep `isValidating` so the accordion
-  // header can show a subtle in-flight indicator (mirrors the Private Agent
-  // pattern in `home/_layout/Body/Private`).
+  // header can show a subtle in-flight indicator.
   const useFetchDocuments = usePageStore((s) => s.useFetchDocuments);
   // Use the SWR result as the settled signal: `data` is `undefined` until the
   // first fetch succeeds, so a failed load surfaces error + Retry instead of a
@@ -57,7 +56,6 @@ const Body = memo(() => {
   const { data, error, isLoading, isValidating, mutate } = useFetchDocuments();
 
   const filteredDocumentsCount = usePageStore(pageSelectors.filteredDocumentsCount);
-  const privateCount = usePageStore(pageSelectors.privateFilteredDocumentsCount);
   const workspaceCount = usePageStore(pageSelectors.workspaceFilteredDocumentsCount);
   const searchKeywords = usePageStore((s) => s.searchKeywords);
   const dropdownMenu = useDropdownMenu();
@@ -69,15 +67,13 @@ const Body = memo(() => {
   const activeWorkspaceId = useActiveWorkspaceId();
   const searchActive = Boolean(searchKeywords.trim());
 
-  // Empty-bucket call-to-action: a single "New Page" row that creates directly
-  // into the right visibility. Mirrors the Home sidebar's "创建助理" affordance
-  // — the bucket is empty but still actionable.
+  // Empty-state call-to-action: new workspace documents are shared by default.
   const createNewPage = usePageStore((s) => s.createNewPage);
   const { allowed: canCreate } = usePermission('create_content');
   const untitledLabel = t('pageList.untitled');
   const newPageLabel = t('addPage');
 
-  const renderEmptyCreate = (visibility: 'private' | 'public') => (
+  const renderEmptyCreate = () => (
     <Block
       horizontal
       align={'center'}
@@ -87,7 +83,7 @@ const Body = memo(() => {
       paddingInline={4}
       style={canCreate ? { height: 36 } : { cursor: 'not-allowed', height: 36, opacity: 0.5 }}
       variant={'borderless'}
-      onClick={() => canCreate && createNewPage(untitledLabel, visibility)}
+      onClick={() => canCreate && createNewPage(untitledLabel, 'public')}
     >
       <Center flex={'none'} height={28} width={28}>
         <Icon icon={PlusIcon} size={'small'} />
@@ -101,58 +97,7 @@ const Body = memo(() => {
   return (
     <Flexbox gap={1} paddingInline={4}>
       {activeWorkspaceId ? (
-        <Accordion defaultExpandedKeys={[GroupKey.PrivatePages, GroupKey.WorkspacePages]} gap={2}>
-          <AccordionItem
-            itemKey={GroupKey.PrivatePages}
-            paddingBlock={4}
-            paddingInline={'8px 4px'}
-            action={
-              <Flexbox horizontal align="center" gap={2}>
-                <Actions />
-                <AddButton compact visibility="private" />
-              </Flexbox>
-            }
-            headerWrapper={(header) => (
-              <ContextMenuTrigger items={dropdownMenu}>{header}</ContextMenuTrigger>
-            )}
-            title={
-              <Flexbox horizontal align="center" gap={4}>
-                <Text ellipsis fontSize={12} type={'secondary'} weight={500}>
-                  {t('pageList.privateTitle')}
-                  {privateCount > 0 && ` ${privateCount}`}
-                </Text>
-                {isValidating && <NeuralNetworkLoading size={14} />}
-              </Flexbox>
-            }
-          >
-            <AsyncBoundary
-              data={data}
-              error={error}
-              errorVariant={'inline'}
-              isLoading={isLoading}
-              loading={<SkeletonList />}
-              onRetry={() => mutate()}
-            >
-              <Flexbox gap={1} paddingBlock={1}>
-                {privateCount === 0 ? (
-                  searchActive ? (
-                    <Text
-                      align="center"
-                      fontSize={12}
-                      style={{ paddingBlock: 12, paddingInline: 8 }}
-                      type={'secondary'}
-                    >
-                      {t('pageList.noResults')}
-                    </Text>
-                  ) : (
-                    renderEmptyCreate('private')
-                  )
-                ) : (
-                  <List visibility="private" />
-                )}
-              </Flexbox>
-            </AsyncBoundary>
-          </AccordionItem>
+        <Accordion defaultExpandedKeys={[GroupKey.WorkspacePages]} gap={2}>
           <AccordionItem
             action={<AddButton compact visibility="public" />}
             itemKey={GroupKey.WorkspacePages}
@@ -164,7 +109,7 @@ const Body = memo(() => {
             title={
               <Flexbox horizontal align="center" gap={4}>
                 <Text ellipsis fontSize={12} type={'secondary'} weight={500}>
-                  {t('pageList.workspaceTitle')}
+                  {t('pageList.title')}
                   {workspaceCount > 0 && ` ${workspaceCount}`}
                 </Text>
                 {isValidating && <NeuralNetworkLoading size={14} />}
@@ -191,7 +136,7 @@ const Body = memo(() => {
                       {t('pageList.noResults')}
                     </Text>
                   ) : (
-                    renderEmptyCreate('public')
+                    renderEmptyCreate()
                   )
                 ) : (
                   <List visibility="workspace" />

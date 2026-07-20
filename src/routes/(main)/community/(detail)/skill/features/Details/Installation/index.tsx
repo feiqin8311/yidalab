@@ -2,20 +2,8 @@
 
 import { memo } from 'react';
 
-import { useDetailContext } from '../../DetailProvider';
-import Platform from '../../Sidebar/Platform';
+import InstallationConfig from '../../Sidebar/InstallationConfig';
 
-const Installation = memo<{ mobile?: boolean }>(({ mobile }) => {
-  const { identifier, downloadUrl } = useDetailContext();
-
-  return (
-    <Platform
-      expandCodeByDefault
-      downloadUrl={downloadUrl}
-      identifier={identifier}
-      mobile={mobile}
-    />
-  );
-});
+const Installation = memo<{ mobile?: boolean }>(({ mobile: _mobile }) => <InstallationConfig />);
 
 export default Installation;

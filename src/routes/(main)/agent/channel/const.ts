@@ -6,6 +6,7 @@ import type { SerializedPlatformDefinition } from '@/server/services/bot/platfor
 /** Known icon names from @lobehub/ui/icons that correspond to chat platforms. */
 const ICON_NAMES = [
   'Discord',
+  'DingTalk',
   'GoogleChat',
   'IMessage',
   'Lark',

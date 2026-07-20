@@ -60,14 +60,14 @@ export async function submitBotFeedback(
 
   try {
     const user = await serverDB.query.users.findFirst({
-      columns: { email: true, fullName: true },
+      columns: { email: true, username: true },
       where: eq(users.id, userId),
     });
 
     const marketService = new MarketService({
       userInfo: {
         email: user?.email ?? undefined,
-        name: user?.fullName ?? undefined,
+        name: user?.username ?? undefined,
         userId,
       },
     });

@@ -17,6 +17,7 @@ import SidebarContent from '@/routes/(main)/home/_layout/SidebarContent';
 import MemorySidebarContent from '@/routes/(main)/memory/_layout/Sidebar/Content';
 import ResourceSidebarContent from '@/routes/(main)/resource/(home)/_layout/SidebarContent';
 import SettingsSidebarContent from '@/routes/(main)/settings/_layout/SidebarContent';
+import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfig';
 
 import { NavPanelDraggable } from './components/NavPanelDraggable';
 
@@ -87,6 +88,7 @@ const getMainRouteSegment = (pathname: string, activeSlug: string | null) => {
 const NavPanel = memo(() => {
   const { pathname } = useLocation();
   const activeSlug = useActiveWorkspaceSlug();
+  const hidePersonalSettings = useServerConfigStore(serverConfigSelectors.hidePersonalSettings);
   const panelContent = useSyncExternalStore(
     subscribeNavPanel,
     getNavPanelSnapshot,
@@ -99,7 +101,8 @@ const NavPanel = memo(() => {
   const isHomeRoute =
     pathname === '/' ||
     (!!activeSlug && (pathname === `/${activeSlug}` || pathname === `/${activeSlug}/`));
-  const isPersonalSettingsRoute = pathname === '/settings' || pathname.startsWith('/settings/');
+  const isPersonalSettingsRoute =
+    !hidePersonalSettings && (pathname === '/settings' || pathname.startsWith('/settings/'));
   const isWorkspaceAgentRoute =
     !!activeSlug &&
     (pathname === `/${activeSlug}/agent` || pathname.startsWith(`/${activeSlug}/agent/`));

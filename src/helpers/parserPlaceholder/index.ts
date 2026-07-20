@@ -62,10 +62,7 @@ export const VARIABLE_GENERATORS = {
    */
   email: () => userProfileSelectors.email(useUserStore.getState()) ?? '',
   nickname: () => userProfileSelectors.nickName(useUserStore.getState()) ?? '',
-  username: () =>
-    userProfileSelectors.displayUserName(useUserStore.getState()) ??
-    userProfileSelectors.fullName(useUserStore.getState()) ??
-    '',
+  username: () => userProfileSelectors.displayUserName(useUserStore.getState()) ?? '',
 
   /**
    * Random value template variables

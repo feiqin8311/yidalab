@@ -88,15 +88,6 @@ vi.mock('@/layout/AuthProvider', async () => {
   };
 });
 
-vi.mock('@/layout/AuthProvider/MarketAuth', async () => {
-  const React = await import('react');
-
-  return {
-    MarketAuthProvider: ({ children }: { children?: ReactNode }) =>
-      React.createElement('div', { 'data-testid': 'market-auth-provider' }, children),
-  };
-});
-
 vi.mock('@/layout/GlobalProvider/AppTheme', async () => {
   const React = await import('react');
 
@@ -182,7 +173,7 @@ describe('SPAGlobalProvider', () => {
     Reflect.deleteProperty(window, '__SERVER_CONFIG__');
   });
 
-  it('provides Market auth from the SPA global provider', () => {
+  it('does not mount MarketAuthProvider in the SPA global provider', () => {
     render(
       <SPAGlobalProvider>
         <div data-testid="spa-route-content" />
@@ -191,6 +182,6 @@ describe('SPAGlobalProvider', () => {
 
     const routeContent = screen.getByTestId('spa-route-content');
 
-    expect(routeContent.closest('[data-testid="market-auth-provider"]')).not.toBeNull();
+    expect(routeContent.closest('[data-testid="market-auth-provider"]')).toBeNull();
   });
 });

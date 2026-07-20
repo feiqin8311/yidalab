@@ -9,9 +9,7 @@ import {
   Database,
   EllipsisIcon,
   Gift,
-  Info,
   KeyIcon,
-  KeyRound,
   Map,
   PaletteIcon,
   Sparkles,
@@ -51,7 +49,7 @@ export interface CategoryGroup {
 export const useCategory = (): CategoryGroup[] => {
   const navigate = useWorkspaceAwareNavigate();
   const { t } = useTranslation(['setting', 'auth', 'subscription']);
-  const { hideDocs, showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
+  const { showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
   const isDevMode = useUserStore((s) => userGeneralSettingsSelectors.config(s).isDevMode);
 
@@ -113,7 +111,6 @@ export const useCategory = (): CategoryGroup[] => {
       makeItem({ icon: SkillsIcon, key: SettingsTabs.Skill, label: t('setting:tab.skill') }),
       makeItem({ icon: Blocks, key: SettingsTabs.Connector, label: t('setting:tab.connector') }),
       makeItem({ icon: BrainCircuit, key: SettingsTabs.Memory, label: t('setting:tab.memory') }),
-      makeItem({ icon: KeyRound, key: SettingsTabs.Creds, label: t('setting:tab.creds') }),
       showApiKeyManage &&
         makeItem({ icon: KeyIcon, key: SettingsTabs.APIKey, label: t('auth:tab.apikey') }),
     ].filter((item): item is CategoryItem => Boolean(item));
@@ -127,7 +124,6 @@ export const useCategory = (): CategoryGroup[] => {
         key: SettingsTabs.Advanced,
         label: t('setting:tab.advanced'),
       }),
-      !hideDocs && makeItem({ icon: Info, key: SettingsTabs.About, label: t('setting:tab.about') }),
     ].filter((item): item is CategoryItem => Boolean(item));
 
     return [
@@ -140,5 +136,5 @@ export const useCategory = (): CategoryGroup[] => {
       { items: agent, key: SettingsGroupKey.Agent, title: t('setting:group.aiConfig') },
       { items: system, key: SettingsGroupKey.System, title: t('setting:group.system') },
     ].filter((group) => group.items.length > 0);
-  }, [t, enableBusinessFeatures, hideDocs, showApiKeyManage, showProvider, isDevMode, navigate]);
+  }, [t, enableBusinessFeatures, showApiKeyManage, showProvider, isDevMode, navigate]);
 };

@@ -207,7 +207,7 @@ const HistorySidebarRow = memo<HistorySidebarRowProps>(
               <span className={styles.source}>{saveSourceLabels[item.saveSource]}</span>
             </Flexbox>
             <Text className={styles.meta} type={'secondary'}>
-              {authorInfo?.fullName ? `${authorInfo.fullName} · ` : ''}
+              {authorInfo?.username ? `${authorInfo.username} · ` : ''}
               {dayjs(item.savedAt).fromNow()}
             </Text>
           </Flexbox>

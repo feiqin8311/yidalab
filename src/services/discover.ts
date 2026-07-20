@@ -46,6 +46,16 @@ class DiscoverService {
   private _isRetrying = false;
   private _tokenRefreshPromise: Promise<void> | null = null;
 
+  private clearMPTokenStatus = () => {
+    if (typeof document === 'undefined') return;
+    document.cookie = 'mp_token_status=; Max-Age=0; path=/';
+  };
+
+  private isMarketUnauthorized = (error: unknown) => {
+    const code = (error as { data?: { code?: string } })?.data?.code;
+    return code === 'UNAUTHORIZED';
+  };
+
   private isMarketTrustedClientEnabled = (): boolean => {
     if (typeof window === 'undefined' || !window.global_serverConfigStore) return false;
     try {
@@ -69,53 +79,43 @@ class DiscoverService {
     }
   };
 
-  // ============================== Assistant Market ==============================
-  getAssistantCategories = async (
-    params: CategoryListQuery & { source?: AssistantMarketSource } = {},
-  ): Promise<CategoryItem[]> => {
-    const locale = globalHelpers.getCurrentLanguage();
-    const { source, ...rest } = params;
-    return lambdaClient.market.getAssistantCategories.query({
-      ...rest,
-      locale,
-      source,
-    });
+  private withMPTokenRetry = async <T>(request: () => Promise<T>): Promise<T> => {
+    await this.safeInjectMPToken();
+
+    try {
+      return await request();
+    } catch (error) {
+      if (!this.isMarketUnauthorized(error)) throw error;
+
+      this.clearMPTokenStatus();
+      if (typeof localStorage !== 'undefined') localStorage.removeItem('_mpc');
+      await this.injectMPToken();
+
+      return request();
+    }
   };
 
-  getAssistantDetail = async (params: {
+  // ============================== Assistant Market ==============================
+  getAssistantCategories = async (
+    _params: CategoryListQuery & { source?: AssistantMarketSource } = {},
+  ): Promise<CategoryItem[]> => [];
+
+  getAssistantDetail = async (_params: {
     identifier: string;
     locale?: string;
     source?: AssistantMarketSource;
     version?: string;
-  }): Promise<DiscoverAssistantDetail | undefined> => {
-    const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.getAssistantDetail.query({
-      identifier: params.identifier,
-      locale,
-      source: params.source,
-      version: params.version,
-    });
-  };
+  }): Promise<DiscoverAssistantDetail | undefined> => undefined;
 
   getAssistantIdentifiers = async (
-    params: { source?: AssistantMarketSource } = {},
-  ): Promise<IdentifiersResponse> => {
-    return lambdaClient.market.getAssistantIdentifiers.query(params);
-  };
+    _params: { source?: AssistantMarketSource } = {},
+  ): Promise<IdentifiersResponse> => [];
 
   getAssistantList = async (params: AssistantQueryParams = {}): Promise<AssistantListResponse> => {
-    await this.safeInjectMPToken();
+    const page = params.page ? Number(params.page) : 1;
+    const pageSize = params.pageSize ? Number(params.pageSize) : 20;
 
-    const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.getAssistantList.query(
-      {
-        ...params,
-        locale,
-        page: params.page ? Number(params.page) : 1,
-        pageSize: params.pageSize ? Number(params.pageSize) : 20,
-      },
-      { context: { showNotification: false } },
-    );
+    return { currentPage: page, items: [], pageSize, totalCount: 0, totalPages: 0 };
   };
 
   getAgentsByPlugin = async (params: {
@@ -125,12 +125,14 @@ class DiscoverService {
     pluginId: string;
   }): Promise<AssistantListResponse> => {
     const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.getAgentsByPlugin.query({
-      ...params,
-      locale,
-      page: params.page ? Number(params.page) : 1,
-      pageSize: params.pageSize ? Number(params.pageSize) : 20,
-    });
+    return this.withMPTokenRetry(() =>
+      lambdaClient.market.getAgentsByPlugin.query({
+        ...params,
+        locale,
+        page: params.page ? Number(params.page) : 1,
+        pageSize: params.pageSize ? Number(params.pageSize) : 12,
+      }),
+    );
   };
 
   // ============================== MCP Market ==============================
@@ -149,34 +151,61 @@ class DiscoverService {
     version?: string;
   }): Promise<DiscoverMcpDetail> => {
     const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.getMcpDetail.query({
-      ...params,
-      locale,
-    });
+    const detail = await this.withMPTokenRetry(() =>
+      lambdaClient.market.getMcpDetail.query({
+        ...params,
+        locale,
+      }),
+    );
+
+    // Company MCP rows may only ship tools via getMcpManifest; hydrate detail.tools
+    // so Schema UI is never empty when the market list already has the catalog.
+    if ((!detail.tools || detail.tools.length === 0) && params.identifier) {
+      try {
+        const manifest = await this.getMcpManifest({
+          identifier: params.identifier,
+          locale,
+          version: params.version,
+        });
+        const tools =
+          (manifest as any)?.tools ||
+          ((manifest as any)?.api || []).map((api: any) => ({
+            description: api.description,
+            inputSchema: api.parameters,
+            name: api.name,
+          }));
+        if (Array.isArray(tools) && tools.length > 0) {
+          return {
+            ...detail,
+            tools,
+            toolsCount: tools.length,
+          } as DiscoverMcpDetail;
+        }
+      } catch {
+        /* keep original detail */
+      }
+    }
+
+    return detail;
   };
 
   getMcpList = async (params: McpQueryParams = {}): Promise<McpListResponse> => {
-    await this.safeInjectMPToken();
-
     const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.getMcpList.query({
-      ...params,
-      locale,
-      page: params.page ? Number(params.page) : 1,
-      pageSize: params.pageSize ? Number(params.pageSize) : 20,
-    });
+    return this.withMPTokenRetry(() =>
+      lambdaClient.market.getMcpList.query({
+        ...params,
+        locale,
+        page: params.page ? Number(params.page) : 1,
+        pageSize: params.pageSize ? Number(params.pageSize) : 21,
+      }),
+    );
   };
 
   getMCPPluginList = async (params: MCPPluginListParams): Promise<McpListResponse> => {
-    await this.safeInjectMPToken();
-
-    const locale = globalHelpers.getCurrentLanguage();
-
-    return lambdaClient.market.getMcpList.query({
-      ...params,
-      locale,
+    return this.getMcpList({
       page: params.page ? Number(params.page) : 1,
       pageSize: params.pageSize ? Number(params.pageSize) : 21,
+      q: params.q,
     });
   };
 
@@ -548,20 +577,24 @@ class DiscoverService {
     version?: string;
   }): Promise<DiscoverSkillDetail> => {
     const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.skill.getSkillDetail.query({
-      ...params,
-      locale,
-    });
+    return this.withMPTokenRetry(() =>
+      lambdaClient.market.skill.getSkillDetail.query({
+        ...params,
+        locale,
+      }),
+    );
   };
 
   getSkillList = async (params: SkillQueryParams = {}): Promise<SkillListResponse> => {
     const locale = globalHelpers.getCurrentLanguage();
-    return lambdaClient.market.skill.getSkillList.query({
-      ...params,
-      locale,
-      page: params.page ? Number(params.page) : 1,
-      pageSize: params.pageSize ? Number(params.pageSize) : 20,
-    });
+    return this.withMPTokenRetry(() =>
+      lambdaClient.market.skill.getSkillList.query({
+        ...params,
+        locale,
+        page: params.page ? Number(params.page) : 1,
+        pageSize: params.pageSize ? Number(params.pageSize) : 20,
+      }),
+    );
   };
 
   reportSkillEvent = async (eventData: { event: string; identifier: string; source?: string }) => {

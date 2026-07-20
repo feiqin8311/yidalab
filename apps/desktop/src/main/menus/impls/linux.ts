@@ -6,6 +6,7 @@ import { app, clipboard, dialog, Menu, shell } from 'electron';
 
 import { isDev } from '@/const/env';
 import { HETERO_AGENT_DIR } from '@/const/heteroAgent';
+import { isPersonalSettingsHidden } from '@/utils/featureFlags';
 
 import { buildTrayMenuTemplate } from '../trayMenu';
 import type { ContextMenuData, IMenuPlatform, MenuOptions } from '../types';
@@ -114,6 +115,7 @@ export class LinuxMenu extends BaseMenuPlatform implements IMenuPlatform {
               mainWindow.broadcast('navigate', { path: '/settings' });
             },
             label: t('file.preferences'),
+            visible: !isPersonalSettingsHidden(),
           },
           {
             click: () => {
@@ -490,6 +492,7 @@ export class LinuxMenu extends BaseMenuPlatform implements IMenuPlatform {
           mainWindow.broadcast('navigate', { path: '/settings' });
         },
         label: t('tray.settings'),
+        visible: !isPersonalSettingsHidden(),
       },
       { type: 'separator' },
       { label: t('tray.quit'), role: 'quit' },

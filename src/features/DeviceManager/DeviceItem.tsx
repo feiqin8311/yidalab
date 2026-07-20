@@ -341,7 +341,7 @@ const DeviceItem = memo<DeviceItemProps>(
               <Tag>
                 {t('devices.share.sharedByTag', {
                   name:
-                    device.enroller?.fullName ||
+                    device.enroller?.username ||
                     device.enroller?.username ||
                     t('workspaceSetting.devices.unknownEnroller'),
                 })}
@@ -376,7 +376,7 @@ const DeviceItem = memo<DeviceItemProps>(
             <Tooltip
               title={t('workspaceSetting.devices.enrolledBy', {
                 name:
-                  device.enroller.fullName ||
+                  device.enroller.username ||
                   device.enroller.username ||
                   t('workspaceSetting.devices.unknownEnroller'),
               })}

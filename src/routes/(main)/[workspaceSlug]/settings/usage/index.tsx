@@ -1,5 +1,5 @@
 'use client';
 
-import WorkspaceBillingUsage from '@/business/client/BusinessSettingPages/WorkspaceBillingUsage';
+import UsageSetting from '@/business/client/BusinessSettingPages/Usage';
 
-export default WorkspaceBillingUsage;
+export default UsageSetting;

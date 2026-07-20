@@ -6,10 +6,26 @@ class KnowledgeBaseService {
     return lambdaClient.knowledgeBase.createKnowledgeBase.mutate(params);
   };
 
-  getKnowledgeBaseList = async (visibility?: 'private' | 'public') => {
-    return lambdaClient.knowledgeBase.getKnowledgeBases.query(
-      visibility ? { visibility } : undefined,
-    );
+  getKnowledgeBaseList = async (params?: {
+    listScope?: 'mine' | 'shared_with_me' | 'workspace' | 'admin_all';
+    visibility?: 'private' | 'public';
+  }) => {
+    return lambdaClient.knowledgeBase.getKnowledgeBases.query(params);
+  };
+
+  listKnowledgeBaseGrants = async (id: string) => {
+    return lambdaClient.knowledgeBase.listKnowledgeBaseGrants.query({ id });
+  };
+
+  setKnowledgeBaseGrants = async (
+    id: string,
+    grants: Array<{
+      granteeId: string;
+      granteeType: 'user' | 'department';
+      role?: 'viewer' | 'editor';
+    }>,
+  ) => {
+    return lambdaClient.knowledgeBase.setKnowledgeBaseGrants.mutate({ grants, id });
   };
 
   getKnowledgeBaseById = async (id: string) => {

@@ -4,7 +4,7 @@ import { Flexbox, Icon, Tag } from '@lobehub/ui';
 import { Tabs } from '@lobehub/ui/base-ui';
 import { SkillsIcon } from '@lobehub/ui/icons';
 import { createStaticStyles } from 'antd-style';
-import { BookOpenIcon, DownloadIcon, FileTextIcon, HistoryIcon, ListIcon } from 'lucide-react';
+import { BookOpenIcon, FileTextIcon, HistoryIcon, ListIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import urlJoin from 'url-join';
@@ -47,11 +47,6 @@ const Nav = memo<{
           icon: <Icon icon={BookOpenIcon} size={16} />,
           key: SkillNavKey.Overview,
           label: t('skills.details.overview.title'),
-        },
-        {
-          icon: <Icon icon={DownloadIcon} size={16} />,
-          key: SkillNavKey.Installation,
-          label: t('skills.details.sidebar.installationConfig'),
         },
         {
           icon: <Icon icon={SkillsIcon} size={16} />,
@@ -107,7 +102,6 @@ const Nav = memo<{
       onChange={(key) => setActiveTab?.(key as SkillNavKey)}
     />
   );
-
   return mobile ? (
     nav
   ) : (
@@ -119,14 +113,6 @@ const Nav = memo<{
         gap={12}
         style={{ marginInlineStart: 12, whiteSpace: 'nowrap' }}
       >
-        <a
-          className={styles.link}
-          href="https://discord.gg/AYFPHvv2jT"
-          rel="noopener noreferrer"
-          target={'_blank'}
-        >
-          {t('skills.details.nav.needHelp')}
-        </a>
         {source && (
           <a className={styles.link} href={source} rel="noopener noreferrer" target={'_blank'}>
             {t('skills.details.nav.viewSourceCode')}

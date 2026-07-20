@@ -273,7 +273,7 @@ const DeviceDetailPanel = memo<DeviceDetailPanelProps>(({ device, isCurrent, onC
           <Flexbox horizontal align={'center'} gap={8}>
             <Avatar avatar={device.enroller.avatar ?? undefined} size={24} />
             <Text>
-              {device.enroller.fullName ||
+              {device.enroller.username ||
                 device.enroller.username ||
                 t('workspaceSetting.devices.unknownEnroller')}
             </Text>

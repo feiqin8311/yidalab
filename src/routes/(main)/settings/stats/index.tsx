@@ -25,6 +25,7 @@ import {
   Welcome,
 } from './features/overview';
 import { AssistantsRank, ModelsRank, TopicsRank } from './features/rankings';
+import { ToolUsageSection } from './features/toolUsage';
 import { UsageCards, UsageTable, UsageTrends } from './features/usage';
 import { AiHeatmaps } from './features/visualization';
 import { GroupBy, type UserDisplayResolver } from './types';
@@ -167,6 +168,12 @@ const StatsSetting = memo<StatsSettingProps>(
           </AsyncBoundary>
           <div style={{ height: 24 }} />
           <UsageTable dateStrings={dateStrings} />
+          <Divider dashed style={{ marginBlock: 24 }} />
+          <ToolUsageSection
+            dateStrings={dateStrings}
+            enableUserDimension={enableUserDimension}
+            resolveUser={resolveUser}
+          />
         </FormGroup>
       </>
     );

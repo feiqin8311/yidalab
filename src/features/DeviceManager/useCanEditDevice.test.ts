@@ -31,9 +31,8 @@ vi.mock('@/store/user/selectors', () => ({
 
 const buildEnroller = (userId: string): DeviceEnroller => ({
   avatar: null,
-  fullName: null,
-  userId,
   username: null,
+  userId,
 });
 
 const buildDevice = (overrides: {

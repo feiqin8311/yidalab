@@ -4,25 +4,38 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useFetchWorkspaceMembers } from '@/business/client/hooks/useFetchWorkspaceMembers';
+import { useIsWorkspaceAdmin } from '@/business/client/hooks/useIsWorkspaceAdmin';
 import Page from '@/routes/(main)/settings/stats';
 import WorkspaceWelcome from '@/routes/(main)/settings/stats/features/overview/WorkspaceWelcome';
 import { type UserDisplay } from '@/routes/(main)/settings/stats/types';
 
-interface WorkspaceStatsMemberProfile {
+/**
+ * company.listMembers returns a flat row (username/email/avatar on the member).
+ * Older workspace-member shapes nest the profile under `user` — accept both.
+ */
+interface WorkspaceStatsMember {
   avatar?: string | null;
+  deletedAt?: Date | string | null;
   email?: string | null;
-  fullName?: string | null;
+  user?: {
+    avatar?: string | null;
+    email?: string | null;
+    username?: string | null;
+  } | null;
+  userId: string;
   username?: string | null;
 }
 
-interface WorkspaceStatsMember {
-  deletedAt?: Date | string | null;
-  user?: WorkspaceStatsMemberProfile | null;
-  userId: string;
-}
+const memberDisplayName = (member: WorkspaceStatsMember) =>
+  member.username || member.user?.username || member.email || member.user?.email || member.userId;
+
+const memberAvatar = (member: WorkspaceStatsMember) => member.avatar ?? member.user?.avatar ?? null;
 
 const WorkspaceStatsSetting = () => {
   const { t } = useTranslation('auth');
+  // Owner/admin: full company stats + by-user dimension. Members: self-only
+  // data from the API (restrictToCaller / analyticsSelfOnly).
+  const isAdmin = useIsWorkspaceAdmin();
 
   const { data: members = [] } = useFetchWorkspaceMembers({ includeDeleted: true });
 
@@ -30,10 +43,9 @@ const WorkspaceStatsSetting = () => {
     const map = new Map<string, UserDisplay>();
     for (const m of members) {
       const member = m as WorkspaceStatsMember;
-      const profile = member.user;
-      const name = profile?.fullName || profile?.username || profile?.email || member.userId;
+      const name = memberDisplayName(member);
       map.set(member.userId, {
-        avatar: profile?.avatar ?? null,
+        avatar: memberAvatar(member),
         name: member.deletedAt ? t('usage.activeModels.removedUserName', { name }) : name,
       });
     }
@@ -45,7 +57,13 @@ const WorkspaceStatsSetting = () => {
     [memberMap],
   );
 
-  return <Page enableUserDimension headerNode={<WorkspaceWelcome />} resolveUser={resolveUser} />;
+  return (
+    <Page
+      enableUserDimension={isAdmin}
+      headerNode={<WorkspaceWelcome />}
+      resolveUser={isAdmin ? resolveUser : undefined}
+    />
+  );
 };
 
 WorkspaceStatsSetting.displayName = 'WorkspaceStatsSetting';

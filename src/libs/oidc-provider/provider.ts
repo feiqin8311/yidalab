@@ -228,7 +228,7 @@ export const createOIDCProvider = async (db: LobeChatDatabase): Promise<Provider
 
             if (scope.includes('profile')) {
               claims.name =
-                user.fullName ||
+                user.username ||
                 user.username ||
                 `${user.firstName || ''} ${user.lastName || ''}`.trim();
               claims.picture = user.avatar;

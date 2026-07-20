@@ -32,35 +32,9 @@ const Private = memo<PrivateProps>(({ itemKey }) => {
 
   const { openConfigGroupModal } = useAgentModal();
 
-  const {
-    createAgentMenuItem,
-    createGroupChatMenuItem,
-    createHeterogeneousAgentMenuItems,
-    createPlatformAgentMenuItem,
-    isLoading,
-  } = useCreateMenuItems();
-
-  // Mirror the public Agent "+" menu so the create surface is consistent
-  // across both buckets — heterogeneous and platform agents are hard-pinned
-  // to private here. Session-group creation lives in the "More" dropdown.
-  const addMenuItems = useMemo(() => {
-    const heterogeneousItems = createHeterogeneousAgentMenuItems({ visibility: 'private' });
-    const platformItem = createPlatformAgentMenuItem({ visibility: 'private' });
-
-    return [
-      createAgentMenuItem({ visibility: 'private' }),
-      createGroupChatMenuItem({ visibility: 'private' }),
-      ...(heterogeneousItems.length > 0
-        ? [{ type: 'divider' as const }, ...heterogeneousItems]
-        : []),
-      ...(platformItem ? [{ type: 'divider' as const }, platformItem] : []),
-    ];
-  }, [
-    createAgentMenuItem,
-    createGroupChatMenuItem,
-    createHeterogeneousAgentMenuItems,
-    createPlatformAgentMenuItem,
-  ]);
+  // Temporary product hold: agent creation is disabled for YidaLab.
+  const { isLoading } = useCreateMenuItems();
+  const addMenuItems = useMemo(() => [], []);
 
   const handleOpenConfigGroupModal = useCallback(() => {
     openConfigGroupModal('private');

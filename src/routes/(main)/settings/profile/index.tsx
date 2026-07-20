@@ -15,9 +15,9 @@ import { useUserStore } from '@/store/user';
 import { authSelectors, userProfileSelectors } from '@/store/user/selectors';
 
 import AvatarRow from './features/AvatarRow';
+import CompanyProfileRow from './features/CompanyProfileRow';
 import ComposioAuthorizationList from './features/ComposioAuthorizationList';
 import EmailRow from './features/EmailRow';
-import FullNameRow from './features/FullNameRow';
 import InterestsRow from './features/InterestsRow';
 import PasswordRow from './features/PasswordRow';
 import ProfileRow from './features/ProfileRow';
@@ -53,7 +53,7 @@ const ProfileSetting = () => {
   // Fetch Composio servers
   useFetchUserComposioConnections(enableComposio);
 
-  // Only the core profile rows (avatar / name / username / email) gate on the
+  // Only the core profile rows (avatar / username / company / interests) gate on the
   // user record itself. Auth-providers (SSO) and Composio are independent, slower
   // sub-sections that render their own rows when ready — folding them into one
   // composite gate let a single slow/failed dependency skeleton the whole tab.
@@ -85,11 +85,11 @@ const ProfileSetting = () => {
 
           <Divider style={{ margin: 0 }} />
 
-          <FullNameRow />
+          <UsernameRow />
 
           <Divider style={{ margin: 0 }} />
 
-          <UsernameRow />
+          <CompanyProfileRow />
 
           <Divider style={{ margin: 0 }} />
 

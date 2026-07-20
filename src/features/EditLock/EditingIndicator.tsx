@@ -41,8 +41,8 @@ const EditingIndicator = memo<EditingIndicatorProps>(({ holderId, pending }) => 
     );
   }
 
-  const label = holder?.fullName
-    ? t('pageEditor.editMode.lockedByOther', { name: holder.fullName })
+  const label = holder?.username
+    ? t('pageEditor.editMode.lockedByOther', { name: holder.username })
     : t('pageEditor.editMode.lockedBySomeone');
 
   return (

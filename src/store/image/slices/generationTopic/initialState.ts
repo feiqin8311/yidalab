@@ -14,5 +14,5 @@ export const initialGenerationTopicState: GenerationTopicState = {
     typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('topic') : null,
   loadingGenerationTopicIds: [],
   generationTopics: [],
-  newGenerationTopicVisibility: 'private',
+  newGenerationTopicVisibility: 'public',
 };

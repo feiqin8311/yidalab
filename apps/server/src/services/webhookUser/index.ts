@@ -68,7 +68,7 @@ export class WebhookUserService {
       await userModel.updateUser({
         avatar: data?.avatar,
         email: data?.email,
-        fullName: data?.fullName,
+        username: data?.username,
       });
     } else {
       console.warn(

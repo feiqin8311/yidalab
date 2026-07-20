@@ -1,5 +1,6 @@
 'use client';
 
+import { DEFAULT_INBOX_TITLE } from '@lobechat/const';
 import { ActionIcon, Avatar, Block, Flexbox, Popover, Skeleton, Text } from '@lobehub/ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { ChevronsUpDownIcon } from 'lucide-react';
@@ -60,7 +61,9 @@ const AgentSelect = memo(() => {
 
   const displayMeta = isInboxDisplay ? inboxMeta : (sidebarItem ?? agentMapMeta);
 
-  const fallbackTitle = isInboxDisplay ? 'Lobe AI' : t('defaultSession', { ns: 'common' });
+  const fallbackTitle = isInboxDisplay
+    ? DEFAULT_INBOX_TITLE
+    : t('defaultSession', { ns: 'common' });
   const displayTitle = displayMeta?.title || fallbackTitle;
   const displayAvatar =
     (typeof displayMeta?.avatar === 'string' ? displayMeta.avatar : undefined) ||

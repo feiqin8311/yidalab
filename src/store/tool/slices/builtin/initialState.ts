@@ -1,8 +1,8 @@
-import { builtinSkills } from '@lobechat/builtin-skills';
+import { AgentBrowserIdentifier, builtinSkills } from '@lobechat/builtin-skills';
 import { builtinTools, defaultUninstalledBuiltinTools } from '@lobechat/builtin-tools';
 import { type BuiltinSkill, type LobeBuiltinTool } from '@lobechat/types';
 
-import { filterBuiltinSkills } from '@/helpers/skillFilters';
+import { shouldEnableBuiltinSkill } from '@/helpers/skillFilters';
 
 export interface BuiltinToolState {
   builtinSkills: BuiltinSkill[];
@@ -20,7 +20,10 @@ export interface BuiltinToolState {
 }
 
 export const initialBuiltinToolState: BuiltinToolState = {
-  builtinSkills: filterBuiltinSkills(builtinSkills),
+  builtinSkills: builtinSkills.filter(
+    (skill) =>
+      skill.identifier === AgentBrowserIdentifier || shouldEnableBuiltinSkill(skill.identifier),
+  ),
   builtinToolLoading: {},
   builtinTools,
   uninstalledBuiltinTools: defaultUninstalledBuiltinTools,

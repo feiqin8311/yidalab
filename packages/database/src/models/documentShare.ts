@@ -151,7 +151,7 @@ export class DocumentShareModel {
       .select({
         document: documents,
         ownerAvatar: users.avatar,
-        ownerDisplayName: users.fullName,
+        ownerDisplayName: users.username,
         pageViewCount: documentShares.pageViewCount,
         permission: documentShares.permission,
         shareUserId: documentShares.userId,

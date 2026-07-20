@@ -181,7 +181,6 @@ export interface TaskDetail {
 
 export interface MessageSender {
   avatar?: string | null;
-  fullName?: string | null;
   id: string;
   username?: string | null;
 }

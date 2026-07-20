@@ -13,6 +13,9 @@ export const createCreateCredModal = (props: CreateCredModalContentProps): Modal
     styles: {
       content: { paddingBlock: 16, paddingInline: 24 },
     },
-    title: t('creds.createModal.title', { ns: 'setting' }),
+    title: t(
+      props.scope === 'company' ? 'creds.createModal.titleCompany' : 'creds.createModal.title',
+      { ns: 'setting' },
+    ),
     width: 'min(90vw, 640px)',
   });

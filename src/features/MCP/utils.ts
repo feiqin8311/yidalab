@@ -1,14 +1,47 @@
 import { type ConnectionConfig, type DeploymentOption } from '@lobehub/market-types';
 
+const SECRET_QUERY_KEYS = new Set([
+  'key',
+  'api_key',
+  'apikey',
+  'api-key',
+  'token',
+  'access_token',
+  'secret',
+  'secret_key',
+  'secret-key',
+  'password',
+  'auth',
+]);
+
+/** Never show secret query params (e.g. ?key=) in market deployment JSON. */
+const redactUrlForDisplay = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (SECRET_QUERY_KEYS.has(key.toLowerCase())) parsed.searchParams.delete(key);
+    }
+    const out = parsed.toString();
+    return out.endsWith('?') ? out.slice(0, -1) : out;
+  } catch {
+    return url
+      .replaceAll(
+        /([?&])(key|api_key|apikey|api-key|token|access_token|secret|secret_key|secret-key|password|auth)=[^&#]*/gi,
+        '$1',
+      )
+      .replaceAll(/[?&]$/, '');
+  }
+};
+
 export const genServerConfig = (identifier?: string, connection?: ConnectionConfig) => {
   // Check if it is HTTP type
   if (connection?.url) {
-    // HTTP type configuration
+    // HTTP type configuration — URL only, secrets redacted (managed in Credentials)
     return JSON.stringify(
       {
         mcpServers: {
           [String(identifier)]: {
-            url: connection.url,
+            url: redactUrlForDisplay(connection.url),
           },
         },
       },

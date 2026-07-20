@@ -7,6 +7,7 @@ import { TaskModel } from '@/database/models/task';
 import { TaskTopicModel } from '@/database/models/taskTopic';
 import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
+import { assertTaskAssigneeUsableBy } from '@/database/utils/agent-access';
 
 import { TaskService } from './index';
 
@@ -30,6 +31,10 @@ vi.mock('@/database/models/user', () => ({
   UserModel: { findByIds: vi.fn().mockResolvedValue([]) },
 }));
 
+vi.mock('@/database/utils/agent-access', () => ({
+  assertTaskAssigneeUsableBy: vi.fn().mockResolvedValue(undefined),
+}));
+
 // AiAgentService pulls in ~14 sub-dependencies in its constructor; mock it so
 // the running-status branch in updateStatus doesn't drag them in.
 vi.mock('@/server/services/aiAgent', () => ({
@@ -49,7 +54,6 @@ describe('TaskService', () => {
   const userId = 'user-1';
 
   const mockAgentModel = {
-    existsById: vi.fn().mockResolvedValue(true),
     getAgentAvatarsByIds: vi.fn().mockResolvedValue([]),
     getAgentModelConfig: vi.fn().mockResolvedValue(null),
     getAgentSnapshotForTaskCreate: vi
@@ -94,6 +98,7 @@ describe('TaskService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(assertTaskAssigneeUsableBy).mockResolvedValue(undefined);
     mockTaskTopicModel.findRunningByTaskIds.mockResolvedValue([]);
     (AgentModel as any).mockImplementation(() => mockAgentModel);
     (TaskModel as any).mockImplementation(() => mockTaskModel);
@@ -740,7 +745,7 @@ describe('TaskService', () => {
         { avatar: 'https://example.com/agent.png', id: 'agt_assignee', title: 'My Agent' },
       ]);
       vi.mocked(UserModel.findByIds).mockResolvedValue([
-        { avatar: 'https://example.com/bob.png', fullName: 'Bob', id: 'user_bob' } as any,
+        { avatar: 'https://example.com/bob.png', id: 'user_bob', username: 'Bob' } as any,
       ]);
 
       const service = new TaskService(db, userId);
@@ -1419,26 +1424,48 @@ describe('TaskService', () => {
       }));
     });
 
-    it('rejects creating a public task with a private agent', async () => {
-      mockAgentModel.existsById.mockResolvedValue(true);
+    it('coerces public visibility to private when assignee is a private agent', async () => {
       mockAgentModel.getAgentSnapshotForTaskCreate.mockResolvedValue({
         snapshot: null,
         visibility: 'private',
       });
 
       const service = new TaskService(db, userId, 'ws-1');
-      await expect(
-        service.createTask({
+      await service.createTask({
+        assigneeAgentId: 'agent-private',
+        instruction: 'do something',
+        visibility: 'public',
+      });
+      expect(mockTaskModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
           assigneeAgentId: 'agent-private',
-          instruction: 'do something',
+          visibility: 'private',
+        }),
+      );
+    });
+
+    it('allows creating a public task assigned to a colleague private inbox', async () => {
+      mockAgentModel.getAgentSnapshotForTaskCreate.mockResolvedValue({
+        isColleagueInbox: true,
+        snapshot: null,
+        visibility: 'private',
+      });
+
+      const service = new TaskService(db, userId, 'ws-1');
+      await service.createTask({
+        assigneeAgentId: 'agt-colleague-inbox',
+        instruction: 'handoff to colleague assistant',
+        visibility: 'public',
+      });
+      expect(mockTaskModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assigneeAgentId: 'agt-colleague-inbox',
           visibility: 'public',
         }),
-      ).rejects.toThrow(/public task cannot be assigned to a private agent/i);
-      expect(mockTaskModel.create).not.toHaveBeenCalled();
+      );
     });
 
     it('allows creating a private task with a public agent', async () => {
-      mockAgentModel.existsById.mockResolvedValue(true);
       mockAgentModel.getAgentSnapshotForTaskCreate.mockResolvedValue({
         snapshot: null,
         visibility: 'public',
@@ -1456,7 +1483,6 @@ describe('TaskService', () => {
     });
 
     it('infers private visibility from a private agent when caller omits it', async () => {
-      mockAgentModel.existsById.mockResolvedValue(true);
       mockAgentModel.getAgentSnapshotForTaskCreate.mockResolvedValue({
         snapshot: null,
         visibility: 'private',

@@ -50,12 +50,13 @@ export interface WorkspaceUserPreference {
 
 export interface LobeUser {
   avatar?: string;
+  company?: string | null;
   email?: string | null;
   firstName?: string | null;
-  fullName?: string | null;
   id: string;
   interests?: string[];
   latestName?: string | null;
+  position?: string | null;
   username?: string | null;
 }
 
@@ -175,9 +176,9 @@ export interface UserInitializationState {
   avatar?: string;
   canEnablePWAGuide?: boolean;
   canEnableTrace?: boolean;
+  company?: string;
   email?: string;
   firstName?: string;
-  fullName?: string;
   hasConversation?: boolean;
   interests?: string[];
   isFreePlan?: boolean;
@@ -185,6 +186,7 @@ export interface UserInitializationState {
   isOnboard?: boolean;
   lastName?: string;
   onboarding?: UserOnboarding;
+  position?: string;
   preference: UserPreference;
   /**
    * Referral lifecycle status for the current user (invitee side).

@@ -31,7 +31,7 @@ export class AssistantActionImpl {
   ): SWRResponse<CategoryItem[]> => {
     const locale = globalHelpers.getCurrentLanguage();
     return useSWR(
-      discoverKeys.assistantCategories(locale, params),
+      discoverKeys.assistantCategories(locale, { ...params, market: 'company' }),
       async () => discoverService.getAssistantCategories(params),
       {
         revalidateOnFocus: false,
@@ -69,7 +69,7 @@ export class AssistantActionImpl {
   useAssistantList = (params: AssistantQueryParams = {}): SWRResponse<AssistantListResponse> => {
     const locale = globalHelpers.getCurrentLanguage();
     return useSWR(
-      discoverKeys.assistantList(locale, params),
+      discoverKeys.assistantList(locale, { ...params, market: 'company' }),
       async () =>
         discoverService.getAssistantList({
           ...params,

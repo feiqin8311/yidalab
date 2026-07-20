@@ -68,7 +68,16 @@ export const MCPList = memo(() => {
     );
   }
 
-  if (allItems.length === 0) return <Empty search={hasSearchKeywords} />;
+  if (allItems.length === 0) {
+    return (
+      <Empty
+        action={null}
+        description={hasSearchKeywords ? t('skillStore.mcpEmptySearch') : t('skillStore.mcpEmpty')}
+        search={hasSearchKeywords}
+        title={hasSearchKeywords ? undefined : t('skillStore.mcpEmptyTitle')}
+      />
+    );
+  }
 
   const hasReachedEnd = totalPages !== undefined && currentPage >= totalPages;
 

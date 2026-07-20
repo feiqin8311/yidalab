@@ -3,7 +3,11 @@ import type { ChatToolPayload } from '@lobechat/types';
 import { UsageCounter } from '../core';
 import type { AgentRuntimeHost, ToolRunContext, ToolRunResult } from '../transport';
 import type { AgentEvent, AgentInstruction, AgentState, InstructionExecutor } from '../types';
-import { extractActivatedSkillsFromMessages } from '../utils';
+import {
+  applyToolFailStreakBrake,
+  extractActivatedSkillsFromMessages,
+  extractToolErrorMessage,
+} from '../utils';
 
 const TOOL_EXECUTION_PHASE = 'tool_execution';
 const TOOL_MESSAGE_PERSIST_PHASE = 'tool_message_persist';
@@ -399,6 +403,12 @@ export const callTool =
       newState.usage = usage;
       if (cost) newState.cost = cost;
 
+      applyToolFailStreakBrake(newState, {
+        errorMessage: extractToolErrorMessage(executionResult),
+        isSuccess,
+        toolName: runContext.toolName,
+      });
+
       persistActivatedTools({
         effectiveManifestMap: runContext.effectiveManifestMap,
         newState,
@@ -578,6 +588,12 @@ export const callToolsBatch =
       });
       newState.usage = usage;
       if (cost) newState.cost = cost;
+
+      applyToolFailStreakBrake(newState, {
+        errorMessage: extractToolErrorMessage(result.data),
+        isSuccess: result.isSuccess,
+        toolName: result.usageParams.toolName,
+      });
     }
 
     persistActivatedTools({

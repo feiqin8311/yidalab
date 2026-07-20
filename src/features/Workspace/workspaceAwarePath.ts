@@ -30,22 +30,32 @@ const isPersonalPath = (to: string): boolean => PERSONAL_PATH_REGEX.test(to);
  * personal-only and never prefixed.
  */
 export const WORKSPACE_SETTINGS_TABS: ReadonlySet<string> = new Set([
+  'advanced',
+  'appearance',
   'apikey',
   'audit-log',
   'billing',
   'connector',
   'creds',
   'credits',
+  'departments',
   'devices',
   'general',
+  'hotkey',
   'members',
+  'memory',
   'messenger',
+  'notification',
   'plans',
+  'profile',
   'provider',
+  'proxy',
+  'referral',
   'service-model',
   'skill',
   'stats',
   'storage',
+  'system-tools',
   'usage',
 ]);
 

@@ -31,6 +31,14 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceSlug', () => ({
       ?.slug ?? null,
 }));
 
+vi.mock('@/store/serverConfig', () => ({
+  serverConfigSelectors: {
+    hidePersonalSettings: (s: { hidePersonalSettings?: boolean }) => !!s.hidePersonalSettings,
+  },
+  useServerConfigStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({ hidePersonalSettings: false }),
+}));
+
 vi.mock('@/routes/(main)/home/_layout/SidebarContent', () => ({
   default: () => <div>Home sidebar</div>,
 }));

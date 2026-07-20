@@ -3,9 +3,9 @@ import type { ModelProviderCard } from '@/types/llm';
 // ref: https://docs.z.ai/devpack/overview
 const GLMCodingPlan: ModelProviderCard = {
   chatModels: [],
-  checkModel: 'GLM-4.7',
+  checkModel: 'GLM-5.2',
   description:
-    'GLM Coding Plan provides access to Zhipu AI models including GLM-5 and GLM-4.7 for coding tasks via a fixed-fee subscription.',
+    'GLM Coding Plan provides access to Zhipu AI models including GLM-5.2, GLM-5, and GLM-4.7 for coding tasks via a fixed-fee subscription.',
   disableBrowserRequest: true,
   id: 'glmcodingplan',
   modelList: { showModelFetcher: false },

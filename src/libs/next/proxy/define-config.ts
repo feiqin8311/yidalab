@@ -220,6 +220,9 @@ export function defineConfig() {
     '/market-auth-callback',
     // public share pages
     '/share(.*)',
+    // Company invitation is a capability URL. The page handles unauthenticated
+    // visitors with an in-page sign-in action before accepting the invitation.
+    '/company/invite/(.*)',
     // standalone verification report viewer — the run id in the URL is the
     // read-only capability for viewing the report without a signed-in session.
     '/verify/(.*)',

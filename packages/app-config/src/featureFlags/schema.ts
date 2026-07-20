@@ -9,6 +9,7 @@ export const FeatureFlagsSchema = z.object({
 
   // settings
   provider_settings: FeatureFlagValue.optional(),
+  hidden_personal_settings: FeatureFlagValue.optional(),
 
   openai_api_key: FeatureFlagValue.optional(),
   openai_proxy_url: FeatureFlagValue.optional(),
@@ -92,6 +93,7 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
   market: true,
   speech_to_text: true,
   changelog: true,
+  hidden_personal_settings: false,
 
   // the flags below can only be used with commercial license
   // if you want to use it in the commercial usage
@@ -104,6 +106,7 @@ export const mapFeatureFlagsEnvToState = (config: IFeatureFlags, userId?: string
   return {
     isAgentEditable: evaluateFeatureFlag(config.edit_agent, userId),
     showProvider: evaluateFeatureFlag(config.provider_settings, userId),
+    hiddenPersonalSettings: evaluateFeatureFlag(config.hidden_personal_settings, userId),
 
     showOpenAIApiKey: evaluateFeatureFlag(config.openai_api_key, userId),
     showOpenAIProxyUrl: evaluateFeatureFlag(config.openai_proxy_url, userId),

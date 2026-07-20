@@ -1,18 +1,15 @@
 'use client';
 
 import { type UserCredSummary } from '@lobechat/types';
-import { Button, Flexbox } from '@lobehub/ui';
-import { useMutation } from '@tanstack/react-query';
-import { TRPCClientError } from '@trpc/client';
+import { Flexbox, Text } from '@lobehub/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Empty, Spin } from 'antd';
 import { createStaticStyles } from 'antd-style';
-import { LogIn } from 'lucide-react';
-import { type FC } from 'react';
+import { type FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AsyncBoundary from '@/components/AsyncBoundary';
 import { usePermission } from '@/hooks/usePermission';
-import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
 
 import CredItem from './CredItem';
 import { createEditCredModal } from './EditCredModal';
@@ -23,36 +20,84 @@ const styles = createStaticStyles(({ css }) => ({
   container: css`
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 24px;
   `,
   empty: css`
     padding-block: 48px;
     padding-inline: 0;
   `,
-  signInPrompt: css`
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    align-items: center;
-    justify-content: center;
-
-    padding: 48px;
+  sectionDesc: css`
+    margin-block-end: 8px;
+    font-size: 13px;
+    color: var(--lobe-color-text-secondary);
+  `,
+  sectionTitle: css`
+    margin-block-end: 4px;
+    font-size: 16px;
+    font-weight: 600;
   `,
 }));
 
+interface CredSectionProps {
+  creds: UserCredSummary[];
+  desc: string;
+  emptyText: string;
+  onDelete: (id: number) => void;
+  onEdit: (cred: UserCredSummary) => void;
+  onView: (cred: UserCredSummary) => void;
+  title: string;
+}
+
+const CredSection: FC<CredSectionProps> = ({
+  title,
+  desc,
+  creds,
+  emptyText,
+  onDelete,
+  onEdit,
+  onView,
+}) => (
+  <div>
+    <Text className={styles.sectionTitle}>{title}</Text>
+    <Text className={styles.sectionDesc}>{desc}</Text>
+    {creds.length === 0 ? (
+      <Empty className={styles.empty} description={emptyText} />
+    ) : (
+      <Flexbox gap={0}>
+        {creds.map((cred) => (
+          <CredItem cred={cred} key={cred.id} onDelete={onDelete} onEdit={onEdit} onView={onView} />
+        ))}
+      </Flexbox>
+    )}
+  </div>
+);
+
 const CredsList: FC = () => {
   const { t } = useTranslation('setting');
-  const { isAuthenticated, isLoading: isAuthLoading, signIn } = useMarketAuth();
   const { allowed: canManageCredentials } = usePermission('manage_provider_key');
   const credsApi = useCredsApi();
 
+  // Backfill market/installed MCP secrets into the vault once per page open.
+  const syncQuery = useQuery({
+    queryFn: async () => {
+      const client = credsApi.client as typeof credsApi.client & {
+        syncFromMcps?: { mutate: () => Promise<unknown> };
+      };
+      if (typeof client.syncFromMcps?.mutate === 'function') {
+        await client.syncFromMcps.mutate();
+      }
+      return true;
+    },
+    queryKey: ['localCreds', 'syncFromMcps'],
+    staleTime: 60_000,
+  });
+
   const { data, error, isLoading, refetch } = credsApi.query.list.useQuery(undefined, {
-    enabled: isAuthenticated,
+    enabled: !syncQuery.isLoading,
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      if (!canManageCredentials) return;
       await credsApi.client.delete.mutate({ id });
     },
     onSuccess: () => {
@@ -60,9 +105,19 @@ const CredsList: FC = () => {
     },
   });
 
-  const credentials = data?.data ?? [];
+  const credentials = useMemo(() => data?.data ?? [], [data?.data]);
+  const companyCreds = useMemo(
+    () => credentials.filter((c) => c.scope === 'company'),
+    [credentials],
+  );
+  const personalCreds = useMemo(
+    () => credentials.filter((c) => c.scope !== 'company'),
+    [credentials],
+  );
 
   const handleEdit = (cred: UserCredSummary) => {
+    if (cred.canManage === false) return;
+    if (!canManageCredentials && cred.scope !== 'company') return;
     createEditCredModal({
       cred,
       credsApi,
@@ -71,46 +126,28 @@ const CredsList: FC = () => {
   };
 
   const handleView = (cred: UserCredSummary) => {
+    if (cred.canManage === false) return;
     createViewCredModal({ cred, credsApi });
   };
 
-  if (isAuthLoading) {
-    return (
-      <Flexbox align={'center'} justify={'center'} style={{ padding: 48 }}>
-        <Spin />
-      </Flexbox>
-    );
-  }
+  const handleDelete = (id: number) => {
+    deleteMutation.mutate(id);
+  };
 
-  if (!isAuthenticated) {
-    return (
-      <div className={styles.signInPrompt}>
-        <Empty description={t('creds.signInRequired')} />
-        <Button icon={LogIn} type={'primary'} onClick={() => signIn()}>
-          {t('creds.signIn')}
-        </Button>
-      </div>
-    );
-  }
-
-  // Org not created: guide users to complete Community Profile setup first.
-  if (!isLoading && error instanceof TRPCClientError && error.data?.code === 'NOT_FOUND') {
-    return (
-      <div className={styles.signInPrompt}>
-        <Empty description={t('creds.orgSetupRequired')} />
-      </div>
-    );
-  }
+  const listMeta = data as
+    | { canManageCompany?: boolean; companyWorkspaceId?: string | null; data?: UserCredSummary[] }
+    | undefined;
+  const showCompanySection = Boolean(listMeta?.companyWorkspaceId || companyCreds.length > 0);
 
   return (
     <div className={styles.container}>
       <AsyncBoundary
         data={data}
-        empty={<Empty className={styles.empty} description={t('creds.empty')} />}
+        empty={null}
         error={error}
         errorVariant={'block'}
-        isEmpty={credentials.length === 0}
-        isLoading={isLoading}
+        isEmpty={false}
+        isLoading={isLoading || syncQuery.isLoading}
         loading={
           <Flexbox align={'center'} justify={'center'} style={{ padding: 48 }}>
             <Spin />
@@ -118,20 +155,26 @@ const CredsList: FC = () => {
         }
         onRetry={() => refetch()}
       >
-        <Flexbox gap={0}>
-          {credentials.map((cred) => (
-            <CredItem
-              cred={cred}
-              key={cred.id}
-              onDelete={(id) => deleteMutation.mutate(id)}
-              onView={handleView}
-              onEdit={(cred) => {
-                if (!canManageCredentials) return;
-                handleEdit(cred);
-              }}
-            />
-          ))}
-        </Flexbox>
+        {showCompanySection && (
+          <CredSection
+            creds={companyCreds}
+            desc={t('creds.companySection.desc')}
+            emptyText={t('creds.companySection.empty')}
+            title={t('creds.companySection.title')}
+            onDelete={handleDelete}
+            onEdit={handleEdit}
+            onView={handleView}
+          />
+        )}
+        <CredSection
+          creds={personalCreds}
+          desc={t('creds.personalSection.desc')}
+          emptyText={t('creds.empty')}
+          title={t('creds.personalSection.title')}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
+          onView={handleView}
+        />
       </AsyncBoundary>
     </div>
   );

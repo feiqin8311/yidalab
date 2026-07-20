@@ -17,7 +17,7 @@ describe('WebhookUserService', () => {
   const mockUser = {
     avatar: 'https://example.com/avatar.png',
     email: 'test@example.com',
-    fullName: 'Test User',
+    username: 'Test User',
     id: 'user-123',
   };
 
@@ -63,7 +63,7 @@ describe('WebhookUserService', () => {
       const updateData = {
         avatar: 'https://new-avatar.com/img.png',
         email: 'new@example.com',
-        fullName: 'New Name',
+        username: 'New Name',
       };
 
       const result = await service.safeUpdateUser(
@@ -75,7 +75,7 @@ describe('WebhookUserService', () => {
       expect(mockUserModel.updateUser).toHaveBeenCalledWith({
         avatar: updateData.avatar,
         email: updateData.email,
-        fullName: updateData.fullName,
+        username: updateData.username,
       });
       expect(result.status).toBe(200);
     });
@@ -105,7 +105,7 @@ describe('WebhookUserService', () => {
       expect(mockUserModel.updateUser).toHaveBeenCalledWith({
         avatar: undefined,
         email: 'updated@example.com',
-        fullName: undefined,
+        username: undefined,
       });
       expect(result.status).toBe(200);
     });
@@ -153,7 +153,7 @@ describe('WebhookUserService', () => {
       expect(mockUserModel.updateUser).toHaveBeenCalledWith({
         avatar: undefined,
         email: 'only-email@example.com',
-        fullName: undefined,
+        username: undefined,
       });
       expect(result.status).toBe(200);
     });

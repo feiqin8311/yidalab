@@ -23,8 +23,6 @@ import { useTaskStore } from '@/store/task';
 import AssigneeAgentSelector from '../features/AssigneeAgentSelector';
 import AssigneeAvatar from '../features/AssigneeAvatar';
 import TaskPriorityTag from '../features/TaskPriorityTag';
-import TaskVisibilityChipLabel from '../features/TaskVisibilityChipLabel';
-import TaskVisibilityTag from '../features/TaskVisibilityTag';
 import { useAgentDisplayMeta } from '../shared/useAgentDisplayMeta';
 import { useAgentVisibility } from '../shared/useAgentVisibility';
 
@@ -71,17 +69,6 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
   const [assigneeAgentId, setAssigneeAgentId] = useState<string | undefined>(agentId);
   const [instruction, setInstruction] = useState('');
   const [hasAttachments, setHasAttachments] = useState(false);
-  // Default to private in workspace mode so the user has to opt in to share.
-  // In personal mode the chip is hidden and the value is never sent.
-  const [visibility, setVisibility] = useState<'private' | 'public'>('private');
-
-  // A private agent can only run a private task. Coerce + lock the
-  // visibility chip when the selected agent is private.
-  const assigneeVisibility = useAgentVisibility(assigneeAgentId);
-  const isPrivateAgent = assigneeVisibility === 'private';
-  useEffect(() => {
-    if (isPrivateAgent && visibility === 'public') setVisibility('private');
-  }, [isPrivateAgent, visibility]);
 
   const editor = useEditor();
 
@@ -97,6 +84,9 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
   const draftRestoredKeyRef = useRef<string | null>(null);
 
   const assigneeMeta = useAgentDisplayMeta(assigneeAgentId);
+  // Private agents (incl. personal inbox) cannot run public workspace tasks.
+  // Workspace inline create defaults to public; coerce when assignee is private.
+  const assigneeVisibility = useAgentVisibility(assigneeAgentId);
 
   // When the assignee is locked to a scoped agent, keep it in sync with the
   // `agentId` prop. The route subtree is reused across /agent/A/tasks ->
@@ -128,7 +118,6 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
     // Reset to baseline for the new scope before hydrating.
     editor.cleanDocument?.();
     setPriority(0);
-    setVisibility('private');
     if (!lockAssignee) setAssigneeAgentId(agentId);
 
     let raw: string | null;
@@ -143,12 +132,10 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
         assigneeAgentId?: string;
         markdown?: string;
         priority?: number;
-        visibility?: 'private' | 'public';
       };
       if (draft.markdown) editor.setDocument?.('markdown', draft.markdown);
       if (typeof draft.priority === 'number') setPriority(draft.priority);
       if (!lockAssignee && draft.assigneeAgentId) setAssigneeAgentId(draft.assigneeAgentId);
-      if (draft.visibility) setVisibility(draft.visibility);
     } catch {
       /* ignore a malformed draft */
     }
@@ -169,13 +156,12 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
           assigneeAgentId: lockAssignee ? undefined : assigneeAgentId,
           markdown,
           priority,
-          visibility,
         }),
       );
     } catch {
       /* storage unavailable / quota — persistence is best-effort */
     }
-  }, [assigneeAgentId, draftStorageKey, editor, instruction, lockAssignee, priority, visibility]);
+  }, [assigneeAgentId, draftStorageKey, editor, instruction, lockAssignee, priority]);
 
   const handleCollapse = useCallback(() => {
     if (onCollapse) {
@@ -222,6 +208,15 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
     // handle the composer's own failure here so it isn't silent, keeping the
     // draft intact (the reset only runs on success).
     try {
+      // Workspace default is shared (public). A private assignee must force a
+      // private task — otherwise the server rejects create with a visibility
+      // invariant error (personal inbox assistants are usually private).
+      const visibility = activeWorkspaceId
+        ? assigneeVisibility === 'private'
+          ? 'private'
+          : 'public'
+        : undefined;
+
       const result = await createTask({
         assigneeAgentId,
         editorData: editorJson,
@@ -229,16 +224,13 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
         name,
         parentTaskId,
         priority: priority || undefined,
-        // Only send visibility in workspace mode; personal mode lets the server
-        // fall through to the schema default ('public', inert in personal mode).
-        visibility: activeWorkspaceId ? visibility : undefined,
+        visibility,
       });
 
       if (result) {
         setPriority(0);
         setAssigneeAgentId(agentId);
         setInstruction('');
-        setVisibility('private');
         editor?.cleanDocument?.();
         if (draftStorageKey) {
           try {
@@ -252,14 +244,21 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
           identifier: result.identifier,
         });
       }
-    } catch {
-      message.error(t('createTask.createFailed'));
+    } catch (error) {
+      const raw = (error as { message?: string })?.message ?? '';
+      const isPrivateAgentBlock = /public task cannot be assigned to a private agent/i.test(raw);
+      message.error(
+        isPrivateAgentBlock
+          ? t('createTask.visibility.privateAgentLocked')
+          : t('createTask.createFailed'),
+      );
     }
   }, [
     t,
     activeWorkspaceId,
     agentId,
     assigneeAgentId,
+    assigneeVisibility,
     createTask,
     draftStorageKey,
     editor,
@@ -268,7 +267,6 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
     parentTaskId,
     priority,
     canCreateTask,
-    visibility,
   ]);
 
   const handleSubmitRef = useRef(handleSubmit);
@@ -389,22 +387,6 @@ const CreateTaskInlineEntry = memo<CreateTaskInlineEntryProps>((props) => {
               </AssigneeAgentSelector>
             );
           })()}
-
-          {activeWorkspaceId && (
-            <TaskVisibilityTag
-              visibility={visibility}
-              lockedReason={
-                isPrivateAgent
-                  ? t('createTask.visibility.privateAgentLocked', {
-                      defaultValue: 'Private agents can only run private tasks.',
-                    })
-                  : undefined
-              }
-              onChange={setVisibility}
-            >
-              <TaskVisibilityChipLabel visibility={visibility} />
-            </TaskVisibilityTag>
-          )}
 
           <ActionIcon
             icon={Paperclip}

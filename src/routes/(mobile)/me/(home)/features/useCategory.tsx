@@ -1,24 +1,27 @@
 import { LOBE_CHAT_CLOUD, UTM_SOURCE } from '@lobechat/business-const';
-import { DOWNLOAD_URL, OFFICIAL_URL } from '@lobechat/const';
+import { OFFICIAL_URL } from '@lobechat/const';
 import {
   Book,
+  Building2,
   CircleUserRound,
   Cloudy,
-  Download,
   Feather,
   FileClockIcon,
   Settings2,
 } from 'lucide-react';
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import useBusinessMeCells from '@/business/client/features/User/useBusinessMeCells';
+import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
 import { type CellProps } from '@/components/Cell';
 import { openChangelogModal } from '@/components/ChangelogModal';
 import { DOCUMENTS, FEEDBACK } from '@/const/index';
-import { usePlatform } from '@/hooks/usePlatform';
-import { featureFlagsSelectors, useServerConfigStore } from '@/store/serverConfig';
+import {
+  featureFlagsSelectors,
+  serverConfigSelectors,
+  useServerConfigStore,
+} from '@/store/serverConfig';
 import { useUserStore } from '@/store/user';
 import { authSelectors } from '@/store/user/selectors';
 
@@ -26,15 +29,10 @@ export const useCategory = () => {
   const navigate = useNavigate();
   const { t } = useTranslation(['common', 'setting', 'auth']);
   const { showCloudPromotion, hideDocs } = useServerConfigStore(featureFlagsSelectors);
+  const hidePersonalSettings = useServerConfigStore(serverConfigSelectors.hidePersonalSettings);
   const [isLoginWithAuth] = useUserStore((s) => [authSelectors.isLoginWithAuth(s)]);
-  const { isIOS, isAndroid } = usePlatform();
   const businessMeCells = useBusinessMeCells();
-
-  const downloadUrl = useMemo(() => {
-    if (isIOS) return DOWNLOAD_URL.ios;
-    if (isAndroid) return DOWNLOAD_URL.android;
-    return DOWNLOAD_URL.default;
-  }, [isIOS, isAndroid]);
+  const activeWorkspaceSlug = useActiveWorkspaceSlug();
 
   const profile: CellProps[] = [
     {
@@ -45,29 +43,33 @@ export const useCategory = () => {
     },
   ];
 
-  const settings: CellProps[] = [
-    {
-      icon: Settings2,
-      key: 'setting',
-      label: t('userPanel.setting'),
-      onClick: () => navigate('/me/settings'),
-    },
-    {
-      type: 'divider',
-    },
-  ];
+  // Workspace settings entry point — only shown when the user is currently
+  // sitting inside a workspace. Renders above the (optional) personal settings
+  // cell so the most-traffixed settings surface stays closest to the top.
+  const workspaceSettings: CellProps[] = activeWorkspaceSlug
+    ? [
+        {
+          icon: Building2,
+          key: 'workspace-settings',
+          label: t('workspaceSetting.entryPoint'),
+          onClick: () => navigate(`/${activeWorkspaceSlug}/settings`),
+        },
+      ]
+    : [];
 
-  const getDesktopApp: CellProps[] = [
-    {
-      icon: Download,
-      key: 'get-desktop-app',
-      label: t('getDesktopApp'),
-      onClick: () => window.open(downloadUrl, '__blank'),
-    },
-    {
-      type: 'divider',
-    },
-  ];
+  const settings: CellProps[] = hidePersonalSettings
+    ? []
+    : [
+        {
+          icon: Settings2,
+          key: 'setting',
+          label: t('userPanel.setting'),
+          onClick: () => navigate('/me/settings'),
+        },
+        {
+          type: 'divider',
+        },
+      ];
 
   const helps: CellProps[] = [
     showCloudPromotion && {
@@ -101,9 +103,10 @@ export const useCategory = () => {
       type: 'divider',
     },
     ...(isLoginWithAuth ? profile : []),
+    ...(isLoginWithAuth ? workspaceSettings : []),
     ...(isLoginWithAuth ? settings : []),
     ...(isLoginWithAuth ? businessMeCells : []),
-    ...getDesktopApp,
+    // YidaLab self-host: no official desktop download
     ...(!hideDocs ? helps : []),
   ].filter(Boolean) as CellProps[];
 

@@ -17,6 +17,11 @@ export type ActivateSkillSource = 'agent' | 'builtin' | 'device' | 'project' | '
 export interface ActivateSkillState {
   description?: string;
   hasResources: boolean;
+  /**
+   * Market skill published with hideContent: body may still load for the model
+   * but must never be shown/exported to the end user.
+   */
+  hideContent?: boolean;
   id: string;
   name: string;
   /** Skill origin — drives the inspector label (e.g. "Activate Agent Skill"). */

@@ -1360,7 +1360,7 @@ export class FileUploadService extends BaseService {
       const allUsers =
         allUserIds.length > 0
           ? await this.db.query.users.findMany({
-              columns: { avatar: true, email: true, fullName: true, id: true, username: true },
+              columns: { avatar: true, email: true, id: true, username: true },
               where: inArray(users.id, allUserIds),
             })
           : [];
@@ -1406,9 +1406,7 @@ export class FileUploadService extends BaseService {
               columns: {
                 avatar: true,
                 email: true,
-                fullName: true,
                 id: true,
-                username: true,
               },
               where: inArray(users.id, userIds),
             })

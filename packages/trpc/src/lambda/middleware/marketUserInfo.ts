@@ -37,7 +37,7 @@ export const marketUserInfo = trpc.middleware(async (opts) => {
 
     const marketUserInfo: TrustedClientUserInfo = {
       email: user.email,
-      name: user.fullName || user.username || undefined,
+      name: user.username || user.username || undefined,
       userId: ctx.userId,
       // In a workspace context, the token acts as the workspace's mirrored
       // organization; absent for personal requests.

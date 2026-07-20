@@ -23,8 +23,6 @@ export interface OnboardingContext {
 export interface OnboardingUserInfo {
   /** Best available display name candidate for address confirmation */
   displayName?: string;
-  /** Account full name, if present */
-  fullName?: string;
   /** Account username, if present */
   username?: string;
 }
@@ -94,7 +92,6 @@ export const formatOnboardingUserInfo = (userInfo?: OnboardingUserInfo | null): 
 
   const normalizedUserInfo = {
     displayName: normalizeUserInfoField(userInfo.displayName),
-    fullName: normalizeUserInfoField(userInfo.fullName),
     username: normalizeUserInfoField(userInfo.username),
   };
 
@@ -105,7 +102,7 @@ export const formatOnboardingUserInfo = (userInfo?: OnboardingUserInfo | null): 
 
   return [
     '<user_info>',
-    'These account profile fields are unconfirmed. If a displayName is available, ask whether you may use it before saving it as fullName.',
+    'These account profile fields are unconfirmed. If a displayName is available, ask whether the username is correct before saving it.',
     serialized,
     '</user_info>',
   ].join('\n');

@@ -24,10 +24,8 @@ const ResponseLanguageStep = memo<ResponseLanguageStepProps>(({ onBack, onNext }
   const switchLocale = useGlobalStore((s) => s.switchLocale);
   const setSettings = useUserStore((s) => s.setSettings);
 
-  // Mirror i18n's current locale rather than navigator.language. The user may
-  // have already switched language in the previous step (TelemetryStep), so
-  // navigator.language can disagree with what is being rendered. Deriving
-  // straight from i18n keeps the Select in lock-step with the visible UI.
+  // Mirror i18n's current locale rather than navigator.language so the Select
+  // stays in lock-step with the visible UI.
   const value: Locales = normalizeLocale(
     i18n.resolvedLanguage || i18n.language || navigator.language,
   );

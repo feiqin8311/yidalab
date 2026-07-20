@@ -5,6 +5,7 @@ import { type SWRResponse } from 'swr';
 import { MESSAGE_CANCEL_FLAT } from '@/const/message';
 import { useClientDataSWR } from '@/libs/swr';
 import { toolKeys } from '@/libs/swr/keys';
+import { persistMcpSecretsToLocalCreds } from '@/services/localCreds';
 import { pluginService } from '@/services/plugin';
 import { type StoreSetter } from '@/store/types';
 import { merge } from '@/utils/merge';
@@ -55,8 +56,17 @@ export class PluginActionImpl {
 
     if (!installedPlugin) return;
 
+    const nextMcp = merge(installedPlugin.customParams?.mcp, value);
+
     await pluginService.updatePlugin(id, {
-      customParams: { mcp: merge(installedPlugin.customParams?.mcp, value) },
+      customParams: { mcp: nextMcp },
+    });
+
+    // Keep credential manager in sync when connection env/headers change.
+    await persistMcpSecretsToLocalCreds({
+      connection: nextMcp,
+      identifier: id,
+      name: installedPlugin.manifest?.meta?.title || id,
     });
 
     await this.#get().refreshPlugins();
@@ -78,6 +88,17 @@ export class PluginActionImpl {
 
     this.#set({ updatePluginSettingsSignal: newSignal }, false, 'create new Signal');
     await pluginService.updatePluginSettings(id, nextSettings, newSignal.signal);
+
+    // MCP plugin settings are secret config (env/headers) — mirror to localCreds.
+    const installedPlugin = pluginSelectors.getInstalledPluginById(id)(this.#get());
+    if (installedPlugin?.customParams?.mcp && nextSettings && typeof nextSettings === 'object') {
+      await persistMcpSecretsToLocalCreds({
+        config: nextSettings as Record<string, string>,
+        connection: installedPlugin.customParams.mcp,
+        identifier: id,
+        name: installedPlugin.manifest?.meta?.title || id,
+      });
+    }
 
     await this.#get().refreshPlugins();
   };

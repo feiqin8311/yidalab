@@ -230,7 +230,9 @@ export class AiInfraRepos {
                 ? item.settings
                 : merge(item.settings || {}, user.settings || {}),
               sort: user.sort ?? undefined,
-              type: normalizeAiModelType(user.type || item.type),
+              // Prefer builtin type: remote /v1/models has no type and was often saved as
+              // 'chat' (e.g. gpt-image-2, sora-2). Wrong type drops models from image/video lists.
+              type: normalizeAiModelType(item.type || user.type),
             };
             return injectSearchSettings(provider.id, mergedModel); // User modified local model, check search settings
           })

@@ -3,16 +3,12 @@ import { z } from 'zod';
 export const SAVE_USER_QUESTION_FIELDS = [
   'agentEmoji',
   'agentName',
-  'fullName',
+  'username',
   'interests',
   'customInterests',
 ] as const;
 
-export const AGENT_ONBOARDING_STRUCTURED_FIELDS = [
-  'agentEmoji',
-  'agentName',
-  'fullName',
-] as const;
+export const AGENT_ONBOARDING_STRUCTURED_FIELDS = ['agentEmoji', 'agentName', 'username'] as const;
 
 export type SaveUserQuestionField = (typeof SAVE_USER_QUESTION_FIELDS)[number];
 export type AgentOnboardingStructuredField = (typeof AGENT_ONBOARDING_STRUCTURED_FIELDS)[number];
@@ -32,8 +28,8 @@ export interface SaveUserQuestionInput {
   agentEmoji?: string;
   agentName?: string;
   customInterests?: string[];
-  fullName?: string;
   interests?: string[];
+  username?: string;
 }
 
 export interface UserOnboardingAgentIdentity {
@@ -201,7 +197,7 @@ export const SaveUserQuestionInputSchema = z
     agentEmoji: OptionalTrimmedNonEmptyStringSchema,
     agentName: OptionalTrimmedNonEmptyStringSchema,
     customInterests: OptionalTrimmedNonEmptyStringArraySchema,
-    fullName: OptionalTrimmedNonEmptyStringSchema,
+    username: OptionalTrimmedNonEmptyStringSchema,
     interests: OptionalTrimmedNonEmptyStringArraySchema,
   })
   .strict();

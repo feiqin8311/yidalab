@@ -131,23 +131,62 @@ export class OtelWorkflowClient extends WorkflowClient {
 }
 
 /**
- * QStash client with Vercel Deployment Protection bypass headers.
- * Use as `qstashClient` option in Upstash Workflow `serve()`.
+ * Lazy QStash / Workflow clients.
  *
- * @see https://upstash.com/docs/workflow/troubleshooting/vercel
+ * YidaLab routes async work through Redis internal jobs by default. Constructing
+ * Upstash clients at module load with a missing `QSTASH_TOKEN` spams console
+ * warnings (`client token is not set` / `QStash token is required for Upstash
+ * Workflow!`). Clients are only created when a token is configured and first used.
  */
-export const qstashClient = new OtelQstashClient({
-  headers,
-  token: process.env.QSTASH_TOKEN!,
-});
+const getQstashToken = () => process.env.QSTASH_TOKEN?.trim() || '';
+
+let _qstashClient: OtelQstashClient | undefined;
+let _workflowClient: OtelWorkflowClient | undefined;
+
+export const getQstashClient = (): OtelQstashClient => {
+  const token = getQstashToken();
+  if (!token) {
+    throw new Error(
+      'QSTASH_TOKEN is not set. YidaLab uses Redis internal jobs by default; configure QSTASH_TOKEN only if you still need Upstash.',
+    );
+  }
+  if (!_qstashClient) {
+    _qstashClient = new OtelQstashClient({ headers, token });
+  }
+  return _qstashClient;
+};
+
+export const getWorkflowClient = (): OtelWorkflowClient => {
+  const token = getQstashToken();
+  if (!token) {
+    throw new Error(
+      'QSTASH_TOKEN is not set. YidaLab uses Redis internal jobs by default; configure QSTASH_TOKEN only if you still need Upstash Workflow.',
+    );
+  }
+  if (!_workflowClient) {
+    _workflowClient = new OtelWorkflowClient({ headers, token });
+  }
+  return _workflowClient;
+};
 
 /**
- * Workflow client with Vercel Deployment Protection bypass headers.
- * Use for triggering workflows via `workflowClient.trigger()`.
+ * Backward-compatible accessors. Prefer {@link getQstashClient} / {@link getWorkflowClient}.
+ * Proxy defers construction until a property/method is accessed.
  */
-export const workflowClient = new OtelWorkflowClient({
-  headers,
-  token: process.env.QSTASH_TOKEN!,
+export const qstashClient: OtelQstashClient = new Proxy({} as OtelQstashClient, {
+  get(_target, prop, receiver) {
+    const client = getQstashClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
+
+export const workflowClient: OtelWorkflowClient = new Proxy({} as OtelWorkflowClient, {
+  get(_target, prop, receiver) {
+    const client = getWorkflowClient();
+    const value = Reflect.get(client, prop, receiver);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
 });
 
 /**

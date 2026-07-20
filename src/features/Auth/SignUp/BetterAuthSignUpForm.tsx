@@ -3,7 +3,7 @@
 import { BRANDING_NAME } from '@lobechat/business-const';
 import { Button, Icon, Text } from '@lobehub/ui';
 import { Form, Input, type InputRef } from 'antd';
-import { Lock, Mail } from 'lucide-react';
+import { Lock, Mail, User } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router';
@@ -14,6 +14,8 @@ import { trackLoginOrSignupClicked } from '@/features/User/UserLoginOrSignup/tra
 
 import { useSignUp } from './useSignUp';
 
+const USERNAME_REGEX = /^\w+$/;
+
 const BetterAuthSignUpForm = () => {
   const { form, loading, onSubmit, businessElement } = useSignUp();
 
@@ -23,14 +25,24 @@ const BetterAuthSignUpForm = () => {
 
   const emailInputRef = useRef<InputRef>(null);
   const passwordInputRef = useRef<InputRef>(null);
+  const usernameInputRef = useRef<InputRef>(null);
 
   useEffect(() => {
     const email = searchParams.get('email');
+    const username = searchParams.get('username');
     if (email) {
       form.setFieldsValue({ email });
-      passwordInputRef.current?.focus();
-    } else {
+    }
+    if (username) {
+      form.setFieldsValue({ username });
+    }
+
+    if (!username) {
+      usernameInputRef.current?.focus();
+    } else if (!email) {
       emailInputRef.current?.focus();
+    } else {
+      passwordInputRef.current?.focus();
     }
   }, [searchParams, form]);
 
@@ -55,9 +67,32 @@ const BetterAuthSignUpForm = () => {
     <AuthCard footer={footer} title={t('betterAuth.signup.cardTitle', { appName: BRANDING_NAME })}>
       <Form form={form} layout="vertical" onFinish={onSubmit}>
         <Form.Item
+          name="username"
+          rules={[
+            { message: t('betterAuth.errors.usernameRequired'), required: true },
+            {
+              message: t('betterAuth.errors.usernameInvalid'),
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                return USERNAME_REGEX.test((value as string).trim())
+                  ? Promise.resolve()
+                  : Promise.reject();
+              },
+            },
+          ]}
+        >
+          <Input
+            autoComplete="username"
+            placeholder={t('betterAuth.signup.usernamePlaceholder')}
+            prefix={<Icon icon={User} style={{ marginInline: 6 }} />}
+            ref={usernameInputRef}
+            size="large"
+          />
+        </Form.Item>
+        <Form.Item
           name="email"
           rules={[
-            { message: t('betterAuth.errors.emailRequired'), required: true },
+            { message: t('betterAuth.errors.signupEmailRequired'), required: true },
             { message: t('betterAuth.errors.emailInvalid'), type: 'email' },
           ]}
         >

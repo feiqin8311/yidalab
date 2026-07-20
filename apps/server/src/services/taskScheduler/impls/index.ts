@@ -1,8 +1,7 @@
 import { appEnv } from '@/envs/app';
-import { qstashClient } from '@/libs/qstash';
 
 import { LocalTaskScheduler, type TaskExecutionCallback } from './local';
-import { QStashTaskScheduler } from './qstash';
+import { RedisTaskScheduler } from './redis';
 import type { TaskSchedulerImpl } from './type';
 
 let cachedScheduler: TaskSchedulerImpl | null = null;
@@ -11,7 +10,7 @@ let cachedExecutionCallback: TaskExecutionCallback | null = null;
 /**
  * Get (or lazily create) the singleton task scheduler.
  *
- * - `AGENT_RUNTIME_MODE=queue`: QStash (production)
+ * - `AGENT_RUNTIME_MODE=queue`: Redis job queue (production, requires REDIS_URL)
  * - default: Local (setTimeout-based, dev / electron)
  *
  * Singleton because `LocalTaskScheduler` holds in-memory `setTimeout` state and
@@ -21,11 +20,7 @@ export const createTaskSchedulerModule = (): TaskSchedulerImpl => {
   if (cachedScheduler) return cachedScheduler;
 
   if (appEnv.enableQueueAgentRuntime) {
-    const baseUrl = process.env.APP_URL;
-    if (!baseUrl) {
-      throw new Error('APP_URL is required to schedule heartbeat ticks via QStash');
-    }
-    cachedScheduler = new QStashTaskScheduler({ baseUrl, qstashClient });
+    cachedScheduler = new RedisTaskScheduler();
     return cachedScheduler;
   }
 
@@ -49,8 +44,8 @@ export const createTaskSchedulerModule = (): TaskSchedulerImpl => {
 
 /**
  * Register the in-process callback the LocalTaskScheduler invokes on tick.
- * Cloud (QStash) mode ignores this — its callback is the HTTP `/heartbeat-tick`
- * handler. Calling this after a Local scheduler is already created retroactively
+ * Redis/queue mode ignores this — ticks run via internal job handlers.
+ * Calling this after a Local scheduler is already created retroactively
  * wires the callback in.
  */
 export const setTaskSchedulerExecutionCallback = (callback: TaskExecutionCallback): void => {
@@ -62,4 +57,5 @@ export const setTaskSchedulerExecutionCallback = (callback: TaskExecutionCallbac
 
 export { LocalTaskScheduler } from './local';
 export { QStashTaskScheduler } from './qstash';
+export { RedisTaskScheduler } from './redis';
 export type { TaskSchedulerImpl } from './type';

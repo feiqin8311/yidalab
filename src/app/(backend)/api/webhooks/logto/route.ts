@@ -31,7 +31,7 @@ export const POST = async (req: Request): Promise<NextResponse> => {
         {
           avatar: data?.avatar,
           email: data?.primaryEmail,
-          fullName: data?.name,
+          username: data?.username,
         },
       );
     }

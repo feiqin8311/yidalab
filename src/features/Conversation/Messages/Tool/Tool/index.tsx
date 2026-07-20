@@ -47,7 +47,8 @@ const Tool = memo<InspectorProps>(
   }) => {
     const [showDebug, setShowDebug] = useState(false);
     const [showCustomToolRender, setShowCustomToolRender] = useState(true);
-    const [expand, setExpand] = useState(true);
+    // Default collapsed: light brief in the title; expand for white-box params/result.
+    const [expand, setExpand] = useState(false);
 
     // Fetch tool message from store
     const toolMessage = useConversationStore(dataSelectors.getDbMessageByToolCallId(toolCallId));

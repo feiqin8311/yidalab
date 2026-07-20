@@ -8,7 +8,6 @@ export interface KnowledgeItemStatus extends FileParsingTask {
 
 export interface FileUploader {
   avatar?: string | null;
-  fullName?: string | null;
   id: string;
   username?: string | null;
 }
@@ -63,10 +62,25 @@ export enum SortType {
   Desc = 'desc',
 }
 
+/**
+ * Workspace resource list "space".
+ * - mine: rows I created
+ * - shared_with_me: private rows granted to me / my department
+ * - workspace: public (whole company)
+ * - admin_all: everything in the workspace (owner/admin only)
+ */
+export const ResourceListScopeSchema = z.enum(['mine', 'shared_with_me', 'workspace', 'admin_all']);
+export type ResourceListScope = z.infer<typeof ResourceListScopeSchema>;
+
 export const QueryFileListSchema = z.object({
   category: z.string().optional(),
   knowledgeBaseId: z.string().optional(),
   limit: z.number().int().positive().default(50),
+  /**
+   * Preferred list filter in workspace mode. When set, takes precedence over
+   * legacy `visibility`. Ignored in personal mode.
+   */
+  listScope: ResourceListScopeSchema.optional(),
   offset: z.number().int().min(0).default(0),
   parentId: z.string().nullish(),
   q: z.string().nullish(),
@@ -74,10 +88,8 @@ export const QueryFileListSchema = z.object({
   sortType: z.enum(['desc', 'asc']).optional(),
   sorter: z.enum(['createdAt', 'size']).optional(),
   /**
-   * Workspace-mode visibility filter. Absent / undefined means "all"
-   * (already ownership-filtered by the server). `'private'` narrows to
-   * the caller's own private rows; `'public'` narrows to workspace-shared
-   * rows. Ignored in personal mode.
+   * Legacy workspace-mode visibility filter. Prefer `listScope`.
+   * `'private'` → mine; `'public'` → workspace.
    */
   visibility: z.enum(['private', 'public']).optional(),
 });
@@ -88,6 +100,7 @@ export interface QueryFileListParams {
   category?: string;
   knowledgeBaseId?: string;
   limit?: number;
+  listScope?: ResourceListScope;
   offset?: number;
   parentId?: string | null;
   q?: string | null;

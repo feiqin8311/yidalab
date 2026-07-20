@@ -60,7 +60,7 @@ const GridItem = memo<TopicItemProps>(
     // Sidebar cards stay clean — no avatar overlay. Ownership is surfaced only
     // on hover through the tooltip's second line, and only inside a workspace.
     const showCreatorLine = Boolean(activeWorkspaceId && creator?.id);
-    const creatorName = creator?.fullName || creator?.username || '';
+    const creatorName = creator?.username || creator?.username || '';
     const tooltipTitle = showCreatorLine ? (
       <Flexbox gap={2}>
         <span>{title}</span>

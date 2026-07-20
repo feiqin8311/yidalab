@@ -7,6 +7,7 @@ import AsyncBoundary from '@/components/AsyncBoundary';
 import { useFolderPath } from '@/routes/(main)/resource/features/hooks/useFolderPath';
 import { useResourceManagerUrlSync } from '@/routes/(main)/resource/features/hooks/useResourceManagerUrlSync';
 import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
+import { listVisibilityToListScope } from '@/routes/(main)/resource/features/store/listScope';
 import { sortFileList } from '@/routes/(main)/resource/features/store/selectors';
 import { useFetchResources, useResourceStore } from '@/store/file/slices/resource/hooks';
 
@@ -57,10 +58,11 @@ const ResourceExplorer = memo(() => {
       showFilesInKnowledgeBase: false,
       sortType,
       sorter,
-      // Two-mode narrowing: `'private'` shows own private rows, `'workspace'`
-      // shows public rows. Personal mode ignores the value server-side so
-      // sending it there is a harmless no-op.
-      visibility: listVisibility === 'private' ? ('private' as const) : ('public' as const),
+      // Workspace list space → server listScope. Personal mode ignores it.
+      // Inside a library/folder, drop listScope so library contents aren't
+      // re-filtered by the top-level "mine/shared/company" space.
+      listScope:
+        libraryId || currentFolderSlug ? undefined : listVisibilityToListScope(listVisibility),
     }),
     [category, libraryId, currentFolderSlug, sortType, sorter, listVisibility],
   );

@@ -158,7 +158,7 @@ const FileListItem = ({
 }: FileListItemProps) => {
   const { t } = useTranslation(['components', 'file']);
   const uploaderName =
-    uploader?.fullName || uploader?.username || (uploader?.id ? uploader.id.slice(0, 8) : '');
+    uploader?.username || uploader?.username || (uploader?.id ? uploader.id.slice(0, 8) : '');
   const chunkTargetId = getChunkTargetId({ fileId, id });
   const fileStoreState = useFileStore(
     (s) => ({

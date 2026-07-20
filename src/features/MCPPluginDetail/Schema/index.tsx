@@ -2,6 +2,9 @@ import { Flexbox } from '@lobehub/ui';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useToolStore } from '@/store/tool';
+import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
+
 import { useDetailContext } from '../DetailProvider';
 import Block from './Block';
 import Prompts from './Prompts';
@@ -11,7 +14,14 @@ import { ModeType } from './types';
 
 const Schema = memo(() => {
   const { t } = useTranslation('discover');
-  const { promptsCount, toolsCount, resourcesCount } = useDetailContext();
+  const { promptsCount, toolsCount, resourcesCount, tools, prompts, identifier } =
+    useDetailContext();
+  const installedApiCount = useToolStore((s) => {
+    if (!identifier) return 0;
+    return pluginSelectors.getToolManifestById(identifier)(s)?.api?.length || 0;
+  });
+  const resolvedToolsCount = toolsCount || tools?.length || installedApiCount || 0;
+  const resolvedPromptsCount = promptsCount || prompts?.length || 0;
   const [toolsActiveKey, setToolsActiveKey] = useState<string[]>([]);
   const [toolsMode, setToolsMode] = useState<ModeType>(ModeType.Docs);
   const [promptsActiveKey, setPromptsActiveKey] = useState<string[]>([]);
@@ -21,7 +31,7 @@ const Schema = memo(() => {
   return (
     <Flexbox gap={64}>
       <Block
-        count={toolsCount || 0}
+        count={resolvedToolsCount}
         desc={t('mcp.details.schema.tools.desc')}
         id={'tools'}
         mode={toolsMode}
@@ -32,7 +42,7 @@ const Schema = memo(() => {
       </Block>
 
       <Block
-        count={promptsCount || 0}
+        count={resolvedPromptsCount}
         desc={t('mcp.details.schema.prompts.desc')}
         id={'prompts'}
         mode={promptsMode}

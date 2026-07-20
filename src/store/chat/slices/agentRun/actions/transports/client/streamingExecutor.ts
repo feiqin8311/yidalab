@@ -27,6 +27,7 @@ import {
 } from '@lobechat/types';
 import debug from 'debug';
 
+import { getAgentRunLimits } from '@/helpers/agentRunLimits';
 import { createAgentToolsEngine } from '@/helpers/toolEngineering';
 import { aiAgentService } from '@/services/aiAgent';
 import { isCanUseVideo, isCanUseVision } from '@/services/chat/helper';
@@ -297,7 +298,9 @@ export class StreamingExecutorActionImpl {
     const state =
       initialState ||
       AgentRuntime.createInitialState({
-        maxSteps: 400,
+        maxSteps: getAgentRunLimits().maxSteps,
+        maxTotalTokens: getAgentRunLimits().maxTotalTokens,
+        toolFailStreakLimit: getAgentRunLimits().toolFailStreak,
         messages,
         metadata: {
           sessionId: agentId,
@@ -571,7 +574,7 @@ export class StreamingExecutorActionImpl {
     )(getAiInfraStoreState());
 
     const agent = new GeneralChatAgent({
-      agentConfig: { maxSteps: 1000 },
+      agentConfig: { maxSteps: getAgentRunLimits().maxSteps },
       compressionConfig: {
         enabled: agentConfigData.chatConfig?.enableContextCompression ?? true, // Default to enabled
         maxWindowToken: contextWindowTokens ?? undefined,

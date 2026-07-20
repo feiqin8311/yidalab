@@ -180,15 +180,17 @@ export class ResourceManagerStoreActionImpl {
   /**
    * Reload `listVisibility` from localStorage for the given workspace. Called
    * on Sidebar mount / whenever the active workspace changes so the "space"
-   * you left off in comes back. Falls back to the workspace default when no
-   * record exists; personal mode keeps the base initialState default because
-   * the workspace toggle is hidden there.
+   * scope is always the workspace. Personal mode keeps the base initialState
+   * default because it has no workspace scope.
    */
   hydrateListVisibility = (workspaceId: string | undefined): void => {
-    const persisted = readPersistedResourceMode(workspaceId);
-    const next =
-      persisted ?? (workspaceId ? DEFAULT_WORKSPACE_LIST_VISIBILITY : initialState.listVisibility);
-    if (this.#get().listVisibility === next) return;
+    const next = workspaceId
+      ? (readPersistedResourceMode(workspaceId) ?? DEFAULT_WORKSPACE_LIST_VISIBILITY)
+      : initialState.listVisibility;
+    if (this.#get().listVisibility === next) {
+      this.#set({ selectAllState: 'none', selectedFileIds: [] });
+      return;
+    }
     this.#set({ listVisibility: next, selectAllState: 'none', selectedFileIds: [] });
   };
 

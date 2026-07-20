@@ -8,6 +8,7 @@ export const createNanoId = (size = 8) =>
 const prefixes = {
   agentCronJobs: 'cron',
   agentSkills: 'skl',
+  companyMarketSkills: 'cms',
   briefs: 'brf',
   taskComments: 'cmt',
   tasks: 'task',
@@ -15,6 +16,7 @@ const prefixes = {
   budget: 'bgt',
   chatGroups: 'cg',
   documents: 'docs',
+  departments: 'dept',
   evalBenchmarks: 'evb',
   evalDatasets: 'ds',
   evalExperiments: 'exp',
@@ -26,6 +28,7 @@ const prefixes = {
   generations: 'gen',
   knowledgeBases: 'kb',
   memory: 'mem',
+  resourceGrants: 'rg',
   messageGroups: 'mg',
   messages: 'msg',
   plugins: 'plg',

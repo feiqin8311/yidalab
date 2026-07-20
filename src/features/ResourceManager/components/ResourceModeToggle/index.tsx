@@ -2,11 +2,12 @@
 
 import { Flexbox, Icon, Tooltip } from '@lobehub/ui';
 import { createStaticStyles, cx } from 'antd-style';
-import { LockIcon, UsersIcon } from 'lucide-react';
-import { memo, useEffect } from 'react';
+import { LockIcon, Share2Icon, ShieldIcon, UsersIcon } from 'lucide-react';
+import { memo, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
+import { useIsWorkspaceAdmin } from '@/business/client/hooks/useIsWorkspaceAdmin';
 import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
 import type { ResourceListVisibilityFilter } from '@/routes/(main)/resource/features/store/initialState';
 
@@ -17,16 +18,16 @@ const styles = createStaticStyles(({ css, cssVar }) => {
 
       display: inline-flex;
       flex: 1;
-      gap: 6px;
+      gap: 4px;
       align-items: center;
       justify-content: center;
 
       padding-block: 6px;
-      padding-inline: 8px;
+      padding-inline: 6px;
       border: none;
       border-radius: ${cssVar.borderRadius};
 
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
       color: ${cssVar.colorTextSecondary};
 
@@ -55,7 +56,7 @@ const styles = createStaticStyles(({ css, cssVar }) => {
   };
 });
 
-const OPTIONS: Array<{
+const BASE_OPTIONS: Array<{
   icon: typeof LockIcon;
   key: ResourceListVisibilityFilter;
   labelKey: string;
@@ -68,6 +69,12 @@ const OPTIONS: Array<{
     tooltipKey: 'resources.mode.privateHint',
   },
   {
+    icon: Share2Icon,
+    key: 'shared',
+    labelKey: 'resources.visibility.shared',
+    tooltipKey: 'resources.mode.sharedHint',
+  },
+  {
     icon: UsersIcon,
     key: 'workspace',
     labelKey: 'resources.visibility.workspace',
@@ -75,14 +82,18 @@ const OPTIONS: Array<{
   },
 ];
 
+const ADMIN_OPTION = {
+  icon: ShieldIcon,
+  key: 'admin_all' as const,
+  labelKey: 'resources.visibility.adminAll',
+  tooltipKey: 'resources.mode.adminAllHint',
+};
+
 /**
- * Sidebar-top dual toggle: `[🔒 Private] [👥 Workspace]`.
+ * Sidebar-top mode toggle: mine / shared with me / company (+ admin all).
  *
- * Rendered only in team-workspace mode — personal mode has no notion of
- * visibility, so the toggle is meaningless there and is deliberately hidden.
- * Selecting a mode drives both the list filter (via `listVisibility`) and the
- * upload default (via `useTopLevelFileUpload`), so a single click switches
- * both what the user sees and where the next upload lands.
+ * Rendered only in team-workspace mode. Selecting a mode drives both the list
+ * filter (`listVisibility` → `listScope`) and the top-level upload default.
  */
 const ResourceModeToggle = memo(() => {
   const { t } = useTranslation('chat');
@@ -91,22 +102,32 @@ const ResourceModeToggle = memo(() => {
     (s) => [s.listVisibility, s.setListVisibility, s.hydrateListVisibility],
   );
 
+  const isAdmin = useIsWorkspaceAdmin();
+
+  const options = useMemo(
+    () => (isAdmin ? [...BASE_OPTIONS, ADMIN_OPTION] : BASE_OPTIONS),
+    [isAdmin],
+  );
+
   const workspaceId = activeWorkspaceId ?? undefined;
 
-  // Rehydrate from localStorage whenever the active workspace changes, so
-  // switching workspaces (or coming back after a reload) restores the mode
-  // this user last used in *this* workspace. Personal mode falls through to
-  // the initialState default.
   useEffect(() => {
     hydrateListVisibility(workspaceId);
   }, [workspaceId, hydrateListVisibility]);
+
+  // If a non-admin still has admin_all persisted, fall back to mine.
+  useEffect(() => {
+    if (!isAdmin && listVisibility === 'admin_all' && workspaceId) {
+      setListVisibility('private', workspaceId);
+    }
+  }, [isAdmin, listVisibility, setListVisibility, workspaceId]);
 
   if (!workspaceId) return null;
 
   return (
     <Flexbox paddingBlock={6} paddingInline={4}>
       <div className={styles.group} role={'tablist'}>
-        {OPTIONS.map((option) => {
+        {options.map((option) => {
           const isActive = listVisibility === option.key;
           const OptionIcon = option.icon;
           const label = t(option.labelKey as never);

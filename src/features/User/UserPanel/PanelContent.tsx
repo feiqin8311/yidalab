@@ -3,7 +3,6 @@ import { type FC } from 'react';
 
 import BusinessPanelContent from '@/business/client/features/User/BusinessPanelContent';
 import UserPanelStatistics from '@/business/client/features/User/UserPanelStatistics';
-import UserPanelWorkspaceSection from '@/business/client/features/User/UserPanelWorkspaceSection';
 import Menu from '@/components/Menu';
 import { isDesktop } from '@/const/version';
 import UserInfo from '@/features/User/UserInfo';
@@ -55,7 +54,6 @@ const PanelContent: FC<{ closePopover: () => void }> = ({ closePopover }) => {
           <UserInfo avatarProps={{ clickable: false }} />
           <UserPanelStatistics />
           {enableBusinessFeatures && <BusinessPanelContent />}
-          <UserPanelWorkspaceSection onSwitch={closePopover} />
         </>
       ) : (
         <UserLoginOrSignup onClick={handleSignIn} />

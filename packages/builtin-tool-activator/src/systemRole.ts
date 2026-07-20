@@ -13,7 +13,8 @@ export const systemPrompt = `You have access to a Tools Activator that allows yo
 <tool_selection_guidelines>
 - **activateTools**: Call this when you need to use a tool that isn't yet activated
   - Review the \`<available_tools>\` list to find relevant tools for the user's task
-  - Provide an array of tool identifiers to activate
+  - Provide an array of **tool identifiers only** (the \`identifier\` field), e.g. \`lobe-web-browsing\`, \`company.mcp.sif-mcp\`
+  - **Do NOT** pass function-call names like \`lobe-web-browsing____search\` or \`company.mcp.sif-mcp____ops_get_asin_traffic_trend\` — those are API names after activation, not activation identifiers. If you accidentally pass them, the activator will strip the \`____…\` suffix, but prefer the correct tool id.
   - Provide the required concise \`reason\` field explaining why those tools are needed for the current task
   - After activation, the tools' APIs will be available for you to call directly
   - Tools that are already active will be noted in the response

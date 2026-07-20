@@ -8,6 +8,7 @@ import { isDev } from '@/const/env';
 import { HETERO_AGENT_DIR } from '@/const/heteroAgent';
 import NotificationCtr from '@/controllers/NotificationCtr';
 import SystemController from '@/controllers/SystemCtr';
+import { isPersonalSettingsHidden } from '@/utils/featureFlags';
 
 import { buildTrayMenuTemplate } from '../trayMenu';
 import type { ContextMenuData, IMenuPlatform, MenuOptions } from '../types';
@@ -80,7 +81,7 @@ export class MacOSMenu extends BaseMenuPlatform implements IMenuPlatform {
             click: async () => {
               const mainWindow = this.app.browserManager.getMainWindow();
               mainWindow.show();
-              mainWindow.broadcast('navigate', { path: '/settings/about' });
+              mainWindow.broadcast('navigate', { path: '/settings/profile' });
             },
             label: t('macOS.about', { appName }),
           },
@@ -94,6 +95,7 @@ export class MacOSMenu extends BaseMenuPlatform implements IMenuPlatform {
               mainWindow.broadcast('navigate', { path: '/settings' });
             },
             label: t('macOS.preferences'),
+            visible: !isPersonalSettingsHidden(),
           },
           { type: 'separator' },
           {
@@ -708,6 +710,7 @@ export class MacOSMenu extends BaseMenuPlatform implements IMenuPlatform {
           mainWindow.broadcast('navigate', { path: '/settings' });
         },
         label: t('tray.settings'),
+        visible: !isPersonalSettingsHidden(),
       },
       { type: 'separator' },
       { label: t('tray.quit'), role: 'quit' },

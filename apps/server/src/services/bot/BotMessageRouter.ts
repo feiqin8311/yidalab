@@ -1475,7 +1475,7 @@ export class BotMessageRouter {
         );
 
         try {
-          await bridge.handleMention(thread, merged, {
+          const bridgeOpts = {
             agentId,
             botContext: buildBotContext({
               applicationId,
@@ -1488,7 +1488,15 @@ export class BotMessageRouter {
             client,
             displayToolCalls,
             replyLocale,
-          });
+          };
+          // DM catch-all used to always call handleMention → every message
+          // opened a new topic. Continue when thread state already has topicId.
+          const threadState = await thread.state;
+          if (threadState?.topicId) {
+            await bridge.handleSubscribedMessage(thread, merged, bridgeOpts);
+          } else {
+            await bridge.handleMention(thread, merged, bridgeOpts);
+          }
         } catch (error) {
           log('onNewMessage: unhandled error from handleMention: %O', error);
           try {

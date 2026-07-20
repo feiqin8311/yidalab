@@ -144,10 +144,14 @@
   "telemetry.title2": "很高兴见到你",
   "telemetry.title3": "准备好了就开始吧",
   "title": "欢迎使用 {{appName}}",
-  "username.desc": "告诉我该怎么称呼你",
-  "username.hint": "可随时在设置中修改",
-  "username.placeholder": "输入你的称呼…",
-  "username.title": "对了，我该如何称呼你？",
+  "username.desc": "设置你的用户名",
+  "username.hint": "仅支持字母、数字或下划线",
+  "username.placeholder": "输入用户名…",
+  "username.required": "用户名不能为空",
+  "username.rule": "仅支持字母、数字或下划线",
+  "username.title": "设置你的用户名",
   "username.title2": "让我们先认识一下",
-  "username.title3": "以后就能更流畅地交流了"
+  "username.title3": "以后就能更流畅地交流了",
+  "username.tooLong": "用户名不能超过 64 个字符",
+  "username.updateFailed": "更新用户名失败，请稍后重试"
 }

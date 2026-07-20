@@ -1,20 +1,22 @@
 import type { ModelProviderCard } from '@/types/llm';
 
-// ref: https://help.aliyun.com/zh/model-studio/coding-plan-overview
+// Coding Plan: https://help.aliyun.com/zh/model-studio/coding-plan-overview
+// Token Plan (includes image models): https://help.aliyun.com/zh/model-studio/token-plan-overview
 const BailianCodingPlan: ModelProviderCard = {
   chatModels: [],
-  checkModel: 'qwen3-coder-plus',
+  checkModel: 'qwen3.7-plus',
   description:
-    'Aliyun Bailian Coding Plan is a specialized AI coding service providing access to coding-optimized models from Qwen, GLM, Kimi, and MiniMax via a dedicated endpoint.',
+    'Aliyun Bailian Coding Plan / Token Plan provides subscription access to Qwen, GLM, Kimi, MiniMax, DeepSeek and image models (Token Plan) via a dedicated endpoint.',
   disableBrowserRequest: true,
   id: 'bailiancodingplan',
   modelList: { showModelFetcher: false },
-  modelsUrl: 'https://help.aliyun.com/zh/model-studio/coding-plan-overview',
+  modelsUrl: 'https://help.aliyun.com/zh/model-studio/token-plan-overview',
   name: 'Aliyun Bailian Coding Plan',
   settings: {
     disableBrowserRequest: true,
     proxyUrl: {
-      placeholder: 'https://coding.dashscope.aliyuncs.com/v1',
+      // Token Plan default; Coding Plan users can switch to coding.dashscope.aliyuncs.com/v1
+      placeholder: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
     },
     responseAnimation: {
       speed: 2,
@@ -24,7 +26,7 @@ const BailianCodingPlan: ModelProviderCard = {
     showDeployName: true,
     showModelFetcher: false,
   },
-  url: 'https://help.aliyun.com/zh/model-studio/coding-plan-overview',
+  url: 'https://help.aliyun.com/zh/model-studio/token-plan-overview',
 };
 
 export default BailianCodingPlan;

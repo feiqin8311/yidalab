@@ -1,21 +1,9 @@
-import { SOCIAL_URL } from '@lobechat/business-const';
-import { DiscordIcon, GithubIcon } from '@lobehub/ui/icons';
 import { Command } from 'cmdk';
-import {
-  Bot,
-  FeatherIcon,
-  FilePen,
-  LibraryBig,
-  MessageSquarePlusIcon,
-  Monitor,
-  Star,
-} from 'lucide-react';
+import { FilePen, LibraryBig, MessageSquarePlusIcon, Monitor } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { openFeedbackModal } from '@/components/FeedbackModal';
 import { getNavigableRoutes, getRouteById } from '@/config/routes';
-import { FEEDBACK } from '@/const/url';
 import { usePermission } from '@/hooks/usePermission';
 import { useChatStore } from '@/store/chat';
 import { topicSelectors } from '@/store/chat/selectors';
@@ -26,7 +14,7 @@ import ContextCommands from './ContextCommands';
 import { useCommandMenu } from './useCommandMenu';
 
 const MainMenu = memo(() => {
-  const { pathname, menuContext, setPages, pages, onClose } = useCommandMenuContext();
+  const { pathname, menuContext, setPages, pages } = useCommandMenuContext();
   const { t } = useTranslation('common');
   const { allowed: canCreate } = usePermission('create_content');
   // While the first send from the new-topic view is still creating the real
@@ -34,40 +22,15 @@ const MainMenu = memo(() => {
   // letting it close the palette as a false success (same as the sidebar entry).
   const isNewTopicSendInFlight = useChatStore(topicSelectors.isNewTopicSendInFlight);
 
-  const {
-    handleCreateSession,
-    handleCreateTopic,
-    handleCreateLibrary,
-    handleCreatePage,
-    handleNavigate,
-    handleExternalLink,
-    handleCreateAgentTeam,
-  } = useCommandMenu();
+  const { handleCreateTopic, handleCreateLibrary, handleCreatePage, handleNavigate } =
+    useCommandMenu();
 
   return (
     <>
       <ContextCommands />
 
       <Command.Group>
-        <CommandItem
-          disabled={!canCreate}
-          icon={<Bot />}
-          unpinned={menuContext === 'agent' || menuContext === 'page'}
-          value="create new agent assistant"
-          onSelect={handleCreateSession}
-        >
-          {t('cmdk.newAgent')}
-        </CommandItem>
-
-        <CommandItem
-          disabled={!canCreate}
-          icon={<Bot />}
-          unpinned={menuContext === 'agent' || menuContext === 'page'}
-          value="create new agent team"
-          onSelect={handleCreateAgentTeam}
-        >
-          {t('cmdk.newAgentTeam')}
-        </CommandItem>
+        {/* Temporary product hold: agent creation is disabled for YidaLab. */}
 
         {menuContext === 'agent' && (
           <CommandItem
@@ -148,48 +111,6 @@ const MainMenu = memo(() => {
             )
           );
         })}
-      </Command.Group>
-
-      <Command.Group heading={t('cmdk.about')}>
-        <CommandItem
-          icon={<FeatherIcon />}
-          keywords={t('cmdk.keywords.contactUs').split(' ')}
-          value="contact-via-email"
-          onSelect={() => {
-            // Close the palette through the context handler (which runs the exit
-            // animation and clears the local `isVisible` state) before opening the
-            // modal. `openFeedbackModal` only flips the store flag, which alone
-            // doesn't unmount the palette — so without this it stays on screen.
-            onClose();
-            openFeedbackModal();
-          }}
-        >
-          {t('cmdk.contactUs')}
-        </CommandItem>
-        <CommandItem
-          icon={<GithubIcon />}
-          keywords={t('cmdk.keywords.submitIssue').split(' ')}
-          value="submit-issue"
-          onSelect={() => handleExternalLink(FEEDBACK)}
-        >
-          {t('cmdk.submitIssue')}
-        </CommandItem>
-        <CommandItem
-          icon={<Star />}
-          keywords={t('cmdk.keywords.starGitHub').split(' ')}
-          value="star-github"
-          onSelect={() => handleExternalLink(SOCIAL_URL.github)}
-        >
-          {t('cmdk.starOnGitHub')}
-        </CommandItem>
-        <CommandItem
-          icon={<DiscordIcon />}
-          keywords={t('cmdk.keywords.discord').split(' ')}
-          value="discord"
-          onSelect={() => handleExternalLink(SOCIAL_URL.discord)}
-        >
-          {t('cmdk.communitySupport')}
-        </CommandItem>
       </Command.Group>
     </>
   );

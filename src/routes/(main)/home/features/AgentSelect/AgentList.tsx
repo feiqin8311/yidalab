@@ -1,5 +1,6 @@
 'use client';
 
+import { DEFAULT_INBOX_TITLE } from '@lobechat/const';
 import { type SidebarAgentItem } from '@lobechat/types';
 import { Avatar, Block, Flexbox, Text } from '@lobehub/ui';
 import { createStaticStyles, cssVar } from 'antd-style';
@@ -69,7 +70,7 @@ const AgentList = memo<AgentListProps>(({ activeAgentId, error, onRetry, onSelec
           DEFAULT_INBOX_AVATAR,
         backgroundColor: inboxMeta?.backgroundColor || undefined,
         id: inboxAgentId,
-        title: inboxMeta?.title || 'Lobe AI',
+        title: inboxMeta?.title || DEFAULT_INBOX_TITLE,
       });
       seen.add(inboxAgentId);
     }

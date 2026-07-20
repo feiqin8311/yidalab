@@ -7,12 +7,18 @@ import { UsageRecordService } from '@/server/services/usage';
 
 const usageProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
+  // company.role is set by companyWorkspaceProcedure (wsCompatProcedure).
+  const role = (ctx as { company?: { role?: string } }).company?.role;
+  const canViewWorkspaceUsage = role === 'owner' || role === 'admin';
   return opts.next({
     ctx: {
+      canViewWorkspaceUsage,
       usageRecordService: new UsageRecordService(
         ctx.serverDB,
         ctx.userId,
         ctx.workspaceId ?? undefined,
+        // Members only see their own company usage; admins/owners see everyone.
+        { restrictToCaller: !!ctx.workspaceId && !canViewWorkspaceUsage },
       ),
     },
   });
@@ -73,5 +79,21 @@ export const usageRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return await ctx.usageRecordService.findByMonth(input.mo, input.agentId);
+    }),
+
+  getToolUsageStats: usageProcedure
+    .input(
+      z.object({
+        agentId: z.string().optional(),
+        endAt: z.string(),
+        startAt: z.string(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      return await ctx.usageRecordService.getToolUsageStats(
+        input.startAt,
+        input.endAt,
+        input.agentId,
+      );
     }),
 });

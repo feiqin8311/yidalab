@@ -304,10 +304,16 @@ export const useSignIn = () => {
   };
 
   const handleGoToSignup = () => {
-    const currentEmail = form.getFieldValue('email');
+    const currentIdentifier = (form.getFieldValue('email') as string | undefined)?.trim();
     const callbackUrl = searchParams.get('callbackUrl') || '/';
     const params = new URLSearchParams();
-    if (currentEmail) params.set('email', currentEmail);
+    if (currentIdentifier) {
+      if (EMAIL_REGEX.test(currentIdentifier)) {
+        params.set('email', currentIdentifier.toLowerCase());
+      } else if (USERNAME_REGEX.test(currentIdentifier)) {
+        params.set('username', currentIdentifier);
+      }
+    }
     params.set('callbackUrl', callbackUrl);
     const utmSource = searchParams.get('utm_source');
     if (utmSource) params.set('utm_source', utmSource);

@@ -21,6 +21,11 @@ class UsageService {
   }) => {
     return lambdaClient.usage.getAgentUsageStats.query(params);
   };
+
+  /** Tool / skill invocation stats (message_plugins aggregation). */
+  getToolUsageStats = async (params: { agentId?: string; endAt: string; startAt: string }) => {
+    return lambdaClient.usage.getToolUsageStats.query(params);
+  };
 }
 
 export const usageService = new UsageService();

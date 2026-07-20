@@ -42,7 +42,7 @@ const UserMessage = memo<UserMessageProps>(({ id, disableEditing, index }) => {
   // hidden-avatar behavior. Optimistic/streaming rows without a `sender`
   // fall back to the current user, which is who authored them.
   const showSender = Boolean(activeWorkspaceId);
-  const senderName = sender?.fullName || sender?.username || '';
+  const senderName = sender?.username || sender?.username || '';
   const avatar = sender?.avatar || senderName || selfAvatar;
   const title = senderName || selfTitle;
 

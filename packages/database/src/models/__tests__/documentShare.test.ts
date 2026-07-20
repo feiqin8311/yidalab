@@ -29,8 +29,8 @@ beforeEach(async () => {
   await serverDB.delete(users);
   await serverDB.transaction(async (tx) => {
     await tx.insert(users).values([
-      { id: userId, fullName: 'Alice', avatar: 'alice.png' },
-      { id: userId2, fullName: 'Bob', avatar: 'bob.png' },
+      { id: userId, username: 'Alice', avatar: 'alice.png' },
+      { id: userId2, username: 'Bob', avatar: 'bob.png' },
     ]);
     await tx.insert(documents).values([
       { id: docId, userId, title: 'Doc 1', ...baseDocFields },

@@ -29,7 +29,6 @@ export const POST = async (req: Request): Promise<NextResponse> => {
         {
           avatar: object?.avatar,
           email: object?.email,
-          fullName: object.displayName,
         },
       );
     }

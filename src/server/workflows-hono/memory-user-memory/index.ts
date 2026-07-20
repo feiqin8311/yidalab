@@ -1,87 +1,58 @@
-import { withOtelMetricsForUpstashWorkflows } from '@lobechat/observability-otel/modules/upstash-workflow';
-import { serve } from '@upstash/workflow/hono';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 
-import { createWorkflowQstashClient } from '../qstashClient';
-import { hourlyWorkflowHandler, hourlyWorkflowOptions } from './workflows/hourly';
-import { personaUpdateHandler, personaUpdateWorkflowOptions } from './workflows/personaUpdate';
-import { processTopicHandler, processTopicWorkflowOptions } from './workflows/processTopic';
-import { processTopicsHandler, processTopicsWorkflowOptions } from './workflows/processTopics';
-import { processUsersHandler, processUsersWorkflowOptions } from './workflows/processUsers';
-import {
-  processUserTopicsHandler,
-  processUserTopicsWorkflowOptions,
-} from './workflows/processUserTopics';
+import { enqueueInternalJob } from '@/server/services/internalJob/enqueue';
+import { JOB_NAMES } from '@/server/services/internalJob/types';
 
+import { qstashAuth } from '../middlewares/qstashAuth';
+
+/**
+ * Memory extraction HTTP bridges.
+ *
+ * Previously these routes used Upstash Workflow `serve()` which constructed a
+ * QStash client at module load (noisy without QSTASH_TOKEN). Triggers now go
+ * through Redis internal jobs — same paths kept for cron / ops HTTP callers.
+ */
 const app = new Hono();
 
-app.post(
-  '/call-cron-hourly-analysis',
-  serve(
-    withOtelMetricsForUpstashWorkflows(hourlyWorkflowHandler, {
-      url: '/api/workflows/memory-user-memory/call-cron-hourly-analysis',
-    }),
-    {
-      ...hourlyWorkflowOptions,
-      qstashClient: createWorkflowQstashClient(),
-    },
-  ),
-);
+const enqueueJson = (name: string) => async (c: Context) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const jobId = await enqueueInternalJob({ name, payload: body ?? {} });
+    return c.json({ jobId, ok: true });
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : 'Failed to enqueue job', ok: false },
+      500,
+    );
+  }
+};
 
+app.post('/call-cron-hourly-analysis', qstashAuth(), enqueueJson(JOB_NAMES.memoryHourly));
 app.post(
   '/pipelines/persona/update-writing',
-  serve(
-    withOtelMetricsForUpstashWorkflows(personaUpdateHandler, {
-      url: '/api/workflows/memory-user-memory/pipelines/persona/update-writing',
-    }),
-    { ...personaUpdateWorkflowOptions, qstashClient: createWorkflowQstashClient() },
-  ),
+  qstashAuth(),
+  enqueueJson(JOB_NAMES.memoryPersonaUpdate),
 );
-
 app.post(
   '/pipelines/chat-topic/process-users',
-  serve(
-    withOtelMetricsForUpstashWorkflows(processUsersHandler, {
-      url: '/api/workflows/memory-user-memory/pipelines/chat-topic/process-users',
-    }),
-    {
-      ...processUsersWorkflowOptions,
-      qstashClient: createWorkflowQstashClient(),
-    },
-  ),
+  qstashAuth(),
+  enqueueJson(JOB_NAMES.memoryProcessUsers),
 );
-
 app.post(
   '/pipelines/chat-topic/process-user-topics',
-  serve(
-    withOtelMetricsForUpstashWorkflows(processUserTopicsHandler, {
-      url: '/api/workflows/memory-user-memory/pipelines/chat-topic/process-user-topics',
-    }),
-    {
-      ...processUserTopicsWorkflowOptions,
-      qstashClient: createWorkflowQstashClient(),
-    },
-  ),
+  qstashAuth(),
+  enqueueJson(JOB_NAMES.memoryProcessUserTopics),
 );
-
 app.post(
   '/pipelines/chat-topic/process-topics',
-  serve(
-    withOtelMetricsForUpstashWorkflows(processTopicsHandler, {
-      url: '/api/workflows/memory-user-memory/pipelines/chat-topic/process-topics',
-    }),
-    { ...processTopicsWorkflowOptions, qstashClient: createWorkflowQstashClient() },
-  ),
+  qstashAuth(),
+  enqueueJson(JOB_NAMES.memoryProcessTopics),
 );
-
 app.post(
   '/pipelines/chat-topic/process-topic',
-  serve(
-    withOtelMetricsForUpstashWorkflows(processTopicHandler, {
-      url: '/api/workflows/memory-user-memory/pipelines/chat-topic/process-topic',
-    }),
-    { ...processTopicWorkflowOptions, qstashClient: createWorkflowQstashClient() },
-  ),
+  qstashAuth(),
+  enqueueJson(JOB_NAMES.memoryProcessTopic),
 );
 
 export default app;

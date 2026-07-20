@@ -99,21 +99,15 @@ export function registerUserCommand(program: Command) {
   user
     .command('update-name')
     .description('Update user full name or username')
-    .option('--full-name <name>', 'Update full name (max 64 chars)')
     .option('--username <name>', 'Update username (alphanumeric + underscore)')
-    .action(async (options: { fullName?: string; username?: string }) => {
-      if (!options.fullName && !options.username) {
-        log.error('No changes specified. Use --full-name or --username.');
+    .action(async (options: { username?: string }) => {
+      if (!options.username) {
+        log.error('No changes specified. Use --username.');
         process.exit(1);
         return;
       }
 
       const client = await getTrpcClient();
-
-      if (options.fullName) {
-        await client.user.updateFullName.mutate(options.fullName);
-        console.log(`${pc.green('✓')} Full name updated to ${pc.bold(options.fullName)}`);
-      }
 
       if (options.username) {
         await client.user.updateUsername.mutate(options.username);

@@ -84,7 +84,7 @@ describe('OnboardingService', () => {
       agentOnboarding: {
         version: CURRENT_ONBOARDING_VERSION,
       },
-      fullName: undefined,
+      username: undefined,
       interests: undefined,
       settings: { general: {} },
     };
@@ -197,12 +197,12 @@ describe('OnboardingService', () => {
 
   it('accepts the flat structured schema', () => {
     const parsed = SaveUserQuestionInputSchema.parse({
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
       interests: ['AI tooling'],
     });
 
     expect(parsed).toEqual({
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
       interests: ['AI tooling'],
     });
   });
@@ -213,36 +213,36 @@ describe('OnboardingService', () => {
 
     expect(context).toEqual({
       finished: false,
-      missingStructuredFields: ['agentName', 'agentEmoji', 'fullName'],
+      missingStructuredFields: ['agentName', 'agentEmoji', 'username'],
       phase: 'agent_identity',
       topicId: undefined,
       version: CURRENT_ONBOARDING_VERSION,
     });
   });
 
-  it('persists fullName and interests through saveUserQuestion', async () => {
+  it('persists username and interests through saveUserQuestion', async () => {
     const service = new OnboardingService(mockDb, userId);
     const result = await service.saveUserQuestion({
       customInterests: ['AI tooling'],
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
       interests: ['coding'],
     });
 
     expect(result).toEqual({
       content: 'Saved full name and interests.',
       ignoredFields: [],
-      savedFields: ['fullName', 'interests'],
+      savedFields: ['username', 'interests'],
       success: true,
       unchangedFields: [],
     });
-    expect(persistedUserState.fullName).toBe('Ada Lovelace');
+    expect(persistedUserState.username).toBe('Ada Lovelace');
     expect(persistedUserState.interests).toEqual(['coding', 'AI tooling']);
   });
 
   it('ignores responseLanguage if the agent still tries to send it', async () => {
     const service = new OnboardingService(mockDb, userId);
     const result = await service.saveUserQuestion({
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
       // The schema no longer accepts responseLanguage. Test the reachable
       // shape — extra props arrive via parseToolArguments and land in
       // ignoredFields rather than blowing up the call.
@@ -250,7 +250,7 @@ describe('OnboardingService', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.savedFields).toEqual(['fullName']);
+    expect(result.savedFields).toEqual(['username']);
     expect(result.ignoredFields).toEqual(['responseLanguage']);
     expect(persistedUserState.settings.general.responseLanguage).toBeUndefined();
   });
@@ -260,16 +260,16 @@ describe('OnboardingService', () => {
     const result = await service.saveUserQuestion({
       agentEmoji: '😀',
       agentName: 'anbex',
-      fullName: 'anbex',
+      username: 'anbex',
     });
 
     expect(result.success).toBe(true);
-    expect(result.savedFields).toEqual(['fullName']);
+    expect(result.savedFields).toEqual(['username']);
     expect(result.ignoredFields).toEqual(['agentName', 'agentEmoji']);
     expect(result.content).toContain(
       'Skipped agent identity because agentName matches the user identity',
     );
-    expect(persistedUserState.fullName).toBe('anbex');
+    expect(persistedUserState.username).toBe('anbex');
     expect(mockAgentModel.update).not.toHaveBeenCalled();
   });
 
@@ -291,7 +291,7 @@ describe('OnboardingService', () => {
       id: 'inbox-agent-1',
       title: 'Jarvis',
     });
-    persistedUserState.fullName = 'Ada Lovelace';
+    persistedUserState.username = 'Ada Lovelace';
     persistedUserState.interests = ['AI tooling'];
 
     const service = new OnboardingService(mockDb, userId);
@@ -508,7 +508,7 @@ describe('OnboardingService', () => {
       '2026-04-17T09:00:00.000Z',
     );
 
-    persistedUserState.fullName = 'Ada Lovelace';
+    persistedUserState.username = 'Ada Lovelace';
 
     vi.setSystemTime(new Date('2026-04-17T11:00:00.000Z'));
     context = await service.getState();
@@ -551,7 +551,7 @@ describe('OnboardingService', () => {
       id: 'inbox-agent-1',
       title: 'Jarvis',
     });
-    persistedUserState.fullName = 'Ada Lovelace';
+    persistedUserState.username = 'Ada Lovelace';
     persistedUserState.agentOnboarding = {
       activeTopicId: 'topic-1',
       discoveryStartUserMessageCount: 3,
@@ -580,7 +580,7 @@ describe('OnboardingService', () => {
       id: 'inbox-agent-1',
       title: 'Jarvis',
     });
-    persistedUserState.fullName = 'Ada Lovelace';
+    persistedUserState.username = 'Ada Lovelace';
     persistedUserState.interests = ['AI tooling'];
     persistedUserState.agentOnboarding = {
       activeTopicId: 'topic-1',
@@ -607,8 +607,8 @@ describe('OnboardingService', () => {
       id: 'inbox-agent-1',
       title: 'Jarvis',
     });
-    persistedUserState.fullName = 'Ada Lovelace';
-    // agentName + fullName set → past pre-discovery; 0 discovery exchanges keeps phase in discovery
+    persistedUserState.username = 'Ada Lovelace';
+    // agentName + username set → past pre-discovery; 0 discovery exchanges keeps phase in discovery
     persistedUserState.agentOnboarding = {
       activeTopicId: 'topic-1',
       version: CURRENT_ONBOARDING_VERSION,
@@ -634,7 +634,7 @@ describe('OnboardingService', () => {
       id: 'inbox-agent-1',
       title: 'Jarvis',
     });
-    persistedUserState.fullName = 'Ada Lovelace';
+    persistedUserState.username = 'Ada Lovelace';
     persistedUserState.agentOnboarding = {
       activeTopicId: 'topic-1',
       discoveryStartUserMessageCount: 3,
@@ -707,7 +707,7 @@ describe('OnboardingService', () => {
         version: CURRENT_ONBOARDING_VERSION,
       };
       persistedTopics['topic-1'] = { agentId: 'builtin-agent-1', id: 'topic-1', metadata: {} };
-      persistedUserState.fullName = 'Ada';
+      persistedUserState.username = 'Ada';
       mockAgentModel.getBuiltinAgent.mockResolvedValue({
         avatar: '😀',
         id: 'inbox-agent-1',

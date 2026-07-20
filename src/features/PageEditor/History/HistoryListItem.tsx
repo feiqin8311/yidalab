@@ -172,7 +172,7 @@ export const HistoryListItem = memo<HistoryListItemProps>(({ historyId, onCompar
           </span>
         </Tooltip>
         <span className={styles.description}>
-          {authorInfo?.fullName ? `${authorInfo.fullName} · ` : ''}
+          {authorInfo?.username ? `${authorInfo.username} · ` : ''}
           {dayjs(item.savedAt).fromNow()}
         </span>
       </Flexbox>

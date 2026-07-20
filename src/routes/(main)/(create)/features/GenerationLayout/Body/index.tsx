@@ -16,7 +16,6 @@ import type { GenerationLayoutCommonProps } from '../types';
 import List from './List';
 
 enum GroupKey {
-  PrivateTopics = 'private-topics',
   Topics = 'topics',
   WorkspaceTopics = 'workspace-topics',
 }
@@ -34,8 +33,6 @@ const Body = memo<GenerationLayoutCommonProps>((props) => {
 
   const generationTopics = useStore(generationTopicsSelector);
   const count = generationTopics?.length || 0;
-  const privateCount =
-    generationTopics?.filter((topic: any) => topic.visibility === 'private').length || 0;
   const workspaceCount =
     generationTopics?.filter((topic: any) => topic.visibility !== 'private').length || 0;
 
@@ -64,27 +61,9 @@ const Body = memo<GenerationLayoutCommonProps>((props) => {
   if (activeWorkspaceId) {
     return (
       <Flexbox gap={1} paddingInline={4}>
-        <Accordion defaultExpandedKeys={[GroupKey.PrivateTopics, GroupKey.WorkspaceTopics]} gap={2}>
+        <Accordion defaultExpandedKeys={[GroupKey.WorkspaceTopics]} gap={2}>
           <AccordionItem
             action={viewModeTabs}
-            itemKey={GroupKey.PrivateTopics}
-            paddingBlock={4}
-            paddingInline={'8px 4px'}
-            title={
-              <Text ellipsis fontSize={12} type={'secondary'} weight={500}>
-                {t('topic.privateTitle')}
-                {privateCount > 0 && ` ${privateCount}`}
-              </Text>
-            }
-          >
-            <List
-              namespace={namespace}
-              useStore={useStore}
-              viewModeStatusKey={viewModeStatusKey}
-              visibility="private"
-            />
-          </AccordionItem>
-          <AccordionItem
             itemKey={GroupKey.WorkspaceTopics}
             paddingBlock={4}
             paddingInline={'8px 4px'}

@@ -80,6 +80,7 @@ services:
         condition: service_healthy
     volumes:
       - ./bucket.config.json:/bucket.config.json:ro
+      - ./cors.json:/cors.json:ro
     entrypoint: /bin/sh
     command: -c '
         set -eux;
@@ -90,6 +91,8 @@ services:
         mc mb "rustfs/lobe" --ignore-existing;
         mc admin info rustfs || true;
         mc anonymous set-json "/bucket.config.json" "rustfs/lobe";
+        mc cors set rustfs/lobe /cors.json || true;
+        mc cors get rustfs/lobe || true;
       '
     restart: 'no'
     networks:

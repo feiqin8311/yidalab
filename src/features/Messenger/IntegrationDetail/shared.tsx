@@ -264,14 +264,14 @@ export const UserAgentConnection = memo<UserAgentConnectionProps>(
     );
     const userAvatar = useUserStore(userProfileSelectors.userAvatar);
     const userDisplayName = useUserStore(userProfileSelectors.displayUserName);
-    const userFullName = useUserStore(userProfileSelectors.fullName);
+    const username = useUserStore(userProfileSelectors.username);
 
     // Mirror the Agent Transfer scope picker: each row is an avatar + name.
     // Personal uses the user's avatar; workspaces use their own avatar.
     const scopeOptions = useMemo(() => {
       const personalLabel = resolvePersonalScopeLabel({
         fallbackLabel: userDisplayName || t('messenger.scopePersonal'),
-        fullName: userFullName,
+        username,
       });
 
       return buildMessengerScopeOptions({
@@ -280,7 +280,7 @@ export const UserAgentConnection = memo<UserAgentConnectionProps>(
         personalTagLabel: t('messenger.scopePersonalTag', { defaultValue: 'personal' }),
         workspaces: scopesSWR.data,
       });
-    }, [scopesSWR.data, t, userAvatar, userDisplayName, userFullName]);
+    }, [scopesSWR.data, t, userAvatar, userDisplayName, username]);
 
     const scopeWorkspaceId = scope === PERSONAL_SCOPE ? null : scope;
     const linkIsActiveScope = scopeWorkspaceId === (link.workspaceId ?? null);

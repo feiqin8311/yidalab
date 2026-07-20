@@ -2,7 +2,6 @@
 
 import {
   BrainCircuit,
-  Download,
   FilePenIcon,
   Home,
   Image,
@@ -33,21 +32,31 @@ import WorkspaceSlugLayout from '@/routes/(main)/[workspaceSlug]/_layout';
 import WorkspaceSlugSettingsIndexPage from '@/routes/(main)/[workspaceSlug]/settings';
 import WorkspaceSlugSettingsContentLayout from '@/routes/(main)/[workspaceSlug]/settings/_content-layout';
 import WorkspaceSlugSettingsLayout from '@/routes/(main)/[workspaceSlug]/settings/_layout';
+import WorkspaceSlugSettingsAdvancedPage from '@/routes/(main)/[workspaceSlug]/settings/advanced';
 import WorkspaceSlugSettingsApiKeyPage from '@/routes/(main)/[workspaceSlug]/settings/apikey';
+import WorkspaceSlugSettingsAppearancePage from '@/routes/(main)/[workspaceSlug]/settings/appearance';
 import WorkspaceSlugSettingsAuditLogPage from '@/routes/(main)/[workspaceSlug]/settings/audit-log';
 import WorkspaceSlugSettingsBillingPage from '@/routes/(main)/[workspaceSlug]/settings/billing';
 import WorkspaceSlugSettingsConnectorPage from '@/routes/(main)/[workspaceSlug]/settings/connector';
 import WorkspaceSlugSettingsCreditsPage from '@/routes/(main)/[workspaceSlug]/settings/credits';
 import WorkspaceSlugSettingsCredsPage from '@/routes/(main)/[workspaceSlug]/settings/creds';
+import WorkspaceSlugSettingsDepartmentsPage from '@/routes/(main)/[workspaceSlug]/settings/departments';
 import WorkspaceSlugSettingsDevicesPage from '@/routes/(main)/[workspaceSlug]/settings/devices';
 import WorkspaceSlugSettingsGeneralPage from '@/routes/(main)/[workspaceSlug]/settings/general';
+import WorkspaceSlugSettingsHotkeyPage from '@/routes/(main)/[workspaceSlug]/settings/hotkey';
 import WorkspaceSlugSettingsMembersPage from '@/routes/(main)/[workspaceSlug]/settings/members';
+import WorkspaceSlugSettingsMemoryPage from '@/routes/(main)/[workspaceSlug]/settings/memory';
+import WorkspaceSlugSettingsNotificationPage from '@/routes/(main)/[workspaceSlug]/settings/notification';
 import WorkspaceSlugSettingsPlansPage from '@/routes/(main)/[workspaceSlug]/settings/plans';
+import WorkspaceSlugSettingsProfilePage from '@/routes/(main)/[workspaceSlug]/settings/profile';
 import WorkspaceSlugSettingsProviderPage from '@/routes/(main)/[workspaceSlug]/settings/provider';
+import WorkspaceSlugSettingsProxyPage from '@/routes/(main)/[workspaceSlug]/settings/proxy';
+import WorkspaceSlugSettingsReferralPage from '@/routes/(main)/[workspaceSlug]/settings/referral';
 import WorkspaceSlugSettingsServiceModelPage from '@/routes/(main)/[workspaceSlug]/settings/service-model';
 import WorkspaceSlugSettingsSkillPage from '@/routes/(main)/[workspaceSlug]/settings/skill';
 import WorkspaceSlugSettingsStatsPage from '@/routes/(main)/[workspaceSlug]/settings/stats';
 import WorkspaceSlugSettingsStoragePage from '@/routes/(main)/[workspaceSlug]/settings/storage';
+import WorkspaceSlugSettingsSystemToolsPage from '@/routes/(main)/[workspaceSlug]/settings/system-tools';
 import WorkspaceSlugSettingsUsagePage from '@/routes/(main)/[workspaceSlug]/settings/usage';
 // Pages — sync import
 import AgentPage from '@/routes/(main)/agent';
@@ -68,28 +77,22 @@ import CommunityDetailLayout from '@/routes/(main)/community/(detail)/_layout';
 import CommunityDetailAgentPage from '@/routes/(main)/community/(detail)/agent';
 import CommunityDetailGroupAgentPage from '@/routes/(main)/community/(detail)/group_agent';
 import CommunityDetailMcpPage from '@/routes/(main)/community/(detail)/mcp';
-import CommunityDetailModelPage from '@/routes/(main)/community/(detail)/model';
 import CommunityDetailOrganizationPage from '@/routes/(main)/community/(detail)/organization';
-import CommunityDetailProviderPage from '@/routes/(main)/community/(detail)/provider';
 import CommunityDetailSkillPage from '@/routes/(main)/community/(detail)/skill';
 import CommunityDetailUserPage from '@/routes/(main)/community/(detail)/user';
 import CommunityDetailWorkspacePage from '@/routes/(main)/community/(detail)/workspace';
 import CommunityDetailWorkspaceSettingsPage from '@/routes/(main)/community/(detail)/workspace/settings';
 import CommunityListLayout from '@/routes/(main)/community/(list)/_layout';
-import CommunityListHomePage from '@/routes/(main)/community/(list)/(home)';
 import CommunityListAgentPage from '@/routes/(main)/community/(list)/agent';
 import CommunityListAgentLayout from '@/routes/(main)/community/(list)/agent/_layout';
 import CommunityListMcpPage from '@/routes/(main)/community/(list)/mcp';
 import CommunityListMcpLayout from '@/routes/(main)/community/(list)/mcp/_layout';
-import CommunityListModelPage from '@/routes/(main)/community/(list)/model';
-import CommunityListModelLayout from '@/routes/(main)/community/(list)/model/_layout';
-import CommunityListProviderPage from '@/routes/(main)/community/(list)/provider';
 import CommunityListSkillPage from '@/routes/(main)/community/(list)/skill';
 import CommunityListSkillLayout from '@/routes/(main)/community/(list)/skill/_layout';
+import CompanyInvitationPage from '@/routes/(main)/company/invite/[token]';
 import DevtoolsIndexPage from '@/routes/(main)/devtools';
 import DevtoolsLayout from '@/routes/(main)/devtools/_layout';
 import DevtoolsToolPage from '@/routes/(main)/devtools/[identifier]';
-import DownloadsPage from '@/routes/(main)/downloads';
 import EvalOverviewPage from '@/routes/(main)/eval';
 import EvalLayout from '@/routes/(main)/eval/_layout';
 import EvalHomeLayout from '@/routes/(main)/eval/(home)/_layout';
@@ -283,26 +286,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
           {
             children: [
               {
-                element: <CommunityListModelPage />,
-                handle: {
-                  meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discoverModels' }),
-                },
-                index: true,
-              },
-            ],
-            element: <CommunityListModelLayout />,
-            path: 'model',
-          },
-          {
-            element: <CommunityListProviderPage />,
-            handle: {
-              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discoverProviders' }),
-            },
-            path: 'provider',
-          },
-          {
-            children: [
-              {
                 element: <CommunityListSkillPage />,
                 handle: {
                   meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
@@ -330,13 +313,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
             element: <CommunityDetailWorkspacePage />,
             path: 'workspace',
           },
-          {
-            element: <CommunityListHomePage />,
-            handle: {
-              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
-            },
-            index: true,
-          },
+          { element: redirectElement('agent'), index: true },
         ],
         element: <CommunityListLayout />,
       },
@@ -350,14 +327,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
           {
             element: <CommunityDetailGroupAgentPage />,
             path: 'group_agent/:slug',
-          },
-          {
-            element: <CommunityDetailModelPage />,
-            path: 'model/:slug',
-          },
-          {
-            element: <CommunityDetailProviderPage />,
-            path: 'provider/:slug',
           },
           {
             element: <CommunityDetailSkillPage />,
@@ -613,14 +582,6 @@ export const desktopRoutes: RouteObject[] = [
     children: [
       ...sharedMainAreaChildren,
 
-      // Downloads page (personal-only — never mirrored under /:workspaceSlug)
-      {
-        element: <DownloadsPage />,
-        errorElement: <ErrorBoundary />,
-        handle: { meta: routeMeta({ icon: Download, titleKey: 'navigation.downloads' }) },
-        path: 'downloads',
-      },
-
       // Settings routes (personal-only — never mirrored under /:workspaceSlug)
       {
         children: [
@@ -654,14 +615,22 @@ export const desktopRoutes: RouteObject[] = [
             handle: { settingsTab: SettingsTabs.Memory },
             path: 'memory',
           },
+          {
+            element: redirectElement('/agent/channel'),
+            path: 'messenger',
+          },
+          {
+            element: redirectElement('/agent/channel'),
+            path: 'messenger/:sub',
+          },
           // Other settings tabs
           {
             element: <SettingsTabPage />,
             handle: { meta: settingsRouteMeta },
             path: ':tab',
           },
-          // Tabs that need a sub-segment (e.g. /settings/messenger/discord) reuse
-          // the same tab page; nested feature components read `:sub` via useParams.
+          // Tabs that need a sub-segment reuse the same tab page; nested feature
+          // components read `:sub` via useParams.
           {
             element: <SettingsTabPage />,
             handle: { meta: settingsRouteMeta },
@@ -671,6 +640,10 @@ export const desktopRoutes: RouteObject[] = [
         element: <SettingsLayout />,
         errorElement: <ErrorBoundary />,
         path: 'settings',
+      },
+      {
+        element: <CompanyInvitationPage />,
+        path: 'company/invite/:token',
       },
 
       // Workspace slug routes — `/:workspaceSlug/*` mirrors the shared main area.
@@ -696,6 +669,7 @@ export const desktopRoutes: RouteObject[] = [
               {
                 children: [
                   { element: <WorkspaceSlugSettingsGeneralPage />, path: 'general' },
+                  { element: <WorkspaceSlugSettingsDepartmentsPage />, path: 'departments' },
                   { element: <WorkspaceSlugSettingsMembersPage />, path: 'members' },
                   { element: <WorkspaceSlugSettingsStatsPage />, path: 'stats' },
                   { element: <WorkspaceSlugSettingsPlansPage />, path: 'plans' },
@@ -708,6 +682,15 @@ export const desktopRoutes: RouteObject[] = [
                   { element: <WorkspaceSlugSettingsAuditLogPage />, path: 'audit-log' },
                   { element: <WorkspaceSlugSettingsStoragePage />, path: 'storage' },
                   { element: <WorkspaceSlugSettingsDevicesPage />, path: 'devices' },
+                  { element: <WorkspaceSlugSettingsProfilePage />, path: 'profile' },
+                  { element: <WorkspaceSlugSettingsAppearancePage />, path: 'appearance' },
+                  { element: <WorkspaceSlugSettingsHotkeyPage />, path: 'hotkey' },
+                  { element: <WorkspaceSlugSettingsNotificationPage />, path: 'notification' },
+                  { element: <WorkspaceSlugSettingsMemoryPage />, path: 'memory' },
+                  { element: <WorkspaceSlugSettingsReferralPage />, path: 'referral' },
+                  { element: <WorkspaceSlugSettingsProxyPage />, path: 'proxy' },
+                  { element: <WorkspaceSlugSettingsSystemToolsPage />, path: 'system-tools' },
+                  { element: <WorkspaceSlugSettingsAdvancedPage />, path: 'advanced' },
                 ],
                 element: <WorkspaceSlugSettingsContentLayout />,
               },

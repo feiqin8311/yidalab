@@ -1,7 +1,6 @@
 import debug from 'debug';
 import urlJoin from 'url-join';
 
-import { OtelQstashClient } from '@/libs/qstash';
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 
 import type {
@@ -31,34 +30,22 @@ export async function deliverWebhook(
     : urlJoin(process.env.INTERNAL_APP_URL || process.env.APP_URL || '', url);
 
   if (delivery === 'qstash') {
+    // Prefer internal Redis jobs (replaces QStash). Known workflow paths map to job names.
     try {
-      const qstashToken = process.env.QSTASH_TOKEN;
-      if (!qstashToken) {
-        if (fallback === 'none') {
-          throw new Error(`QSTASH_TOKEN not available for qstash-only webhook: ${url}`);
-        }
-        log('QStash token not available, falling back to fetch delivery');
-        await fetchDeliver(resolvedUrl, payload);
+      const { enqueueInternalJob } = await import('@/server/services/internalJob/enqueue');
+      const { JOB_NAMES } = await import('@/server/services/internalJob/types');
+      if (url.includes('/api/workflows/verify/on-verifier-complete')) {
+        await enqueueInternalJob({ name: JOB_NAMES.verifyComplete, payload });
+        log('Webhook delivered via internal job (verify): %s', url);
         return;
       }
-      const client = new OtelQstashClient({ token: qstashToken });
-      await client.publishJSON({
-        body: payload,
-        headers: {
-          ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET && {
-            'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
-          }),
-        },
-        url: resolvedUrl,
-      });
-      log('Webhook delivered via QStash: %s', url);
+      // Generic deferred delivery: enqueue a thin HTTP-fetch job would still need a worker;
+      // fall through to in-process fetch against APP_URL for other webhooks.
+      log('Unknown qstash webhook path, using fetch: %s', url);
+      await fetchDeliver(resolvedUrl, payload);
     } catch (error) {
-      // An unsigned fetch can never authenticate against a QStash-signed
-      // endpoint — falling back would just be a silently-dropped 401. Let
-      // the failure surface to the dispatcher instead.
       if (fallback === 'none') throw error;
-
-      log('QStash delivery failed, falling back to fetch: %O', error);
+      log('Internal job delivery failed, falling back to fetch: %O', error);
       await fetchDeliver(resolvedUrl, payload);
     }
   } else {

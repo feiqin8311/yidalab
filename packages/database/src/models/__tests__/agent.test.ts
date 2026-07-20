@@ -1406,6 +1406,14 @@ describe('AgentModel', () => {
 
   describe('getBuiltinAgent', () => {
     describe('inbox compatibility', () => {
+      it('uses the display name as the title for a newly created inbox agent', async () => {
+        await serverDB.update(users).set({ username: 'feiqin' }).where(eq(users.id, userId));
+
+        const result = await agentModel.getBuiltinAgent(INBOX_SESSION_ID);
+
+        expect(result?.title).toBe('feiqin');
+      });
+
       it('should return existing inbox agent directly if slug exists in agents table', async () => {
         // Create an agent with slug='inbox'
         const [agent] = await serverDB
@@ -1424,6 +1432,20 @@ describe('AgentModel', () => {
         expect(result?.slug).toBe(INBOX_SESSION_ID);
         expect(result?.title).toBe(DEFAULT_INBOX_TITLE);
         expect(result?.avatar).toBe(DEFAULT_INBOX_AVATAR);
+      });
+
+      it('syncs existing inbox agent title to the user full name', async () => {
+        await serverDB.update(users).set({ username: '柯鹏翔' }).where(eq(users.id, userId));
+        await serverDB.insert(agents).values({
+          id: 'existing-inbox-title-sync',
+          slug: INBOX_SESSION_ID,
+          title: 'Ke Pengxiang',
+          userId,
+        });
+
+        const result = await agentModel.getBuiltinAgent(INBOX_SESSION_ID);
+
+        expect(result?.title).toBe('柯鹏翔');
       });
 
       it('should find inbox from legacy session and update agent slug', async () => {
@@ -2214,10 +2236,9 @@ describe('AgentModel', () => {
     });
 
     it('should return the most recently updated agent when multiple match', async () => {
-      const [older] = await serverDB
+      await serverDB
         .insert(agents)
-        .values({ userId, title: 'Older', marketIdentifier: 'dup-market' })
-        .returning();
+        .values({ userId, title: 'Older', marketIdentifier: 'dup-market' });
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 

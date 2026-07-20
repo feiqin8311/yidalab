@@ -26,6 +26,28 @@ describe('resolveSkillsManifest', () => {
     },
   );
 
+  it('hides sandbox-bound exec APIs when cloudSandboxAvailable is false', () => {
+    const result = resolveSkillsManifest({ cloudSandboxAvailable: false })!;
+    const apiNames = result.api.map((a) => a.name);
+    expect(apiNames).not.toContain(SkillsApiName.runCommand);
+    expect(apiNames).not.toContain(SkillsApiName.exportFile);
+    expect(apiNames).not.toContain(SkillsApiName.execScript);
+    expect(apiNames).toContain(SkillsApiName.activateSkill);
+    expect(result.systemRole).toContain('Cloud sandbox is unavailable');
+    expect(result.systemRole).toContain('Artifacts');
+  });
+
+  it('keeps device execScript when cloudSandboxAvailable is false but a device is routed', () => {
+    const result = resolveSkillsManifest({
+      cloudSandboxAvailable: false,
+      executionEnv: 'device',
+    })!;
+    const apiNames = result.api.map((a) => a.name);
+    expect(apiNames).toContain(SkillsApiName.execScript);
+    expect(apiNames).not.toContain(SkillsApiName.runCommand);
+    expect(apiNames).not.toContain(SkillsApiName.exportFile);
+  });
+
   // Device runs execute execScript ON the device (serverRuntimes/skills.ts
   // device branch) — the description must say so, and the sandbox-only APIs
   // (runCommand / exportFile) are dropped, restoring the original desktop

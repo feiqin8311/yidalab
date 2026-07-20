@@ -18,16 +18,13 @@ import { MarketAuthError } from './errors';
 import { marketAuthEvents } from './events';
 import MarketAuthConfirmModal from './MarketAuthConfirmModal';
 import { MarketOIDC } from './oidc';
-import ProfileSetupModal from './ProfileSetupModal';
 import type { MarketAuthScene } from './scenes';
 import {
   type MarketAuthContextType,
   type MarketAuthSession,
   type MarketUserInfo,
-  type MarketUserProfile,
   type OIDCConfig,
 } from './types';
-import { useMarketUserProfile } from './useMarketUserProfile';
 import { type ClaimableResources } from './useSocialConnect';
 
 const MarketAuthContext = createContext<MarketAuthContextType | null>(null);
@@ -116,20 +113,6 @@ const getRefreshToken = (): string | null => {
 };
 
 /**
- * Check if the user needs to set up a username (first-time login)
- */
-const checkNeedsProfileSetup = async (username: string): Promise<boolean> => {
-  try {
-    const profile = await lambdaClient.market.user.getUserByUsername.query({ username });
-    // If userName is not set, user needs to complete profile setup
-    return !profile.userName;
-  } catch {
-    // Error fetching profile (e.g., NOT_FOUND), assume needs setup
-    return true;
-  }
-};
-
-/**
  * Market authorization context provider
  */
 export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderProps) => {
@@ -141,17 +124,12 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
   const [oidcClient, setOidcClient] = useState<MarketOIDC | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [authScene, setAuthScene] = useState<MarketAuthScene>('default');
-  const [showProfileSetupModal, setShowProfileSetupModal] = useState(false);
-  const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [pendingSignInResolve, setPendingSignInResolve] = useState<
     ((_value: number | null) => void) | null
   >(null);
   const [pendingSignInReject, setPendingSignInReject] = useState<((_reason?: any) => void) | null>(
     null,
   );
-  const [pendingProfileSuccessCallback, setPendingProfileSuccessCallback] = useState<
-    ((_profile: MarketUserProfile) => void) | null
-  >(null);
   const [claimableResources, setClaimableResources] = useState<ClaimableResources | null>(null);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [pendingClaimSuccessCallback, setPendingClaimSuccessCallback] = useState<
@@ -362,19 +340,6 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
       setSession(newSession);
       setStatus('authenticated');
 
-      // Check if user needs to set up profile (first-time login)
-      if (userInfo?.sub) {
-        const needsSetup = await checkNeedsProfileSetup(userInfo.sub);
-        if (needsSetup) {
-          // Wait for next tick to ensure session state is updated before opening modal
-          // This prevents the edge case where accessToken is null when modal opens
-          setTimeout(() => {
-            setIsFirstTimeSetup(true);
-            setShowProfileSetupModal(true);
-          }, 0);
-        }
-      }
-
       return userInfo?.accountId ?? null;
     } catch (error) {
       setStatus('unauthenticated');
@@ -411,10 +376,7 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
   const handleConfirmAuth = async () => {
     setShowConfirmModal(false);
 
-    // If in trustedClient mode, open ProfileSetupModal directly to complete profile
     if (enableMarketTrustedClient) {
-      setIsFirstTimeSetup(true);
-      setShowProfileSetupModal(true);
       if (pendingSignInResolve) {
         pendingSignInResolve(session?.userInfo?.accountId ?? null);
         setPendingSignInResolve(null);
@@ -482,31 +444,7 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
     return dbTokens?.accessToken ?? null;
   };
 
-  /**
-   * Open profile setup modal (for manual user editing)
-   */
-  const openProfileSetup = useCallback((onSuccess?: (profile: MarketUserProfile) => void) => {
-    setIsFirstTimeSetup(false);
-    setPendingProfileSuccessCallback(() => onSuccess || null);
-    setShowProfileSetupModal(true);
-  }, []);
-
-  /**
-   * Close profile setup modal
-   */
-  const handleCloseProfileSetup = useCallback(() => {
-    setShowProfileSetupModal(false);
-    setIsFirstTimeSetup(false);
-    setPendingProfileSuccessCallback(null);
-  }, []);
-
-  /**
-   * Show claim resources modal (called from ProfileSetupModal after save)
-   */
-  const handleShowClaimResources = useCallback((resources: ClaimableResources) => {
-    setClaimableResources(resources);
-    setShowClaimModal(true);
-  }, []);
+  const openProfileSetup = useCallback(() => {}, []);
 
   /**
    * Close claim resources modal
@@ -567,13 +505,6 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
     },
     [status],
   );
-
-  /**
-   * Profile update success callback
-   */
-  const handleProfileUpdateSuccess = useCallback(() => {
-    // Profile is updated, modal will close automatically
-  }, []);
 
   /**
    * Refresh access token using refresh token
@@ -746,40 +677,6 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
     status,
   };
 
-  // Get current user's profile for the edit modal
-  const userInfo = session?.userInfo;
-  const username = userInfo?.sub;
-  const { data: userProfile, mutate: mutateUserProfile } = useMarketUserProfile(username);
-
-  // Handle profile update success - also refresh the cached profile
-  const handleProfileSuccess = useCallback(
-    (profile: MarketUserProfile) => {
-      handleProfileUpdateSuccess();
-      // Update the SWR cache with the new profile
-      mutateUserProfile(profile, false);
-
-      // Also refresh the discover store's user profile cache
-      // The discover store uses keys like 'user-profile-{locale}-{username}'
-      if (profile.userName) {
-        globalMutate(
-          (key) =>
-            typeof key === 'string' &&
-            key.includes(`user-profile`) &&
-            key.includes(profile.userName!),
-          undefined,
-          { revalidate: true },
-        );
-      }
-
-      // Call the external success callback if provided
-      if (pendingProfileSuccessCallback) {
-        pendingProfileSuccessCallback(profile);
-        setPendingProfileSuccessCallback(null);
-      }
-    },
-    [handleProfileUpdateSuccess, mutateUserProfile, pendingProfileSuccessCallback],
-  );
-
   return (
     <MarketAuthContext value={contextValue}>
       {children}
@@ -788,16 +685,6 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
         scene={authScene}
         onCancel={handleCancelAuth}
         onConfirm={handleConfirmAuth}
-      />
-      <ProfileSetupModal
-        accessToken={session?.accessToken ?? null}
-        defaultDisplayName={userProfile?.displayName || ''}
-        isFirstTimeSetup={isFirstTimeSetup}
-        open={showProfileSetupModal}
-        userProfile={userProfile}
-        onClose={handleCloseProfileSetup}
-        onShowClaimResources={handleShowClaimResources}
-        onSuccess={handleProfileSuccess}
       />
       {claimableResources && (
         <ClaimResourcesModal
@@ -813,11 +700,33 @@ export const MarketAuthProvider = ({ children, isDesktop }: MarketAuthProviderPr
 
 /**
  * Hook for using Market authorization
+ *
+ * When no MarketAuthProvider is mounted (e.g. after the market/community
+ * capabilities have been disabled), returns a sentinel context with
+ * `isAuthenticated: false` and a no-op `signIn` that throws. This lets
+ * existing call sites keep their types and conditional logic without
+ * guarding every use, while preventing the community-profile modal from
+ * ever being rendered.
  */
+const MARKET_AUTH_DISABLED_FALLBACK: MarketAuthContextType = {
+  checkAndShowClaimableResources: async () => false,
+  getAccessToken: () => null,
+  getCurrentUserInfo: () => null,
+  getRefreshToken: () => null,
+  handleUnauthorized: async () => false,
+  isAuthenticated: false,
+  isLoading: false,
+  openProfileSetup: () => undefined,
+  refreshToken: async () => false,
+  session: null,
+  signIn: async () => {
+    throw new Error('[MarketAuth] signIn called without MarketAuthProvider mounted');
+  },
+  signOut: async () => undefined,
+  status: 'unauthenticated',
+};
+
 export const useMarketAuth = (): MarketAuthContextType => {
   const context = use(MarketAuthContext);
-  if (!context) {
-    throw new Error('useMarketAuth must be used within a MarketAuthProvider');
-  }
-  return context;
+  return context ?? MARKET_AUTH_DISABLED_FALLBACK;
 };

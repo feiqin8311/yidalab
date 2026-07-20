@@ -1,0 +1,1 @@
+ALTER TABLE "company_market_skills" ADD COLUMN "hide_content" boolean DEFAULT false NOT NULL;

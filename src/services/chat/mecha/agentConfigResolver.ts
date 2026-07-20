@@ -388,7 +388,11 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
   // Builtin agent - merge runtime config
   // Use basePlugins as fallback when ctx.plugins is not provided
   // This ensures builtin agents (e.g., INBOX) receive user-configured plugins for merging
+  const agentMeta = agentStoreState.agentMap
+    ? agentSelectors.getAgentMetaById(agentId)(agentStoreState)
+    : undefined;
   const runtimeConfig = getAgentRuntimeConfig(slug, {
+    agentDisplayName: agentMeta?.title || undefined,
     documentContent,
     groupSupervisorContext,
     isDev,

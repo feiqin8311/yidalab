@@ -833,6 +833,34 @@
       "when": 1783773134101,
       "tag": "0118_workspace_user_settings_surrogate_pk",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1783998203804,
+      "tag": "0119_bent_sharon_ventura",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1784015648137,
+      "tag": "0120_quick_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1784167169464,
+      "tag": "0121_user_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1784500000000,
+      "tag": "0122_resource_grants",
+      "breakpoints": true
     }
   ],
   "version": "6"

@@ -12,6 +12,8 @@ import { userProfileSelectors } from '@/store/user/selectors';
 
 import ProfileRow from './ProfileRow';
 
+const usernameRegex = /^[\w\u4E00-\u9FA5\s\-.·]+$/;
+
 const UsernameRow = () => {
   const { t } = useTranslation('auth');
   const username = useUserStore(userProfileSelectors.username);
@@ -21,15 +23,16 @@ const UsernameRow = () => {
   const [dirty, setDirty] = useState(false);
   const inputRef = useRef<InputRef>(null);
 
-  const usernameRegex = /^\w+$/;
-
-  const validateUsername = (value: string): string => {
-    const trimmed = value.trim();
-    if (!trimmed) return t('profile.usernameRequired');
-    if (trimmed.length > 64) return t('profile.usernameTooLong');
-    if (!usernameRegex.test(trimmed)) return t('profile.usernameRule');
-    return '';
-  };
+  const validateUsername = useCallback(
+    (value: string): string => {
+      const trimmed = value.trim();
+      if (!trimmed) return t('profile.usernameRequired');
+      if (trimmed.length > 64) return t('profile.usernameTooLong');
+      if (!usernameRegex.test(trimmed)) return t('profile.usernameRule');
+      return '';
+    },
+    [t],
+  );
 
   const handleSave = useCallback(async () => {
     const value = inputRef.current?.input?.value?.trim();
@@ -59,7 +62,7 @@ const UsernameRow = () => {
     } finally {
       setSaving(false);
     }
-  }, [username, updateUsername, t]);
+  }, [username, updateUsername, t, validateUsername]);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;

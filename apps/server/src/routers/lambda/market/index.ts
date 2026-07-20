@@ -20,6 +20,8 @@ import {
 import { agentRouter } from './agent';
 import { agentGroupRouter } from './agentGroup';
 import { credsRouter } from './creds';
+import { toMarketTRPCError } from './error';
+import { companyMcpHelpers } from './mcp';
 import { oidcRouter } from './oidc';
 import { skillRouter } from './skill';
 import { socialRouter } from './social';
@@ -126,10 +128,7 @@ export const marketRouter = router({
         return await ctx.discoverService.getAssistantDetail(input);
       } catch (error) {
         log('Error fetching assistants detail: %O', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch assistants detail',
-        });
+        throw toMarketTRPCError(error, 'Failed to fetch assistants detail');
       }
     }),
 
@@ -307,11 +306,14 @@ export const marketRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input, ctx }) => {
+    .query(async ({ input }) => {
       log('getMcpCategories input: %O', input);
 
       try {
-        return await ctx.discoverService.getMcpCategories(input);
+        // Company market first (internal MCP catalog)
+        const company = await companyMcpHelpers.getCategories(input?.q);
+        if (company.length > 0) return company;
+        return [];
       } catch (error) {
         log('Error fetching mcp categories: %O', error);
         throw new TRPCError({
@@ -329,17 +331,16 @@ export const marketRouter = router({
         version: z.string().optional(),
       }),
     )
-    .query(async ({ input, ctx }) => {
+    .query(async ({ input }) => {
       log('getMcpDetail input: %O', input);
 
       try {
-        return await ctx.discoverService.getMcpDetail(input);
+        const company = await companyMcpHelpers.getDetail(input.identifier);
+        if (company) return company;
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'MCP not found' });
       } catch (error) {
         console.error('Error fetching mcp detail: %O', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch mcp detail',
-        });
+        throw toMarketTRPCError(error, 'Failed to fetch mcp detail');
       }
     }),
 
@@ -358,11 +359,16 @@ export const marketRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input, ctx }) => {
+    .query(async ({ input }) => {
       log('getMcpList input: %O', input);
 
       try {
-        return await ctx.discoverService.getMcpList(input);
+        return await companyMcpHelpers.getList({
+          category: input?.category,
+          page: input?.page,
+          pageSize: input?.pageSize,
+          q: input?.q,
+        });
       } catch (error) {
         log('Error fetching mcp list: %O', error);
         throw new TRPCError({
@@ -381,11 +387,18 @@ export const marketRouter = router({
         version: z.string().optional(),
       }),
     )
-    .query(async ({ input, ctx }) => {
+    .query(async ({ input }) => {
       log('getMcpManifest input: %O', input);
 
       try {
-        return await ctx.discoverService.getMcpManifest(input);
+        // `install: true` is the only path that may receive real secrets
+        // (headers / URL keys). Market detail/browse always gets a redacted
+        // connection — secrets live in Settings → Credentials.
+        const company = await companyMcpHelpers.getManifest(input.identifier, {
+          includeSecrets: input.install === true,
+        });
+        if (company) return company;
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'MCP manifest not found' });
       } catch (error) {
         log('Error fetching mcp manifest: %O', error);
         throw new TRPCError({

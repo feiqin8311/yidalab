@@ -6,6 +6,7 @@ import {
   Blocks,
   Brain,
   BrainCircuit,
+  Building2,
   ChartColumnBigIcon,
   Coins,
   CreditCard,
@@ -13,12 +14,9 @@ import {
   EllipsisIcon,
   EthernetPort,
   Gift,
-  Info,
   KeyboardIcon,
   KeyIcon,
-  KeyRound,
   Map,
-  MessageCircleIcon,
   MonitorSmartphoneIcon,
   PaletteIcon,
   Sparkles,
@@ -27,6 +25,7 @@ import {
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useMyCompany } from '@/features/Company/hooks';
 import { useElectronStore } from '@/store/electron';
 import { electronSyncSelectors } from '@/store/electron/selectors';
 import { SettingsTabs } from '@/store/global/initialState';
@@ -65,7 +64,8 @@ export const useCategory = () => {
   const { t: tAuth } = useTranslation('auth');
   const { t: tSubscription } = useTranslation('subscription');
   const mobile = useServerConfigStore((s) => s.isMobile);
-  const { hideDocs, showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
+  const { showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
+  const { data: company } = useMyCompany();
   const [avatar, username] = useUserStore((s) => [
     userProfileSelectors.userAvatar(s),
     userProfileSelectors.nickName(s),
@@ -81,6 +81,7 @@ export const useCategory = () => {
     return avatar;
   }, [avatar, remoteServerUrl]);
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
+  const canManageCompanyAi = !company || company.role === 'admin' || company.role === 'owner';
   const categoryGroups: CategoryGroup[] = useMemo(() => {
     const groups: CategoryGroup[] = [];
 
@@ -95,6 +96,11 @@ export const useCategory = () => {
         icon: ChartColumnBigIcon,
         key: SettingsTabs.Stats,
         label: tAuth('tab.stats'),
+      },
+      {
+        icon: Building2,
+        key: SettingsTabs.Company,
+        label: tAuth('company.title'),
       },
       {
         icon: PaletteIcon,
@@ -124,9 +130,8 @@ export const useCategory = () => {
       title: t('group.common'),
     });
 
-    // Personal subscription / billing items. Always shown when business
-    // features are enabled — workspace settings live under a separate
-    // `/:workspaceSlug/settings/*` surface and never share this sidebar.
+    // Personal subscription / billing items. Company settings live in the
+    // general group above so users only need one settings entry.
     if (enableBusinessFeatures) {
       const subscriptionItems: CategoryItem[] = [
         { icon: Map, key: SettingsTabs.Plans, label: tSubscription('tab.plans') },
@@ -147,12 +152,13 @@ export const useCategory = () => {
     const agentItems: CategoryItem[] = [
       // Provider settings should not depend on Advanced tools: new users may need
       // non-LobeHub providers, and desktop users often bring their own API keys.
-      showProvider && {
-        icon: Brain,
-        key: SettingsTabs.Provider,
-        label: t('tab.provider'),
-      },
-      {
+      showProvider &&
+        canManageCompanyAi && {
+          icon: Brain,
+          key: SettingsTabs.Provider,
+          label: t('tab.provider'),
+        },
+      canManageCompanyAi && {
         icon: Sparkles,
         key: SettingsTabs.ServiceModel,
         label: t('tab.serviceModel'),
@@ -172,20 +178,10 @@ export const useCategory = () => {
         key: SettingsTabs.Memory,
         label: t('tab.memory'),
       },
-      {
-        icon: KeyRound,
-        key: SettingsTabs.Creds,
-        label: t('tab.creds'),
-      },
       showApiKeyManage && {
         icon: KeyIcon,
         key: SettingsTabs.APIKey,
         label: tAuth('tab.apikey'),
-      },
-      {
-        icon: MessageCircleIcon,
-        key: SettingsTabs.Messenger,
-        label: t('tab.messenger'),
       },
     ].filter(Boolean) as CategoryItem[];
 
@@ -222,11 +218,6 @@ export const useCategory = () => {
         key: SettingsTabs.Advanced,
         label: t('tab.advanced'),
       },
-      !hideDocs && {
-        icon: Info,
-        key: SettingsTabs.About,
-        label: t('tab.about'),
-      },
     ].filter(Boolean) as CategoryItem[];
 
     groups.push({
@@ -241,13 +232,13 @@ export const useCategory = () => {
     tAuth,
     tSubscription,
     enableBusinessFeatures,
-    hideDocs,
     mobile,
     showApiKeyManage,
     showProvider,
     isDevMode,
     avatarUrl,
     username,
+    canManageCompanyAi,
   ]);
 
   return categoryGroups;

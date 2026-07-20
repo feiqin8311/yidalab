@@ -4,7 +4,7 @@ import type {
   LobeAgentTTSConfig,
 } from '@lobechat/types';
 import { AgentChatConfigSchema } from '@lobechat/types';
-import { isNotNull, isNull } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -96,9 +96,13 @@ export const agents = pgTable(
     index('agents_session_group_id_idx').on(t.sessionGroupId),
     index('agents_workspace_id_idx').on(t.workspaceId),
     index('agents_workspace_visibility_idx').on(t.workspaceId, t.visibility, t.userId),
+    // Non-inbox: one slug per workspace. Inbox is per-user (agents_inbox_workspace_user_unique).
     uniqueIndex('agents_slug_workspace_id_unique')
       .on(t.workspaceId, t.slug)
-      .where(isNotNull(t.workspaceId)),
+      .where(sql`${t.workspaceId} is not null and ${t.slug} is distinct from 'inbox'`),
+    uniqueIndex('agents_inbox_workspace_user_unique')
+      .on(t.workspaceId, t.userId)
+      .where(sql`${t.workspaceId} is not null and ${t.slug} = 'inbox'`),
   ],
 );
 

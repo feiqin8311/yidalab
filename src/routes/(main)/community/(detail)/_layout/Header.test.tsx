@@ -1,13 +1,11 @@
 // @vitest-environment happy-dom
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 import Header from './Header';
 
-const mocks = vi.hoisted(() => ({
-  useUserProfile: vi.fn(),
-}));
+const mockNavigate = vi.fn();
 
 vi.mock('@lobehub/ui', () => ({
   ActionIcon: ({ onClick }: { onClick?: () => void }) => (
@@ -26,45 +24,33 @@ vi.mock('@/features/NavHeader', () => ({
 }));
 
 vi.mock('@/features/Workspace/useWorkspaceAwareNavigate', () => ({
-  useWorkspaceAwareNavigate: () => vi.fn(),
+  useWorkspaceAwareNavigate: () => mockNavigate,
 }));
 
 vi.mock('@/routes/(main)/community/features/Search', () => ({
   default: () => <div data-testid="community-search" />,
 }));
 
-vi.mock('@/routes/(main)/community/features/UserAvatar', () => ({
-  default: ({ avatarOverride }: { avatarOverride?: string | null }) => (
-    <div data-avatar={avatarOverride ?? ''} data-testid="community-user-avatar" />
-  ),
-}));
-
-vi.mock('@/store/discover', () => ({
-  useDiscoverStore: (
-    selector: (state: { useUserProfile: typeof mocks.useUserProfile }) => unknown,
-  ) => selector({ useUserProfile: mocks.useUserProfile }),
-}));
-
 describe('Community detail Header', () => {
-  it('shows the viewed organization avatar in the right corner', () => {
-    mocks.useUserProfile.mockReturnValue({
-      data: {
-        user: {
-          avatarUrl: 'sad-avatar',
-        },
-      },
-    });
-
+  it('renders search bar and back button', () => {
     render(
-      <MemoryRouter initialEntries={['/011/community/org/sad']}>
+      <MemoryRouter initialEntries={['/011/community/agent/sad']}>
         <Header />
       </MemoryRouter>,
     );
 
-    expect(mocks.useUserProfile).toHaveBeenCalledWith({ username: 'sad' });
-    expect(screen.getByTestId('community-user-avatar')).toHaveAttribute(
-      'data-avatar',
-      'sad-avatar',
+    expect(screen.getByTestId('community-search')).toBeInTheDocument();
+    expect(screen.getByTestId('back-button')).toBeInTheDocument();
+  });
+
+  it('navigates back when back button is clicked', () => {
+    render(
+      <MemoryRouter initialEntries={['/011/community/agent/sad']}>
+        <Header />
+      </MemoryRouter>,
     );
+
+    fireEvent.click(screen.getByTestId('back-button'));
+    expect(mockNavigate).toHaveBeenCalledWith('/community/agent');
   });
 });

@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { type ReactNode } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import * as useActiveWorkspaceIdModule from '@/business/client/hooks/useActiveWorkspaceId';
@@ -11,10 +11,18 @@ import * as useWorkspacesModule from '@/business/client/hooks/useWorkspaces';
 import { useWorkspaceFromSlug } from '../useWorkspaceFromSlug';
 import { useWorkspaceUrlSync } from '../useWorkspaceUrlSync';
 
+vi.mock('react-router', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    useNavigate: vi.fn(actual.useNavigate),
+  };
+});
+
 interface WorkspaceStateMock {
   activeWorkspaceId: null | string;
   isWorkspaceLoading: boolean;
-  switchToPersonal: () => void;
+  navigate: ReturnType<typeof vi.fn>;
   switchWorkspace: (id: string) => void;
   workspaces: { id: string; lockedOut?: boolean; slug: string }[];
 }
@@ -22,7 +30,7 @@ interface WorkspaceStateMock {
 const createState = (overrides: Partial<WorkspaceStateMock> = {}): WorkspaceStateMock => ({
   activeWorkspaceId: null,
   isWorkspaceLoading: false,
-  switchToPersonal: vi.fn(),
+  navigate: vi.fn(),
   switchWorkspace: vi.fn(),
   workspaces: [{ id: 'ws-1', slug: 'acme' }],
   ...overrides,
@@ -37,9 +45,9 @@ const mockWorkspaceStore = (state: WorkspaceStateMock) => {
     state.activeWorkspaceId,
   );
   vi.spyOn(useSwitchWorkspaceModule, 'useSilentSwitchWorkspace').mockReturnValue({
-    switchToPersonal: state.switchToPersonal as any,
     switchWorkspace: state.switchWorkspace as any,
   });
+  vi.mocked(useNavigate).mockReturnValue(state.navigate as any);
 };
 
 const createRouteWrapper =
@@ -108,7 +116,6 @@ describe('useWorkspaceUrlSync', () => {
     });
 
     expect(state.switchWorkspace).toHaveBeenCalledWith('ws-1');
-    expect(state.switchToPersonal).not.toHaveBeenCalled();
   });
 
   it('does not switch while the workspace list is loading', () => {
@@ -120,7 +127,6 @@ describe('useWorkspaceUrlSync', () => {
     });
 
     expect(state.switchWorkspace).not.toHaveBeenCalled();
-    expect(state.switchToPersonal).not.toHaveBeenCalled();
   });
 
   it('leaves the current workspace untouched for an unknown slug', () => {
@@ -132,10 +138,31 @@ describe('useWorkspaceUrlSync', () => {
     });
 
     expect(state.switchWorkspace).not.toHaveBeenCalled();
-    expect(state.switchToPersonal).not.toHaveBeenCalled();
   });
 
-  it('switches to personal mode on reserved personal routes', () => {
+  it('keeps the current company on reserved routes', () => {
+    const state = createState({ activeWorkspaceId: null });
+    mockWorkspaceStore(state);
+
+    renderHook(() => useWorkspaceUrlSync(), {
+      wrapper: createRouteWrapper('/settings/profile', '*'),
+    });
+
+    expect(state.switchWorkspace).toHaveBeenCalledWith('ws-1');
+  });
+
+  it('prefixes company-scoped main surfaces with the company slug', () => {
+    const state = createState({ activeWorkspaceId: 'ws-1' });
+    mockWorkspaceStore(state);
+
+    renderHook(() => useWorkspaceUrlSync(), {
+      wrapper: createRouteWrapper('/agent/inbox', '*'),
+    });
+
+    expect(state.navigate).toHaveBeenCalledWith('/acme/agent/inbox', { replace: true });
+  });
+
+  it('does not rewrite personal-only settings under the company slug', () => {
     const state = createState({ activeWorkspaceId: 'ws-1' });
     mockWorkspaceStore(state);
 
@@ -143,7 +170,6 @@ describe('useWorkspaceUrlSync', () => {
       wrapper: createRouteWrapper('/settings/profile', '*'),
     });
 
-    expect(state.switchToPersonal).toHaveBeenCalled();
-    expect(state.switchWorkspace).not.toHaveBeenCalled();
+    expect(state.navigate).not.toHaveBeenCalled();
   });
 });

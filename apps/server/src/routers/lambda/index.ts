@@ -38,6 +38,7 @@ import { briefRouter } from './brief';
 import { changelogRouter } from './changelog';
 import { chunkRouter } from './chunk';
 import { comfyuiRouter } from './comfyui';
+import { companyRouter } from './company';
 import { composioRouter } from './composio';
 import { configRouter } from './config';
 import { connectorRouter } from './connector';
@@ -56,6 +57,7 @@ import { klavisRouter } from './klavis';
 import { knowledgeRouter } from './knowledge';
 import { knowledgeBaseRouter } from './knowledgeBase';
 import { llmGenerationTracingRouter } from './llmGenerationTracing';
+import { localCredsRouter } from './localCreds';
 import { marketRouter } from './market';
 import { messageRouter } from './message';
 import { messengerRouter } from './messenger';
@@ -103,6 +105,7 @@ export const lambdaRouter = router({
   apiKey: apiKeyRouter,
   asr: asrRouter,
   chunk: chunkRouter,
+  company: companyRouter,
   comfyui: comfyuiRouter,
   config: configRouter,
   connector: connectorRouter,
@@ -124,6 +127,7 @@ export const lambdaRouter = router({
   klavis: klavisRouter,
   knowledge: knowledgeRouter,
   knowledgeBase: knowledgeBaseRouter,
+  localCreds: localCredsRouter,
   llmGenerationTracing: llmGenerationTracingRouter,
   market: marketRouter,
   message: messageRouter,

@@ -10,8 +10,13 @@ import { useToolStore } from '../../store';
 vi.mock('@/services/plugin', () => ({
   pluginService: {
     getInstalledPlugins: vi.fn().mockResolvedValue([]),
+    updatePlugin: vi.fn(),
     updatePluginSettings: vi.fn(),
   },
+}));
+
+vi.mock('@/services/localCreds', () => ({
+  persistMcpSecretsToLocalCreds: vi.fn().mockResolvedValue(undefined),
 }));
 
 beforeEach(() => {

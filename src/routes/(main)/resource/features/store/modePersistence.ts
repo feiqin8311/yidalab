@@ -1,7 +1,12 @@
 import type { ResourceListVisibilityFilter } from './initialState';
 
 const KEY_PREFIX = 'lobehub:resource-mode:';
-const VALID_MODES: readonly ResourceListVisibilityFilter[] = ['private', 'workspace'];
+const VALID_MODES: readonly ResourceListVisibilityFilter[] = [
+  'private',
+  'shared',
+  'workspace',
+  'admin_all',
+];
 
 const isBrowser = () => typeof window !== 'undefined' && !!window.localStorage;
 

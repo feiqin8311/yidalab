@@ -57,6 +57,7 @@ export enum SettingsTabs {
   ChatAppearance = 'chat-appearance',
   /** @deprecated Use Appearance instead */
   Common = 'common',
+  Company = 'company',
   Connector = 'connector',
   Credits = 'credits',
   Creds = 'creds',
@@ -66,7 +67,6 @@ export enum SettingsTabs {
   Image = 'image',
   LLM = 'llm',
   Memory = 'memory',
-  Messenger = 'messenger',
   Notification = 'notification',
   // business
   Plans = 'plans',

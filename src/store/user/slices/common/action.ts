@@ -9,6 +9,8 @@ import { DEFAULT_PREFERENCE } from '@/const/user';
 import { mutate, useOnlyFetchOnceSWR } from '@/libs/swr';
 import { taskTemplateKeys, userKeys } from '@/libs/swr/keys';
 import { userService } from '@/services/user';
+import { getAgentStoreState } from '@/store/agent';
+import { builtinAgentSelectors } from '@/store/agent/selectors';
 import { type StoreSetter } from '@/store/types';
 import { type UserStore } from '@/store/user';
 import { type GlobalServerConfig } from '@/types/serverConfig';
@@ -42,17 +44,20 @@ export class CommonActionImpl {
     this.#get = get;
   }
 
+  #syncInboxAgentTitle = (username?: string | null) => {
+    const agentStore = getAgentStoreState();
+    const inboxAgentId = builtinAgentSelectors.inboxAgentId(agentStore);
+    const title = username?.trim();
+
+    if (inboxAgentId && title) agentStore.internal_dispatchAgentMap(inboxAgentId, { title });
+  };
+
   refreshUserState = async (): Promise<void> => {
     await mutate(userKeys.initState());
   };
 
   updateAvatar = async (avatar: string): Promise<void> => {
     await userService.updateAvatar(avatar);
-    await this.#get().refreshUserState();
-  };
-
-  updateFullName = async (fullName: string): Promise<void> => {
-    await userService.updateFullName(fullName);
     await this.#get().refreshUserState();
   };
 
@@ -68,12 +73,26 @@ export class CommonActionImpl {
     await this.#get().refreshUserState();
   };
 
+  updateProfile = async (profile: { company?: string; position?: string }): Promise<void> => {
+    const previousUser = this.#get().user;
+    if (previousUser) {
+      this.#set({ user: { ...previousUser, ...profile } }, false, n('updateProfile/optimistic'));
+    }
+    await userService.updateProfile(profile);
+    await this.#get().refreshUserState();
+  };
+
   updateKeyVaultConfig = async (provider: string, config: any): Promise<void> => {
     await this.#get().setSettings({ keyVaults: { [provider]: config } });
   };
 
   updateUsername = async (username: string): Promise<void> => {
+    const previousUser = this.#get().user;
+    if (previousUser) {
+      this.#set({ user: { ...previousUser, username } }, false, n('updateUsername/optimistic'));
+    }
     await userService.updateUsername(username);
+    this.#syncInboxAgentTitle(username);
     await this.#get().refreshUserState();
   };
 
@@ -134,12 +153,13 @@ export class CommonActionImpl {
               data.avatar || data.userId
                 ? merge(this.#get().user, {
                     avatar: data.avatar,
+                    company: data.company,
                     email: data.email,
                     firstName: data.firstName,
-                    fullName: data.fullName,
                     id: data.userId,
                     interests: data.interests,
                     latestName: data.lastName,
+                    position: data.position,
                     username: data.username,
                   } as LobeUser)
                 : this.#get().user;
@@ -165,6 +185,7 @@ export class CommonActionImpl {
               false,
               n('initUserState'),
             );
+            this.#syncInboxAgentTitle(data.username);
 
             const autoDetectedGeneralConfig: Partial<UserGeneralConfig> = {};
             const currentGeneralSettings = data.settings?.general;

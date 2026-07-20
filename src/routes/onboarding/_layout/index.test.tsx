@@ -72,7 +72,7 @@ vi.mock('@/store/serverConfig', () => ({
 
 vi.mock('@/store/user', () => ({
   useUserStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ setOnboardingStep: vi.fn() }),
+    selector({ finishOnboarding: vi.fn() }),
 }));
 
 const renderAt = (initialPath: string) =>

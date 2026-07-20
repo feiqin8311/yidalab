@@ -16,7 +16,7 @@ const FIELD_LABELS: Record<SaveUserQuestionField, string> = {
   agentEmoji: 'agent emoji',
   agentName: 'agent name',
   customInterests: 'custom interests',
-  fullName: 'full name',
+  username: 'username',
   interests: 'interests',
 };
 
@@ -29,13 +29,13 @@ const formatNaturalList = (items: string[]) => {
 
 const PHASE_GUIDANCE: Record<string, string> = {
   agent_identity:
-    'Phase: Agent Identity. The agent has no name or personality yet. Discover the assistant name/avatar first. Phrases such as "call you X", "your name is X", "叫你 X", or "你叫 X" refer to agentName; phrases such as "use Y as the avatar" or "头像用 Y" refer to agentEmoji. Do NOT copy user_info displayName/fullName/username into agentName, and do NOT save fullName in the same call as agentName/agentEmoji unless the user explicitly says that value is their own name. Update SOUL.md once the user settles on who the assistant is.',
+    'Phase: Agent Identity. The agent has no name or personality yet. Discover the assistant name/avatar first. Phrases such as "call you X", "your name is X", "叫你 X", or "你叫 X" refer to agentName; phrases such as "use Y as the avatar" or "头像用 Y" refer to agentEmoji. Do NOT copy user_info displayName/username into agentName, and do NOT save username in the same call as agentName/agentEmoji unless the user explicitly says that value is their own username. Update SOUL.md once the user settles on who the assistant is.',
   discovery:
     'Phase: Discovery. User identity is established. Ask one focused question — what the user does for work (their profession, role, or main occupation) — and record it in the persona document. Do NOT explore pain points, tools, goals, or interests, and do NOT call saveUserQuestion with interests. Once you have their profession, move to summary.',
   summary:
     "Phase: Summary. All structured fields and documents are in good shape. Two-step wrap up: (1) THIS or the current summary turn, present a natural summary of what you learned and call `showAgentMarketplace` exactly once with `{ requestId, categoryHints, prompt }` (1–3 MarketplaceCategory slugs picked from the user's profession and anything else they shared). Do not call `submitAgentPick` / `skipAgentPick` / `cancelAgentPick` yourself. (2) On the NEXT turn, briefly acknowledge whatever the user said, send a warm closing, and call `finishOnboarding`. Treat the user's text reply on that next turn as the resolution signal even if the picker is still in `pending` state — do not stall waiting for a UI event. Do not call `showAgentMarketplace` more than once.",
   user_identity:
-    'Phase: User Identity. The agent has an identity. Now learn who the user is — their name, role, and what they do. Save fullName via saveUserQuestion when learned. Start building the persona document.',
+    "Phase: User Identity. The agent has an identity. Now learn the user's username, role, and what they do. Save username via saveUserQuestion when learned. Start building the persona document.",
 };
 
 interface OnboardingStateContext {

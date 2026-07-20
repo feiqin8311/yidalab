@@ -1,21 +1,28 @@
 import { DEFAULT_INBOX_AVATAR } from '@lobechat/const';
 import { Flexbox, Popover, Text, Tooltip } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
-import isEqual from 'fast-deep-equal';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import useSWR from 'swr';
 
-import { type SidebarAgentItem } from '@/database/repositories/home';
 import SkeletonList from '@/features/NavPanel/components/SkeletonList';
 import AgentItem from '@/features/PageEditor/Copilot/AgentSelector/AgentItem';
-import { useFetchAgentList } from '@/hooks/useFetchAgentList';
 import { usePermission } from '@/hooks/usePermission';
-import { useAgentStore } from '@/store/agent';
-import { agentSelectors, builtinAgentSelectors } from '@/store/agent/selectors';
-import { useHomeStore } from '@/store/home';
-import { homeAgentListSelectors } from '@/store/home/selectors';
+import { taskService } from '@/services/task';
 import { useTaskStore } from '@/store/task';
+import { useUserStore } from '@/store/user';
+import { userProfileSelectors } from '@/store/user/selectors';
+
+interface AssignableAgent {
+  avatar: string | null;
+  backgroundColor: string | null;
+  id: string;
+  isInbox: boolean;
+  title: string | null;
+  userId: string;
+  visibility: 'private' | 'public';
+}
 
 interface AssigneeAgentSelectorProps {
   children: ReactNode;
@@ -68,77 +75,46 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
     const [key, setKey] = useState(0);
     const [search, setSearch] = useState('');
     const [activeIndex, setActiveIndex] = useState(0);
+    const [open, setOpen] = useState(false);
     const listRef = useRef<HTMLDivElement>(null);
 
     const updateTask = useTaskStore((s) => s.updateTask);
-    const pinnedAgents = useHomeStore(homeAgentListSelectors.pinnedAgents, isEqual);
-    const agentGroups = useHomeStore(homeAgentListSelectors.agentGroups, isEqual);
-    const ungroupedAgents = useHomeStore(homeAgentListSelectors.ungroupedAgents, isEqual);
-    const privateAgentGroups = useHomeStore(homeAgentListSelectors.privateAgentGroups, isEqual);
-    const privateUngroupedAgents = useHomeStore(
-      homeAgentListSelectors.privateUngroupedAgents,
-      isEqual,
-    );
-    const hasPrivateAgents = useHomeStore(homeAgentListSelectors.hasPrivateAgents);
-    const isAgentListInit = useHomeStore(homeAgentListSelectors.isAgentListInit);
+    const currentUserId = useUserStore(userProfileSelectors.userId);
 
-    const inboxAgentId = useAgentStore(builtinAgentSelectors.inboxAgentId);
-    const inboxMeta = useAgentStore((s) =>
-      inboxAgentId ? agentSelectors.getAgentMetaById(inboxAgentId)(s) : undefined,
+    const { data: assignablePayload, isLoading } = useSWR(
+      // Prefetch when closed if we need to resolve the current title; always
+      // load when the picker opens.
+      open || currentAgentId ? ['task:listAssignableAgents'] : null,
+      async () => {
+        const res = await taskService.listAssignableAgents();
+        return res?.data ?? [];
+      },
+      { revalidateOnFocus: false },
     );
 
-    useFetchAgentList();
+    const agents = useMemo<AssignableAgent[]>(
+      () => (Array.isArray(assignablePayload) ? assignablePayload : []),
+      [assignablePayload],
+    );
 
-    // Workspace bucket: pinned + grouped + ungrouped. In personal mode this is the
-    // entire list (private buckets stay empty). The inbox agent is shared content,
-    // so it is injected at the top of this bucket when missing.
-    const workspaceAgents = useMemo<SidebarAgentItem[]>(() => {
-      const groupedItems = agentGroups.flatMap((group) => group.items);
-      const available = [...pinnedAgents, ...groupedItems, ...ungroupedAgents].filter(
-        (agent) => agent.type === 'agent',
-      );
-      const hasInbox = available.some((agent) => agent.id === inboxAgentId);
+    const memberInboxes = useMemo(() => agents.filter((a) => a.isInbox), [agents]);
+    const otherAgents = useMemo(() => agents.filter((a) => !a.isInbox), [agents]);
 
-      if (inboxAgentId && !hasInbox) {
-        return [
-          {
-            avatar: inboxMeta?.avatar || DEFAULT_INBOX_AVATAR,
-            description: null,
-            id: inboxAgentId,
-            pinned: false,
-            title: inboxMeta?.title || t('inbox.title', { ns: 'chat' }),
-            type: 'agent' as const,
-            updatedAt: new Date(),
-          },
-          ...available,
-        ];
-      }
-
-      return available;
-    }, [pinnedAgents, agentGroups, ungroupedAgents, inboxAgentId, inboxMeta, t]);
-
-    const privateAgents = useMemo<SidebarAgentItem[]>(() => {
-      const groupedItems = privateAgentGroups.flatMap((group) => group.items);
-      return [...groupedItems, ...privateUngroupedAgents].filter((agent) => agent.type === 'agent');
-    }, [privateAgentGroups, privateUngroupedAgents]);
-
-    const filteredPrivate = useMemo(() => {
+    const filteredInboxes = useMemo(() => {
       const q = search.trim().toLowerCase();
-      if (!q) return privateAgents;
-      return privateAgents.filter((agent) => (agent.title || '').toLowerCase().includes(q));
-    }, [privateAgents, search]);
+      if (!q) return memberInboxes;
+      return memberInboxes.filter((a) => (a.title || '').toLowerCase().includes(q));
+    }, [memberInboxes, search]);
 
-    const filteredWorkspace = useMemo(() => {
+    const filteredOthers = useMemo(() => {
       const q = search.trim().toLowerCase();
-      if (!q) return workspaceAgents;
-      return workspaceAgents.filter((agent) => (agent.title || '').toLowerCase().includes(q));
-    }, [workspaceAgents, search]);
+      if (!q) return otherAgents;
+      return otherAgents.filter((a) => (a.title || '').toLowerCase().includes(q));
+    }, [otherAgents, search]);
 
-    // Flat order for keyboard navigation and activeIndex: private first, then workspace.
-    // In personal / no-private mode, only the workspace list contributes.
     const filteredFlat = useMemo(
-      () => (hasPrivateAgents ? [...filteredPrivate, ...filteredWorkspace] : filteredWorkspace),
-      [hasPrivateAgents, filteredPrivate, filteredWorkspace],
+      () => [...filteredInboxes, ...filteredOthers],
+      [filteredInboxes, filteredOthers],
     );
 
     useEffect(() => {
@@ -156,6 +132,7 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
         if (agentId === currentAgentId) return;
         setKey((k) => k + 1);
         setSearch('');
+        setOpen(false);
         if (onChange) {
           onChange(agentId);
           return;
@@ -193,9 +170,12 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
       active?.scrollIntoView({ block: 'nearest' });
     }, [activeIndex]);
 
-    const renderItems = (list: SidebarAgentItem[], offset: number) =>
+    const renderItems = (list: AssignableAgent[], offset: number) =>
       list.map((agent, i) => {
         const flatIndex = offset + i;
+        const title =
+          agent.title ||
+          (agent.isInbox ? t('inbox.title', { ns: 'chat' }) : t('untitledAgent', { ns: 'chat' }));
         return (
           <div
             data-agent-index={flatIndex}
@@ -205,11 +185,17 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
             <AgentItem
               active={flatIndex === activeIndex}
               agentId={agent.id}
-              agentTitle={agent.title || t('untitledAgent', { ns: 'chat' })}
-              avatar={agent.avatar}
-              heterogeneousType={agent.heterogeneousType}
+              avatar={agent.avatar || (agent.isInbox ? DEFAULT_INBOX_AVATAR : undefined)}
+              agentTitle={
+                agent.isInbox && agent.userId === currentUserId
+                  ? `${title} (${t('taskList.assigneeSearch.me', { defaultValue: 'me' })})`
+                  : title
+              }
               onAgentChange={handleAgentChange}
-              onClose={() => setKey((k) => k + 1)}
+              onClose={() => {
+                setKey((k) => k + 1);
+                setOpen(false);
+              }}
             />
           </div>
         );
@@ -231,68 +217,78 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
       </div>
     );
 
+    const showSections = filteredInboxes.length > 0 && filteredOthers.length > 0;
+
     return (
       <Popover
         disabled={blocked}
         key={key}
+        open={blocked ? false : open}
         placement="bottomLeft"
-        styles={{ content: { padding: 0, width: 260 } }}
+        styles={{ content: { padding: 0, width: 280 } }}
         trigger="click"
         content={
           <Suspense fallback={<SkeletonList rows={6} />}>
-            {isAgentListInit ? (
-              <Flexbox onClick={(e) => e.stopPropagation()}>
-                <input
-                  autoFocus
-                  className={styles.searchInput}
-                  placeholder={t('taskList.assigneeSearch.placeholder', { ns: 'chat' })}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                />
-                {filteredFlat.length === 0 ? (
-                  <Flexbox align={'center'} justify={'center'} padding={16}>
-                    <Text fontSize={12} type={'secondary'}>
-                      {t('taskList.assigneeSearch.empty', { ns: 'chat' })}
-                    </Text>
-                  </Flexbox>
-                ) : (
-                  <Flexbox
-                    gap={4}
-                    padding={8}
-                    ref={listRef}
-                    style={{ maxHeight: '50vh', overflowY: 'auto', width: '100%' }}
-                  >
-                    {hasPrivateAgents ? (
-                      <>
-                        {filteredPrivate.length > 0 && (
-                          <>
-                            <div className={styles.sectionHeader}>
-                              {t('taskManager.agentSelector.privateGroup', { ns: 'topic' })}
-                            </div>
-                            {renderItems(filteredPrivate, 0)}
-                          </>
-                        )}
-                        {filteredWorkspace.length > 0 && (
-                          <>
-                            <div className={styles.sectionHeader}>
-                              {t('taskManager.agentSelector.workspaceGroup', { ns: 'topic' })}
-                            </div>
-                            {renderItems(filteredWorkspace, filteredPrivate.length)}
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      renderItems(filteredFlat, 0)
-                    )}
-                  </Flexbox>
-                )}
-              </Flexbox>
-            ) : (
-              <SkeletonList rows={6} />
-            )}
+            <Flexbox onClick={(e) => e.stopPropagation()}>
+              <input
+                autoFocus
+                className={styles.searchInput}
+                placeholder={t('taskList.assigneeSearch.placeholder', { ns: 'chat' })}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+              />
+              {isLoading && agents.length === 0 ? (
+                <SkeletonList rows={6} />
+              ) : filteredFlat.length === 0 ? (
+                <Flexbox align={'center'} justify={'center'} padding={16}>
+                  <Text fontSize={12} type={'secondary'}>
+                    {t('taskList.assigneeSearch.empty', { ns: 'chat' })}
+                  </Text>
+                </Flexbox>
+              ) : (
+                <Flexbox
+                  gap={4}
+                  padding={8}
+                  ref={listRef}
+                  style={{ maxHeight: '50vh', overflowY: 'auto', width: '100%' }}
+                >
+                  {showSections ? (
+                    <>
+                      {filteredInboxes.length > 0 && (
+                        <>
+                          <div className={styles.sectionHeader}>
+                            {t('taskList.assigneeSearch.memberAssistants', {
+                              defaultValue: 'Member assistants',
+                            })}
+                          </div>
+                          {renderItems(filteredInboxes, 0)}
+                        </>
+                      )}
+                      {filteredOthers.length > 0 && (
+                        <>
+                          <div className={styles.sectionHeader}>
+                            {t('taskList.assigneeSearch.workspaceAgents', {
+                              defaultValue: 'Workspace agents',
+                            })}
+                          </div>
+                          {renderItems(filteredOthers, filteredInboxes.length)}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    renderItems(filteredFlat, 0)
+                  )}
+                </Flexbox>
+              )}
+            </Flexbox>
           </Suspense>
         }
+        onOpenChange={(next) => {
+          if (blocked) return;
+          setOpen(next);
+          if (!next) setSearch('');
+        }}
       >
         {trigger}
       </Popover>

@@ -1,13 +1,9 @@
 'use client';
 
-import WorkspaceAuditLog from '@/business/client/BusinessSettingPages/WorkspaceAuditLog';
-import { WorkspaceAdminOnly } from '@/features/WorkspaceSetting';
+import { Navigate } from 'react-router';
 
-const Page = () => (
-  <WorkspaceAdminOnly>
-    <WorkspaceAuditLog />
-  </WorkspaceAdminOnly>
-);
+// Open-source audit log is a cloud stub; send deep-links to members instead of an empty page.
+const Page = () => <Navigate replace to="../members" />;
 
 Page.displayName = 'WorkspaceAuditLogPage';
 

@@ -244,7 +244,6 @@ export interface DeviceWorkspaceShare {
  */
 export interface DeviceEnroller {
   avatar: string | null;
-  fullName: string | null;
   userId: string;
   username: string | null;
 }

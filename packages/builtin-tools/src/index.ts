@@ -12,6 +12,7 @@ import { BriefManifest } from '@lobechat/builtin-tool-brief';
 import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
+import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -52,6 +53,8 @@ export const defaultToolIds = [
   AgentDocumentsManifest.identifier,
   TaskManifest.identifier,
   LobeAgentManifest.identifier,
+  // Company DingTalk Drive upload — available on every agent by default
+  DingpanManifest.identifier,
 ];
 
 /**
@@ -68,12 +71,16 @@ export const defaultToolIds = [
  * This list is also the source for builtin entries in the chat-input Tools popover.
  * They default to pinned but can be explicitly disabled per agent; entries represented by
  * the activation mode control itself are excluded from that menu.
+ *
+ * `lobe-dingpan` is always-on so every company member's agents can upload to DingTalk
+ * Drive without each agent opting in — credentials come from company/personal vault.
  */
 export const alwaysOnToolIds = [
   LobeAgentManifest.identifier,
   LobeActivatorManifest.identifier,
   SkillsManifest.identifier,
   SkillStoreManifest.identifier,
+  DingpanManifest.identifier,
 ];
 
 /**
@@ -307,6 +314,11 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
   {
     identifier: CalculatorManifest.identifier,
     manifest: CalculatorManifest,
+    type: 'builtin',
+  },
+  {
+    identifier: DingpanManifest.identifier,
+    manifest: DingpanManifest,
     type: 'builtin',
   },
   {

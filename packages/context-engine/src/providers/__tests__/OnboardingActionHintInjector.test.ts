@@ -40,7 +40,7 @@ describe('OnboardingActionHintInjector', () => {
       expect(last?.content).toContain('Y is agentEmoji');
       expect(last?.content).toContain('anbex');
       expect(last?.content).toContain('describe the user, not the assistant');
-      expect(last?.content).toContain('Do NOT include fullName in the same saveUserQuestion call');
+      expect(last?.content).toContain('Do NOT include username in the same saveUserQuestion call');
     });
   });
 

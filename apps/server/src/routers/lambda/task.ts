@@ -11,7 +11,7 @@ import { TaskModel } from '@/database/models/task';
 import { TaskTopicModel } from '@/database/models/taskTopic';
 import { TopicModel } from '@/database/models/topic';
 import type { LobeChatDatabase } from '@/database/type';
-import { assertAgentUsableBy } from '@/database/utils/agent-access';
+import { assertTaskAssigneeUsableBy } from '@/database/utils/agent-access';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { EditLockService } from '@/server/services/editLock';
@@ -145,13 +145,14 @@ async function assertAssigneeAgentBelongsToUser(
   if (!assigneeAgentId) return;
 
   try {
-    await assertAgentUsableBy(db, assigneeAgentId, callerCtx);
+    // Allows workspace-member inbox agents (colleague assistants), not only
+    // public/own agents — see assertTaskAssigneeUsableBy.
+    await assertTaskAssigneeUsableBy(db, assigneeAgentId, callerCtx);
   } catch (error) {
     if (error instanceof TRPCError && error.code === 'NOT_FOUND') {
       // Preserve the task-context message so the UI surfaces "Assignee agent
       // not found" instead of the generic "Agent not found". Cross-user access
-      // to a private agent still resolves to NOT_FOUND, never FORBIDDEN, so we
-      // don't leak existence of someone else's private agent.
+      // to a private non-inbox agent still resolves to NOT_FOUND.
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Assignee agent not found' });
     }
     throw error;
@@ -390,6 +391,11 @@ export const taskRouter = router({
 
   create: taskProcedureWrite.input(createSchema).mutation(async ({ input, ctx }) => {
     try {
+      await assertAssigneeAgentBelongsToUser(
+        ctx.serverDB,
+        { userId: ctx.userId, workspaceId: ctx.workspaceId ?? undefined },
+        input.assigneeAgentId,
+      );
       const task = await ctx.taskService.createTask(input);
       return { data: task, message: 'Task created', success: true };
     } catch (error) {
@@ -631,6 +637,26 @@ export const taskRouter = router({
         cause: error,
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to fetch grouped tasks',
+      });
+    }
+  }),
+
+  /**
+   * Agents that may be selected as task assignees for the current workspace
+   * (or personal scope). Includes every member's inbox assistant so company
+   * users can assign work to a colleague's agent.
+   */
+  listAssignableAgents: taskProcedure.query(async ({ ctx }) => {
+    try {
+      const agents = await ctx.agentModel.listAssignableForTasks();
+      return { data: agents, success: true as const };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      console.error('[task:listAssignableAgents]', error);
+      throw new TRPCError({
+        cause: error,
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to list assignable agents',
       });
     }
   }),
@@ -1027,11 +1053,20 @@ export const taskRouter = router({
 
       // Reject changing the assignee to a private agent on a public task —
       // a public task must never be assigned to a private agent.
+      // Workspace member inboxes are an exception: they stay private for chat
+      // but remain valid public-task assignees (company collaboration).
       // `undefined` means "no change"; `null` clears the assignee and is
       // always safe.
       if (data.assigneeAgentId) {
-        const agentVisibility = await ctx.agentModel.getAgentVisibility(data.assigneeAgentId);
-        ctx.taskService.assertAgentVisibilityCompat(resolved.visibility, agentVisibility);
+        const ownedVisibility = await ctx.agentModel.getAgentVisibility(data.assigneeAgentId);
+        const agentVisibility =
+          ownedVisibility ?? (await ctx.agentModel.getTaskAssigneeVisibility(data.assigneeAgentId));
+        // ownedVisibility null + assignee-visible = colleague inbox (or similar
+        // task-only grant). Skip the public-task/private-agent block for those.
+        const isTaskOnlyAssignee = ownedVisibility === null && agentVisibility !== null;
+        if (!(isTaskOnlyAssignee && resolved.visibility === 'public')) {
+          ctx.taskService.assertAgentVisibilityCompat(resolved.visibility, agentVisibility);
+        }
       }
 
       const resolvedParentTaskId =

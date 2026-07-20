@@ -514,6 +514,19 @@ export class AgentRuntime {
           return this.handleCostLimitExceeded(newState);
         }
 
+        // Token hard cap (YidaLab run brake) — force-finish for one summary turn
+        if (
+          newState.maxTotalTokens &&
+          newState.maxTotalTokens > 0 &&
+          (newState.usage?.llm?.tokens?.total ?? 0) >= newState.maxTotalTokens
+        ) {
+          newState.forceFinish = true;
+          newState.metadata = {
+            ...newState.metadata,
+            runBrakeReason: `Token limit reached: ${newState.usage?.llm?.tokens?.total} >= ${newState.maxTotalTokens}`,
+          };
+        }
+
         // Provide next context based on LLM result
         const nextContext: AgentRuntimeContext = {
           operationId: this.operationId,

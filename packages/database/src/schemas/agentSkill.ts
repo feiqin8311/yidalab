@@ -56,8 +56,12 @@ export const agentSkills = pgTable(
     index('agent_skills_source_idx').on(t.source),
     index('agent_skills_zip_hash_idx').on(t.zipFileHash),
     index('agent_skills_workspace_id_idx').on(t.workspaceId),
-    uniqueIndex('agent_skills_name_workspace_id_unique')
-      .on(t.workspaceId, t.name)
+    // Per-user install library inside a workspace (not a shared catalog).
+    uniqueIndex('agent_skills_name_workspace_user_unique')
+      .on(t.workspaceId, t.userId, t.name)
+      .where(isNotNull(t.workspaceId)),
+    uniqueIndex('agent_skills_identifier_workspace_user_unique')
+      .on(t.workspaceId, t.userId, t.identifier)
       .where(isNotNull(t.workspaceId)),
   ],
 );

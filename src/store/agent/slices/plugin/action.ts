@@ -34,6 +34,11 @@ export class PluginSliceActionImpl {
    * upgrades to `upsertPluginMode` so the write path is unified with
    * `setPluginMode`; callers that need the third (disabled) state should use
    * `setPluginMode` directly instead.
+   *
+   * yidalab: company market skills (`company.*`) must never pin via this
+   * toggle — install leaves them in the skill library for AI `activateSkill`
+   * discovery without injecting full SKILL.md every turn. Explicit pin remains
+   * available via {@link setPluginMode} for power users / non-inbox agents.
    */
   togglePlugin = async (id: string, open?: boolean): Promise<void> => {
     const originConfig = agentSelectors.currentAgentConfig(this.#get());
@@ -41,6 +46,12 @@ export class PluginSliceActionImpl {
 
     const shouldOpen =
       open !== undefined ? open : getPluginMode(originConfig.plugins, id) !== 'pinned';
+
+    // Company skills: enable = ensure unpinned (auto); disable = same (auto).
+    if (id.startsWith('company.')) {
+      await this.setPluginMode(id, 'auto');
+      return;
+    }
 
     await this.setPluginMode(id, shouldOpen ? 'pinned' : 'auto');
   };

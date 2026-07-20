@@ -1,11 +1,11 @@
 import type { SkillItem, SkillListItem } from '@lobechat/types';
 import { merge } from '@lobechat/utils';
-import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import type { NewAgentSkill } from '../schemas';
 import { agentSkills } from '../schemas';
 import type { LobeChatDatabase } from '../type';
-import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
+import { buildWorkspacePayload } from '../utils/workspace';
 
 const skillItemColumns = {
   content: agentSkills.content,
@@ -45,8 +45,12 @@ export class AgentSkillModel {
     this.workspaceId = workspaceId;
   }
 
+  // Market/user skills are a personal library even inside a company workspace:
+  // each member installs their own copy; not a shared workspace catalog.
   private scopeWhere = () =>
-    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agentSkills);
+    this.workspaceId
+      ? and(eq(agentSkills.workspaceId, this.workspaceId), eq(agentSkills.userId, this.userId))
+      : and(eq(agentSkills.userId, this.userId), isNull(agentSkills.workspaceId));
 
   // ========== Create ==========
 

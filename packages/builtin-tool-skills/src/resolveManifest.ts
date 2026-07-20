@@ -17,14 +17,21 @@ const EXEC_API_NAMES = new Set<string>([
 ]);
 
 /**
- * APIs hidden when a device is routed — the sandbox-oriented surface makes no
- * sense there. `runCommand` duplicates `lobe-local-system` runCommand on the
- * device, and `exportFile` exists to pull artifacts OUT of the sandbox; device
- * runs leave artifacts on the user's machine, where they already are. This
- * also restores the original desktop manifest shape, which only ever exposed
- * `execScript` (see `manifest.desktop.ts`).
+ * APIs that only work against the cloud sandbox filesystem (`/home/user/...`).
+ * Hidden when a device is routed (device has its own shell) OR when cloud
+ * sandbox is not available for this deployment.
  */
-const DEVICE_HIDDEN_API_NAMES = new Set<string>([
+const SANDBOX_ONLY_API_NAMES = new Set<string>([
+  SkillsApiName.exportFile,
+  SkillsApiName.runCommand,
+]);
+
+/**
+ * When cloud sandbox is disabled and no device is routed, hide every exec API
+ * that would otherwise fall through to the sandbox (including execScript).
+ */
+const SANDBOX_FALLBACK_API_NAMES = new Set<string>([
+  SkillsApiName.execScript,
   SkillsApiName.exportFile,
   SkillsApiName.runCommand,
 ]);
@@ -45,7 +52,8 @@ const DEVICE_HIDDEN_API_NAMES = new Set<string>([
  * - `sandbox`: explicit sandbox target — current semantics, just made
  *   unambiguous that it is not the user's machine.
  *
- * `local` / `none` (and no context) keep the static manifest untouched.
+ * `local` / `none` (and no context) keep the static manifest untouched when
+ * sandbox is available.
  */
 const EXEC_ENV_PREAMBLES: Partial<
   Record<NonNullable<BuiltinToolResolveContext['executionEnv']>, string>
@@ -72,6 +80,9 @@ const EXEC_ENV_FACTS: Partial<
   'device-unrouted':
     'No local device is routed; shell commands execute in the cloud sandbox this run.',
 };
+
+const NO_SANDBOX_FACT =
+  'Cloud sandbox is unavailable in this deployment. Do not use runCommand/exportFile/writeFile under `/home/user`. For interactive HTML/SVG/React deliverables, use the Artifacts skill (`lobe-artifacts` / `<lobeArtifact>`). For shell work, select an online execution device first.';
 
 /**
  * `device-unrouted` covers four reasons (`ExecutionPlanUnroutedReason`) that
@@ -108,17 +119,35 @@ const resolveUnroutedTexts = (
   }
 };
 
+const isSandboxAvailable = (context: BuiltinToolResolveContext): boolean =>
+  context.cloudSandboxAvailable !== false;
+
 /**
  * Context-aware manifest for the lobe-skills tool: prefixes the exec-class API
  * descriptions with where they actually run, derived from the resolved
  * execution plan (see `BuiltinToolResolveContext.executionEnv`). Device runs
- * additionally drop the sandbox-only APIs (`runCommand` / `exportFile`).
+ * drop the sandbox-only APIs (`runCommand` / `exportFile`). When cloud sandbox
+ * is disabled and no device is routed, all sandbox-bound exec APIs are hidden.
  */
 export const resolveSkillsManifest: BuiltinManifestResolver = (context) => {
+  const sandboxOn = isSandboxAvailable(context);
+  const isDeviceRun = context.executionEnv === 'device';
+
+  // No cloud sandbox and not on a device → strip every sandbox-bound exec API
+  // so the model cannot waste turns on MARKET_AUTH_REQUIRED /home/user paths.
+  if (!sandboxOn && !isDeviceRun) {
+    return {
+      ...SkillsManifest,
+      api: SkillsManifest.api.filter((api) => !SANDBOX_FALLBACK_API_NAMES.has(api.name)),
+      systemRole: `${SkillsManifest.systemRole}\n<execution_environment>\n${NO_SANDBOX_FACT}\n</execution_environment>\n`,
+    };
+  }
+
   const basePreamble = context.executionEnv && EXEC_ENV_PREAMBLES[context.executionEnv];
   if (!basePreamble) return SkillsManifest;
 
-  const isDeviceRun = context.executionEnv === 'device';
+  // device-unrouted would advertise sandbox fallback — if sandbox is off, treat
+  // like the no-sandbox branch above (already returned). Keep sandbox wording only when on.
   const unrouted =
     context.executionEnv === 'device-unrouted'
       ? resolveUnroutedTexts(context.executionEnvUnroutedReason)
@@ -129,7 +158,7 @@ export const resolveSkillsManifest: BuiltinManifestResolver = (context) => {
   return {
     ...SkillsManifest,
     api: SkillsManifest.api
-      .filter((api) => !isDeviceRun || !DEVICE_HIDDEN_API_NAMES.has(api.name))
+      .filter((api) => !isDeviceRun || !SANDBOX_ONLY_API_NAMES.has(api.name))
       .map((api) =>
         EXEC_API_NAMES.has(api.name)
           ? { ...api, description: `${preamble} ${api.description}` }

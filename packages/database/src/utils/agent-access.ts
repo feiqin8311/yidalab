@@ -1,3 +1,4 @@
+import { INBOX_SESSION_ID } from '@lobechat/const';
 import { TRPCError } from '@trpc/server';
 import { and, eq } from 'drizzle-orm';
 
@@ -44,6 +45,47 @@ export async function assertAgentUsableBy(
     .limit(1);
 
   if (rows.length === 0) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+  }
+}
+
+/**
+ * Task-assignee check: standard usable agents, plus any **workspace member
+ * inbox** (`slug = inbox`) in the same workspace.
+ *
+ * Company workflows assign tasks to a colleague's personal assistant (inbox).
+ * Inboxes are virtual and often private for chat privacy; task assignment still
+ * needs to target them without opening general agent access.
+ */
+export async function assertTaskAssigneeUsableBy(
+  db: LobeChatDatabase,
+  agentId: string,
+  ctx: AgentAccessCtx,
+): Promise<void> {
+  try {
+    await assertAgentUsableBy(db, agentId, ctx);
+    return;
+  } catch (error) {
+    if (!(error instanceof TRPCError) || error.code !== 'NOT_FOUND') throw error;
+  }
+
+  if (!ctx.workspaceId) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+  }
+
+  const inboxRows = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, agentId),
+        eq(agents.workspaceId, ctx.workspaceId),
+        eq(agents.slug, INBOX_SESSION_ID),
+      ),
+    )
+    .limit(1);
+
+  if (inboxRows.length === 0) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
   }
 }

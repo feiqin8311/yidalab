@@ -12,6 +12,7 @@ import {
   GlobeIcon,
   LinkIcon,
   PencilIcon,
+  Share2Icon,
   Trash,
 } from 'lucide-react';
 import { useCallback } from 'react';
@@ -20,6 +21,7 @@ import { shallow } from 'zustand/shallow';
 
 import RepoIcon from '@/components/LibIcon';
 import { useKnowledgeBaseListContext } from '@/features/ResourceManager/components/KnowledgeBaseListProvider';
+import ResourceShareModal from '@/features/ResourceManager/components/ResourceShareModal';
 import { PAGE_FILE_TYPE } from '@/features/ResourceManager/constants';
 import VisibilityConfirmContent from '@/features/VisibilityConfirmContent';
 import { useAppOrigin } from '@/hooks/useAppOrigin';
@@ -252,8 +254,32 @@ export const useFileItemDropdown = ({
       !!currentUserId &&
       userId === currentUserId;
 
+    const isOwnFile =
+      sourceType !== DERIVED_DOCUMENT_SOURCE_TYPE &&
+      !isFolder &&
+      !!currentUserId &&
+      userId === currentUserId;
+
     return (
       [
+        canEditResources &&
+          isOwnFile && {
+            icon: <Icon icon={Share2Icon} />,
+            key: 'manageSharing',
+            label: t('resources.share.menu', { ns: 'chat' }),
+            onClick: async ({ domEvent }) => {
+              domEvent.stopPropagation();
+              createRawModal(ResourceShareModal, {
+                resourceId: id,
+                resourceType: 'file',
+                visibility,
+                onSuccess: () => {
+                  void refreshFileList();
+                },
+              });
+            },
+          },
+        canEditResources && isOwnFile && { type: 'divider' },
         canEditResources &&
           isOwnPrivateFile && {
             icon: <Icon icon={GlobeIcon} />,

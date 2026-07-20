@@ -32,7 +32,7 @@ import {
   agentChatConfigSelectors,
   agentSelectors,
 } from '@/store/agent/selectors';
-import { aiProviderSelectors, getAiInfraStoreState } from '@/store/aiInfra';
+import { aiModelSelectors, aiProviderSelectors, getAiInfraStoreState } from '@/store/aiInfra';
 import { getChatStoreState } from '@/store/chat';
 import { getToolStoreState } from '@/store/tool';
 import {
@@ -421,6 +421,21 @@ class ChatService {
     if (payload.top_p === null) payload.top_p = undefined;
     if (payload.presence_penalty === null) payload.presence_penalty = undefined;
     if (payload.frequency_penalty === null) payload.frequency_penalty = undefined;
+
+    // Models that reject sampling params (e.g. Grok via Sub2API) mark them in disabledParams.
+    // UI already hides them; also strip from outbound body — defaults still merge in above.
+    const disabledParams = aiModelSelectors.modelDisabledParams(
+      model,
+      provider,
+    )(getAiInfraStoreState());
+    for (const key of disabledParams ?? []) {
+      delete (payload as any)[key];
+    }
+    // sub2api-grok upstream 400s on presence/frequency_penalty even at 0
+    if (provider === 'sub2api-grok') {
+      delete payload.presence_penalty;
+      delete payload.frequency_penalty;
+    }
 
     const sdkType = resolveRuntimeProvider(provider);
 

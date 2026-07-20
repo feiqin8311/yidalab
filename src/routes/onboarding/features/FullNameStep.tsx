@@ -1,14 +1,13 @@
 'use client';
 
 import { SendButton } from '@lobehub/editor/react';
-import { Button, Flexbox, Icon, Input } from '@lobehub/ui';
+import { Button, Flexbox, Icon, Input, Text } from '@lobehub/ui';
 import { cssVar } from 'antd-style';
 import { SignatureIcon, Undo2Icon } from 'lucide-react';
 import { memo, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useUserStore } from '@/store/user';
-import { userProfileSelectors } from '@/store/user/selectors';
 
 import LobeMessage from '../components/LobeMessage';
 
@@ -19,22 +18,43 @@ interface FullNameStepProps {
 
 const FullNameStep = memo<FullNameStepProps>(({ onBack, onNext }) => {
   const { t } = useTranslation('onboarding');
-  const existingFullName = useUserStore(userProfileSelectors.fullName);
-  const updateFullName = useUserStore((s) => s.updateFullName);
+  const existingUsername = useUserStore((s) => s.user?.username || '');
+  const updateUsername = useUserStore((s) => s.updateUsername);
 
-  const [value, setValue] = useState(existingFullName || '');
+  const [value, setValue] = useState(existingUsername);
+  const [error, setError] = useState('');
   const [isNavigating, setIsNavigating] = useState(false);
   const isNavigatingRef = useRef(false);
 
-  const handleNext = useCallback(() => {
+  const handleNext = useCallback(async () => {
     if (isNavigatingRef.current) return;
+
+    const username = value.trim();
+    if (!username) {
+      setError(t('username.required'));
+      return;
+    }
+    if (username.length > 64) {
+      setError(t('username.tooLong'));
+      return;
+    }
+    if (!/^\w+$/.test(username)) {
+      setError(t('username.rule'));
+      return;
+    }
+
     isNavigatingRef.current = true;
     setIsNavigating(true);
-    if (value.trim()) {
-      updateFullName(value.trim());
+
+    try {
+      if (username !== existingUsername) await updateUsername(username);
+      onNext();
+    } catch {
+      setError(t('username.updateFailed'));
+      setIsNavigating(false);
+      isNavigatingRef.current = false;
     }
-    onNext();
-  }, [value, updateFullName, onNext]);
+  }, [existingUsername, onNext, t, updateUsername, value]);
 
   const handleBack = useCallback(() => {
     if (isNavigatingRef.current) return;
@@ -79,10 +99,18 @@ const FullNameStep = memo<FullNameStepProps>(({ onBack, onNext }) => {
               onClick={handleNext}
             />
           }
-          onChange={(e) => setValue(e.target.value)}
           onPressEnter={handleNext}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError('');
+          }}
         />
       </Flexbox>
+      {error && (
+        <Text fontSize={12} type="danger">
+          {error}
+        </Text>
+      )}
       <Flexbox horizontal justify={'flex-start'} style={{ marginTop: 32 }}>
         <Button
           disabled={isNavigating}

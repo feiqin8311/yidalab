@@ -1,4 +1,4 @@
-import type { FileUploader, QueryFileListParams } from '@lobechat/types';
+import type { FileUploader, QueryFileListParams, ResourceListScope } from '@lobechat/types';
 import { FilesTabs, SortType } from '@lobechat/types';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -6,6 +6,13 @@ import { DocumentModel } from '../../models/document';
 import { FileModel } from '../../models/file';
 import { DOCUMENT_FOLDER_TYPE, documents, files, knowledgeBaseFiles, users } from '../../schemas';
 import type { LobeChatDatabase } from '../../type';
+import {
+  buildResourceListScopeRawSql,
+  buildResourceReadableRawSql,
+  loadResourceAccessContext,
+  resolveListScope,
+  type ResourceAccessContext,
+} from '../../utils/resource-access';
 import { buildWorkspaceWhere } from '../../utils/workspace';
 
 export interface KnowledgeItem {
@@ -50,6 +57,7 @@ export class KnowledgeRepo {
   private fileModel: FileModel;
   private documentModel: DocumentModel;
   private workspaceId?: string;
+  private accessCtxPromise?: Promise<ResourceAccessContext | null>;
 
   constructor(db: LobeChatDatabase, userId: string, workspaceId?: string) {
     this.userId = userId;
@@ -59,32 +67,30 @@ export class KnowledgeRepo {
     this.documentModel = new DocumentModel(db, userId, workspaceId);
   }
 
-  private fileOwnershipSql = (alias: 'f' = 'f') => {
-    if (!this.workspaceId) {
-      return sql`${sql.raw(`${alias}.user_id`)} = ${this.userId} AND ${sql.raw(`${alias}.workspace_id`)} IS NULL`;
+  private getAccessCtx = () => {
+    if (!this.accessCtxPromise) {
+      this.accessCtxPromise = loadResourceAccessContext(this.db, this.userId, this.workspaceId);
     }
-
-    // Workspace mode: members see all public rows; private rows are scoped to
-    // their creator. Mirrors `buildWorkspaceWhere` for the raw-SQL UNION paths.
-    return sql`${sql.raw(`${alias}.workspace_id`)} = ${this.workspaceId} AND (
-      ${sql.raw(`${alias}.visibility`)} IS NULL
-      OR ${sql.raw(`${alias}.visibility`)} = 'public'
-      OR (${sql.raw(`${alias}.visibility`)} = 'private' AND ${sql.raw(`${alias}.user_id`)} = ${this.userId})
-    )`;
+    return this.accessCtxPromise;
   };
 
-  private documentOwnershipSql = (alias: 'd' | 'documents' = 'd') => {
-    if (!this.workspaceId) {
+  private fileOwnershipSql = (alias: 'f' = 'f', accessCtx?: ResourceAccessContext | null) => {
+    if (!this.workspaceId || !accessCtx) {
       return sql`${sql.raw(`${alias}.user_id`)} = ${this.userId} AND ${sql.raw(`${alias}.workspace_id`)} IS NULL`;
     }
 
-    // Workspace mode: members see all public rows; private rows are scoped to
-    // their creator. Mirrors `buildWorkspaceWhere` for the raw-SQL UNION paths.
-    return sql`${sql.raw(`${alias}.workspace_id`)} = ${this.workspaceId} AND (
-      ${sql.raw(`${alias}.visibility`)} IS NULL
-      OR ${sql.raw(`${alias}.visibility`)} = 'public'
-      OR (${sql.raw(`${alias}.visibility`)} = 'private' AND ${sql.raw(`${alias}.user_id`)} = ${this.userId})
-    )`;
+    return buildResourceReadableRawSql(accessCtx, alias, 'file');
+  };
+
+  private documentOwnershipSql = (
+    alias: 'd' | 'documents' = 'd',
+    accessCtx?: ResourceAccessContext | null,
+  ) => {
+    if (!this.workspaceId || !accessCtx) {
+      return sql`${sql.raw(`${alias}.user_id`)} = ${this.userId} AND ${sql.raw(`${alias}.workspace_id`)} IS NULL`;
+    }
+
+    return buildResourceReadableRawSql(accessCtx, alias, 'document');
   };
 
   /**
@@ -101,6 +107,7 @@ export class KnowledgeRepo {
     limit = 50,
     offset = 0,
     visibility,
+    listScope,
   }: QueryFileListParams = {}): Promise<KnowledgeItem[]> {
     // If parentId is provided, check if it's a slug and resolve it to an ID
     let resolvedParentId = parentId;
@@ -113,33 +120,41 @@ export class KnowledgeRepo {
       // Otherwise assume it's already an ID
     }
 
-    // Visibility filter is only meaningful in workspace mode. Personal-mode
-    // rows have `visibility` set to the schema default and are already fully
-    // scoped by `workspace_id IS NULL AND user_id = caller`.
-    const effectiveVisibility = this.workspaceId ? visibility : undefined;
+    const accessCtx = await this.getAccessCtx();
+    const scope = this.workspaceId ? resolveListScope(listScope, visibility) : undefined;
+
+    // admin_all requires admin membership; non-admins fall back to full readable set
+    const effectiveScope: ResourceListScope | undefined =
+      scope === 'admin_all' && !accessCtx?.isAdmin ? undefined : scope;
 
     // Build file query
-    const fileQuery = this.buildFileQuery({
-      category,
-      knowledgeBaseId,
-      parentId: resolvedParentId,
-      q,
-      showFilesInKnowledgeBase,
-      sortType,
-      sorter,
-      visibility: effectiveVisibility,
-    });
+    const fileQuery = this.buildFileQuery(
+      {
+        category,
+        knowledgeBaseId,
+        listScope: effectiveScope,
+        parentId: resolvedParentId,
+        q,
+        showFilesInKnowledgeBase,
+        sortType,
+        sorter,
+      },
+      accessCtx,
+    );
 
     // Build document query (notes)
-    const documentQuery = this.buildDocumentQuery({
-      category,
-      knowledgeBaseId,
-      parentId: resolvedParentId,
-      q,
-      sortType,
-      sorter,
-      visibility: effectiveVisibility,
-    });
+    const documentQuery = this.buildDocumentQuery(
+      {
+        category,
+        knowledgeBaseId,
+        listScope: effectiveScope,
+        parentId: resolvedParentId,
+        q,
+        sortType,
+        sorter,
+      },
+      accessCtx,
+    );
 
     // Combine both queries with UNION ALL
     const combinedQuery = sql`
@@ -201,9 +216,8 @@ export class KnowledgeRepo {
         uploader: row.uploader_id
           ? {
               avatar: row.uploader_avatar,
-              fullName: row.uploader_full_name,
-              id: row.uploader_id,
               username: row.uploader_username,
+              id: row.uploader_id,
             }
           : null,
         url: row.url,
@@ -220,6 +234,7 @@ export class KnowledgeRepo {
    * Returns the most recently updated items
    */
   async queryRecent(limit: number = 12): Promise<KnowledgeItem[]> {
+    const accessCtx = await this.getAccessCtx();
     const fileQuery = sql`
       SELECT
         COALESCE(d.id, f.id) as id,
@@ -240,7 +255,7 @@ export class KnowledgeRepo {
         f.user_id,
         f.visibility,
         u.id as uploader_id,
-        u.full_name as uploader_full_name,
+        u.username as uploader_username,
         u.username as uploader_username,
         u.avatar as uploader_avatar,
         'file' as source_type
@@ -249,7 +264,7 @@ export class KnowledgeRepo {
         ON f.id = d.file_id
       LEFT JOIN ${users} u
         ON f.user_id = u.id
-      WHERE ${this.fileOwnershipSql('f')}
+      WHERE ${this.fileOwnershipSql('f', accessCtx)}
         AND NOT EXISTS (
           SELECT 1 FROM ${knowledgeBaseFiles}
           WHERE ${knowledgeBaseFiles.fileId} = f.id
@@ -276,7 +291,7 @@ export class KnowledgeRepo {
         user_id,
         visibility,
         uploader_id,
-        uploader_full_name,
+        uploader_username,
         uploader_username,
         uploader_avatar,
         'document' as source_type
@@ -284,14 +299,14 @@ export class KnowledgeRepo {
         SELECT
           documents.*,
           u.id as uploader_id,
-          u.full_name as uploader_full_name,
+          u.username as uploader_username,
           u.username as uploader_username,
           u.avatar as uploader_avatar
         FROM ${documents}
         LEFT JOIN ${users} u
           ON documents.user_id = u.id
       ) documents
-      WHERE ${this.documentOwnershipSql('documents')}
+      WHERE ${this.documentOwnershipSql('documents', accessCtx)}
         AND source_type != ${'file'}
         AND knowledge_base_id IS NULL
     `;
@@ -348,9 +363,8 @@ export class KnowledgeRepo {
         uploader: row.uploader_id
           ? {
               avatar: row.uploader_avatar,
-              fullName: row.uploader_full_name,
-              id: row.uploader_id,
               username: row.uploader_username,
+              id: row.uploader_id,
             }
           : null,
         url: row.url,
@@ -436,15 +450,23 @@ export class KnowledgeRepo {
     await this.documentModel.delete(id);
   };
 
-  private buildFileQuery({
-    category,
-    q,
-    knowledgeBaseId,
-    showFilesInKnowledgeBase,
-    parentId,
-    visibility,
-  }: QueryFileListParams = {}): ReturnType<typeof sql> {
-    const whereConditions: any[] = [this.fileOwnershipSql('f')];
+  private buildFileQuery(
+    {
+      category,
+      q,
+      knowledgeBaseId,
+      showFilesInKnowledgeBase,
+      parentId,
+      listScope,
+    }: QueryFileListParams = {},
+    accessCtx?: ResourceAccessContext | null,
+  ): ReturnType<typeof sql> {
+    const whereConditions: any[] = [this.fileOwnershipSql('f', accessCtx)];
+    const scopeSql =
+      accessCtx && listScope
+        ? buildResourceListScopeRawSql(accessCtx, 'f', 'file', listScope)
+        : undefined;
+    if (scopeSql) whereConditions.push(scopeSql);
 
     // Parent ID filter
     if (parentId !== undefined) {
@@ -458,15 +480,6 @@ export class KnowledgeRepo {
     // Search filter
     if (q) {
       whereConditions.push(sql`f.name ILIKE ${`%${q}%`}`);
-    }
-
-    // Visibility filter — narrows the ownership-scoped pool. Explicit private
-    // rows with no `visibility` column still surface under 'public' since the
-    // schema default + backfill treats them as public.
-    if (visibility === 'private') {
-      whereConditions.push(sql`f.visibility = 'private'`);
-    } else if (visibility === 'public') {
-      whereConditions.push(sql`(f.visibility = 'public' OR f.visibility IS NULL)`);
     }
 
     // Category filter
@@ -484,7 +497,8 @@ export class KnowledgeRepo {
     // Knowledge base filter
     if (knowledgeBaseId) {
       // Build where conditions using proper table references (f.column instead of files.column)
-      const kbWhereConditions: any[] = [this.fileOwnershipSql('f')];
+      const kbWhereConditions: any[] = [this.fileOwnershipSql('f', accessCtx)];
+      if (scopeSql) kbWhereConditions.push(scopeSql);
 
       // Parent ID filter
       if (parentId !== undefined) {
@@ -513,12 +527,6 @@ export class KnowledgeRepo {
         }
       }
 
-      if (visibility === 'private') {
-        kbWhereConditions.push(sql`f.visibility = 'private'`);
-      } else if (visibility === 'public') {
-        kbWhereConditions.push(sql`(f.visibility = 'public' OR f.visibility IS NULL)`);
-      }
-
       return sql`
         SELECT
           COALESCE(d.id, f.id) as id,
@@ -539,7 +547,7 @@ export class KnowledgeRepo {
           f.user_id,
           f.visibility,
           u.id as uploader_id,
-          u.full_name as uploader_full_name,
+          u.username as uploader_username,
           u.username as uploader_username,
           u.avatar as uploader_avatar,
           'file' as source_type
@@ -587,7 +595,7 @@ export class KnowledgeRepo {
         f.user_id,
         f.visibility,
         u.id as uploader_id,
-        u.full_name as uploader_full_name,
+        u.username as uploader_username,
         u.username as uploader_username,
         u.avatar as uploader_avatar,
         'file' as source_type
@@ -600,17 +608,19 @@ export class KnowledgeRepo {
     `;
   }
 
-  private buildDocumentQuery({
-    category,
-    q,
-    knowledgeBaseId,
-    parentId,
-    visibility,
-  }: QueryFileListParams = {}): ReturnType<typeof sql> {
+  private buildDocumentQuery(
+    { category, q, knowledgeBaseId, parentId, listScope }: QueryFileListParams = {},
+    accessCtx?: ResourceAccessContext | null,
+  ): ReturnType<typeof sql> {
     const whereConditions: any[] = [
-      this.documentOwnershipSql('documents'),
+      this.documentOwnershipSql('documents', accessCtx),
       sql`${documents.sourceType} != ${'file'}`,
     ];
+    const scopeSql =
+      accessCtx && listScope
+        ? buildResourceListScopeRawSql(accessCtx, 'documents', 'document', listScope)
+        : undefined;
+    if (scopeSql) whereConditions.push(scopeSql);
 
     // Parent ID filter
     if (parentId !== undefined) {
@@ -625,14 +635,6 @@ export class KnowledgeRepo {
     if (q) {
       whereConditions.push(
         sql`(${documents.title} ILIKE ${`%${q}%`} OR ${documents.filename} ILIKE ${`%${q}%`})`,
-      );
-    }
-
-    if (visibility === 'private') {
-      whereConditions.push(sql`${documents.visibility} = 'private'`);
-    } else if (visibility === 'public') {
-      whereConditions.push(
-        sql`(${documents.visibility} = 'public' OR ${documents.visibility} IS NULL)`,
       );
     }
 
@@ -674,7 +676,7 @@ export class KnowledgeRepo {
             NULL::text as user_id,
             NULL::text as visibility,
             NULL::text as uploader_id,
-            NULL::text as uploader_full_name,
+            NULL::text as uploader_username,
             NULL::text as uploader_username,
             NULL::text as uploader_avatar,
             NULL::text as source_type
@@ -687,7 +689,12 @@ export class KnowledgeRepo {
     // Documents are linked to knowledge bases through files table via fileId
     if (knowledgeBaseId) {
       // Build where conditions using proper table references (d.column instead of documents.column)
-      const kbWhereConditions: any[] = [this.documentOwnershipSql('d')];
+      const kbWhereConditions: any[] = [this.documentOwnershipSql('d', accessCtx)];
+      const kbScopeSql =
+        accessCtx && listScope
+          ? buildResourceListScopeRawSql(accessCtx, 'd', 'document', listScope)
+          : undefined;
+      if (kbScopeSql) kbWhereConditions.push(kbScopeSql);
 
       // Parent ID filter
       if (parentId !== undefined) {
@@ -701,12 +708,6 @@ export class KnowledgeRepo {
       // Search filter
       if (q) {
         kbWhereConditions.push(sql`(d.title ILIKE ${`%${q}%`} OR d.filename ILIKE ${`%${q}%`})`);
-      }
-
-      if (visibility === 'private') {
-        kbWhereConditions.push(sql`d.visibility = 'private'`);
-      } else if (visibility === 'public') {
-        kbWhereConditions.push(sql`(d.visibility = 'public' OR d.visibility IS NULL)`);
       }
 
       // Category filter
@@ -751,7 +752,7 @@ export class KnowledgeRepo {
               NULL::text as user_id,
               NULL::text as visibility,
               NULL::text as uploader_id,
-              NULL::text as uploader_full_name,
+              NULL::text as uploader_username,
               NULL::text as uploader_username,
               NULL::text as uploader_avatar,
               NULL::text as source_type
@@ -785,7 +786,7 @@ export class KnowledgeRepo {
           d.user_id,
           d.visibility,
           u.id as uploader_id,
-          u.full_name as uploader_full_name,
+          u.username as uploader_username,
           u.username as uploader_username,
           u.avatar as uploader_avatar,
           'document' as source_type
@@ -816,7 +817,7 @@ export class KnowledgeRepo {
         documents.user_id,
         documents.visibility,
         u.id as uploader_id,
-        u.full_name as uploader_full_name,
+        u.username as uploader_username,
         u.username as uploader_username,
         u.avatar as uploader_avatar,
         'document' as source_type

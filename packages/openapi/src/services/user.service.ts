@@ -113,7 +113,7 @@ export class UserService extends BaseService {
       const conditions = [];
 
       if (request.keyword) {
-        conditions.push(ilike(users.fullName, `%${request.keyword}%`));
+        conditions.push(ilike(users.username, `%${request.keyword}%`));
       }
 
       // Get basic user info

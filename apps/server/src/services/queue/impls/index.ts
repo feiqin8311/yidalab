@@ -1,7 +1,7 @@
 import { appEnv } from '@/envs/app';
 
 import { LocalQueueServiceImpl } from './local';
-import { QStashQueueServiceImpl } from './qstash';
+import { RedisQueueServiceImpl } from './redis';
 import { type QueueServiceImpl } from './type';
 
 /**
@@ -16,19 +16,14 @@ export const isQueueAgentRuntimeEnabled = (): boolean => {
  * Create queue service module
  *
  * When enableQueueAgentRuntime=true (AGENT_RUNTIME_MODE=queue):
- *   - QStashQueueServiceImpl (production, requires QSTASH_TOKEN)
+ *   - RedisQueueServiceImpl (production, requires REDIS_URL — no QStash)
  *
  * When enableQueueAgentRuntime=false (default):
  *   - LocalQueueServiceImpl (local development, uses setTimeout for async execution)
  */
 export const createQueueServiceModule = (): QueueServiceImpl => {
   if (isQueueAgentRuntimeEnabled()) {
-    const qstashToken = process.env.QSTASH_TOKEN;
-
-    if (!qstashToken) {
-      throw new Error('QSTASH_TOKEN is required when AGENT_RUNTIME_MODE=queue');
-    }
-    return new QStashQueueServiceImpl({ qstashToken });
+    return new RedisQueueServiceImpl();
   }
 
   // Local mode (default): use LocalQueueServiceImpl with callback mechanism
@@ -36,4 +31,7 @@ export const createQueueServiceModule = (): QueueServiceImpl => {
 };
 
 export { LocalQueueServiceImpl } from './local';
+export { RedisQueueServiceImpl } from './redis';
+// Keep export for tests that still import the old QStash impl directly
+export { QStashQueueServiceImpl } from './qstash';
 export type { QueueServiceImpl } from './type';

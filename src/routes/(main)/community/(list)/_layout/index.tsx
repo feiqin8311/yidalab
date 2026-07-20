@@ -4,7 +4,6 @@ import { Outlet } from 'react-router';
 import WideScreenContainer from '@/features/WideScreenContainer';
 
 import { MAX_WIDTH } from '../../features/const';
-import Footer from './Footer';
 import Header from './Header';
 import { styles } from './style';
 
@@ -26,8 +25,6 @@ const Layout = () => {
           <Flexbox gap={16} style={{ paddingBlockEnd: 40 }} width={'100%'}>
             <Outlet />
           </Flexbox>
-          <div className={styles.spacer} />
-          <Footer />
         </WideScreenContainer>
       </Flexbox>
     </>

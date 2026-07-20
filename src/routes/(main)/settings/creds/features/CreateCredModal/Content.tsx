@@ -29,9 +29,15 @@ export interface CreateCredModalContentProps {
    */
   credsApi: CredsApi;
   onSuccess?: () => void;
+  /** personal (default) | company */
+  scope?: 'personal' | 'company';
 }
 
-const CreateCredModalContent: FC<CreateCredModalContentProps> = ({ credsApi, onSuccess }) => {
+const CreateCredModalContent: FC<CreateCredModalContentProps> = ({
+  credsApi,
+  onSuccess,
+  scope = 'personal',
+}) => {
   const { t } = useTranslation('setting');
   const { close } = useModalContext();
   const [step, setStep] = useState(0);
@@ -59,6 +65,7 @@ const CreateCredModalContent: FC<CreateCredModalContentProps> = ({ credsApi, onS
         return (
           <KVCredForm
             credsApi={credsApi}
+            scope={scope}
             type={credType}
             onBack={handleBack}
             onSuccess={handleSuccess}

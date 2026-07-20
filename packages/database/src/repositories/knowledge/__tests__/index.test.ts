@@ -231,8 +231,7 @@ describe('KnowledgeRepo', () => {
         .update(users)
         .set({
           avatar: 'https://example.com/avatar.png',
-          fullName: 'Current User',
-          username: 'current-user',
+          username: 'Current User',
         })
         .where(eq(users.id, userId));
 
@@ -240,15 +239,13 @@ describe('KnowledgeRepo', () => {
 
       expect(result.find((item) => item.id === 'file-1')?.uploader).toMatchObject({
         avatar: 'https://example.com/avatar.png',
-        fullName: 'Current User',
+        username: 'Current User',
         id: userId,
-        username: 'current-user',
       });
       expect(result.find((item) => item.id === 'doc-1')?.uploader).toMatchObject({
         avatar: 'https://example.com/avatar.png',
-        fullName: 'Current User',
+        username: 'Current User',
         id: userId,
-        username: 'current-user',
       });
     });
 

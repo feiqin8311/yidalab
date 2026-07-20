@@ -34,6 +34,12 @@ interface CredItemProps {
   onView: (cred: UserCredSummary) => void;
 }
 
+const canManageCred = (cred: UserCredSummary, canManagePersonal: boolean) => {
+  // Server sets canManage for company rows (admin/owner only).
+  if (cred.scope === 'company') return cred.canManage === true;
+  return canManagePersonal;
+};
+
 const typeIcons: Record<string, React.ReactNode> = {
   'file': <File size={20} />,
   'kv-env': <TerminalSquare size={20} />,
@@ -50,10 +56,11 @@ const typeColors: Record<string, string> = {
 
 const CredItem: FC<CredItemProps> = memo(({ cred, extra, onEdit, onDelete, onView }) => {
   const { t } = useTranslation('setting');
-  const { allowed: canManageCredentials } = usePermission('manage_provider_key');
+  const { allowed: canManagePersonal } = usePermission('manage_provider_key');
+  const allowed = canManageCred(cred, canManagePersonal);
 
   const handleDelete = () => {
-    if (!canManageCredentials) return;
+    if (!allowed) return;
 
     confirmModal({
       content: t('creds.actions.deleteConfirm.content'),
@@ -64,7 +71,7 @@ const CredItem: FC<CredItemProps> = memo(({ cred, extra, onEdit, onDelete, onVie
     });
   };
 
-  const canView = canManageCredentials && (cred.type === 'kv-env' || cred.type === 'kv-header');
+  const canView = allowed && (cred.type === 'kv-env' || cred.type === 'kv-header');
 
   const menuItems = [
     ...(canView
@@ -81,12 +88,12 @@ const CredItem: FC<CredItemProps> = memo(({ cred, extra, onEdit, onDelete, onVie
       icon: <Icon icon={Pencil} />,
       key: 'edit',
       label: t('creds.actions.edit'),
-      disabled: !canManageCredentials,
+      disabled: !allowed,
       onClick: () => onEdit(cred),
     },
     {
       danger: true,
-      disabled: !canManageCredentials,
+      disabled: !allowed,
       icon: <Icon icon={Trash2} />,
       key: 'delete',
       label: t('creds.actions.delete'),
@@ -116,6 +123,11 @@ const CredItem: FC<CredItemProps> = memo(({ cred, extra, onEdit, onDelete, onVie
         <Flexbox gap={4} style={{ overflow: 'hidden' }}>
           <Flexbox horizontal align="center" gap={8}>
             <span className={styles.title}>{cred.name}</span>
+            {cred.scope === 'company' ? (
+              <Tag color="gold">{t('creds.scope.company')}</Tag>
+            ) : (
+              <Tag>{t('creds.scope.personal')}</Tag>
+            )}
             <Tag color={typeColors[cred.type]}>{t(`creds.types.${cred.type}`)}</Tag>
             {/* Only populated by organization-scoped list responses (workspaceCreds.list) —
                 distinguishes a member's shared personal credential from one the org owns directly. */}
@@ -136,9 +148,13 @@ const CredItem: FC<CredItemProps> = memo(({ cred, extra, onEdit, onDelete, onVie
       </Flexbox>
       <Flexbox horizontal align="center" gap={8} onClick={stopPropagation}>
         {extra}
-        <DropdownMenu items={menuItems} placement="bottomRight">
-          <Button disabled={!canManageCredentials} icon={MoreHorizontalIcon} />
-        </DropdownMenu>
+        {allowed ? (
+          <DropdownMenu items={menuItems} placement="bottomRight">
+            <Button icon={MoreHorizontalIcon} />
+          </DropdownMenu>
+        ) : (
+          <Tag color="default">{t('creds.scope.companyReadOnly')}</Tag>
+        )}
       </Flexbox>
     </Flexbox>
   );

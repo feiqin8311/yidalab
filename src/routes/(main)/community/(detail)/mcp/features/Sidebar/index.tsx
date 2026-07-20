@@ -38,13 +38,10 @@ const Sidebar = memo<{ mobile?: boolean }>(({ mobile }) => {
         top: 16,
       }}
     >
-      {isDesktop ? (
-        <Flexbox>
-          <ActionButton />
-        </Flexbox>
-      ) : (
-        <ConnectionTypeAlert />
-      )}
+      <Flexbox>
+        <ActionButton />
+      </Flexbox>
+      {!isDesktop && <ConnectionTypeAlert />}
       {activeTab !== McpNavKey.Deployment && <ServerConfig />}
       <TocList />
       {![McpNavKey.Overview, McpNavKey.Schema, McpNavKey.Related].includes(activeTab) && (

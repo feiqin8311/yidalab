@@ -9,7 +9,7 @@ import { Notion } from '@lobehub/icons';
 import { type DropdownItem } from '@lobehub/ui';
 import { Button, DropdownMenu, Icon, Tooltip } from '@lobehub/ui';
 import { Upload } from 'antd';
-import { FilePenLine, FileUp, FolderIcon, FolderUp, Link, Plus } from 'lucide-react';
+import { BookMarked, FilePenLine, FileUp, FolderIcon, FolderUp, Link, Plus } from 'lucide-react';
 import { type ChangeEvent } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +23,7 @@ import { useFileStore } from '@/store/file';
 import { FilesTabs } from '@/types/files';
 
 import useNotionImport from './hooks/useNotionImport';
+import useObsidianImport from './hooks/useObsidianImport';
 import useUploadFolder from './hooks/useUploadFolder';
 
 const getAcceptedFileTypes = (category: FilesTabs): string | undefined => {
@@ -162,6 +163,13 @@ const AddButton = () => {
     t,
   });
 
+  const { handleObsidianImport, handleOpenObsidianGuide, obsidianInputRef } = useObsidianImport({
+    createDocument,
+    currentFolderId,
+    libraryId,
+    t,
+  });
+
   const { handleFolderUpload } = useUploadFolder({
     currentFolderId,
     libraryId,
@@ -233,6 +241,12 @@ const AddButton = () => {
             label: 'Notion',
             onClick: handleOpenNotionGuide,
           },
+          {
+            icon: <Icon icon={BookMarked} />,
+            key: 'connect-obsidian',
+            label: 'Obsidian',
+            onClick: handleOpenObsidianGuide,
+          },
         ],
         icon: <Icon icon={Link} />,
         key: 'connect',
@@ -245,6 +259,7 @@ const AddButton = () => {
       handleCreateFolder,
       handleOpenPageEditor,
       handleOpenNotionGuide,
+      handleOpenObsidianGuide,
       libraryId,
       uploadTopLevel,
       t,
@@ -283,6 +298,13 @@ const AddButton = () => {
         style={{ display: 'none' }}
         type="file"
         onChange={handleNotionImport}
+      />
+      <input
+        accept=".zip"
+        ref={obsidianInputRef}
+        style={{ display: 'none' }}
+        type="file"
+        onChange={handleObsidianImport}
       />
     </>
   );

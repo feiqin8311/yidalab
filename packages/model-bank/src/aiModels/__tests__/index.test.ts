@@ -62,6 +62,29 @@ describe('loadModels', () => {
 
 describe('knowledgeCutoff backfill', () => {
   it('fills knowledgeCutoff from the canonical map for builtin models', () => {
+    const minimaxM3 = LOBE_DEFAULT_MODEL_LIST.find(
+      (m) => m.providerId === 'minimaxcodingplan' && m.id === 'MiniMax-M3',
+    );
+    expect(minimaxM3?.enabled).toBe(true);
+
+    const glm52 = LOBE_DEFAULT_MODEL_LIST.find(
+      (m) => m.providerId === 'glmcodingplan' && m.id === 'GLM-5.2',
+    );
+    expect(glm52).toMatchObject({
+      contextWindowTokens: 1_000_000,
+      enabled: true,
+      maxOutput: 131_072,
+    });
+
+    const zhipuGlm52 = LOBE_DEFAULT_MODEL_LIST.find(
+      (m) => m.providerId === 'zhipu' && m.id === 'glm-5.2',
+    );
+    expect(zhipuGlm52).toMatchObject({
+      contextWindowTokens: 1_000_000,
+      enabled: true,
+      maxOutput: 131_072,
+    });
+
     const fable = LOBE_DEFAULT_MODEL_LIST.find(
       (m) => m.providerId === 'anthropic' && m.id === 'claude-fable-5',
     );

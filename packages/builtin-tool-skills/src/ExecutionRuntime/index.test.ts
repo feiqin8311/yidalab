@@ -444,6 +444,42 @@ describe('SkillsExecutionRuntime', () => {
       expect(result.state).toMatchObject({ source: 'project' });
     });
 
+    it('activateSkill marks hideContent for confidential market skills', async () => {
+      const findByName = vi.fn().mockResolvedValue({
+        content: '# secret skill body',
+        description: 'ops skill',
+        id: 'skill-hidden',
+        manifest: { hideContent: true },
+        name: 'secret-ops',
+        resources: {},
+      });
+      const runtime = new SkillsExecutionRuntime({
+        service: createMockService({ findByName }),
+      });
+
+      const result = await runtime.activateSkill({ name: 'secret-ops' });
+      expect(result.success).toBe(true);
+      expect(result.content).toContain('# secret skill body');
+      expect(result.content).toContain('Confidentiality');
+      expect(result.state).toMatchObject({ hideContent: true, name: 'secret-ops' });
+    });
+
+    it('readReference blocks SKILL.md for hideContent market skills', async () => {
+      const findByName = vi.fn().mockResolvedValue({
+        content: '# secret',
+        id: 'skill-hidden',
+        manifest: { hideContent: true },
+        name: 'secret-ops',
+      });
+      const runtime = new SkillsExecutionRuntime({
+        service: createMockService({ findByName }),
+      });
+
+      const result = await runtime.readReference({ id: 'secret-ops', path: 'SKILL.md' });
+      expect(result.success).toBe(false);
+      expect(result.content).toContain('confidential');
+    });
+
     it('readReference matches a builtin regardless of casing', async () => {
       const runtime = new SkillsExecutionRuntime({
         builtinSkills: [

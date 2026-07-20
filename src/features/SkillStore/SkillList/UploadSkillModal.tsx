@@ -11,10 +11,17 @@ import { useTranslation } from 'react-i18next';
 
 import { usePermission } from '@/hooks/usePermission';
 import { lambdaClient } from '@/libs/trpc/client/lambda';
+import { companyMarketSkillService } from '@/services/companyMarketSkill';
 import { uploadService } from '@/services/upload';
 import { useToolStore } from '@/store/tool';
 
-const UploadSkillContent = memo(() => {
+interface UploadSkillContentProps {
+  identifier?: string;
+  market?: boolean;
+  onSuccess?: () => void;
+}
+
+const UploadSkillContent = memo<UploadSkillContentProps>(({ identifier, market, onSuccess }) => {
   const { t } = useTranslation(['setting', 'common']);
   const { close, setCanDismissByClickOutside } = useModalContext();
   const { message } = App.useApp();
@@ -48,8 +55,15 @@ const UploadSkillContent = memo(() => {
         url: metadata.path,
       });
 
-      await importAgentSkillFromZip({ zipFileId: result.id });
-      message.success(t('agentSkillModal.importSuccess'));
+      if (market) {
+        await companyMarketSkillService.publish({ identifier, zipFileId: result.id });
+      } else {
+        await importAgentSkillFromZip({ zipFileId: result.id });
+      }
+      message.success(
+        t(market ? 'marketSkillModal.publishSuccess' : 'agentSkillModal.importSuccess'),
+      );
+      onSuccess?.();
       close();
     } catch (err: any) {
       setError(err?.message || String(err));
@@ -73,16 +87,18 @@ const UploadSkillContent = memo(() => {
 
         <Flexbox align="center" gap={4}>
           <Typography.Title level={4} style={{ margin: 0 }}>
-            {t('agentSkillModal.upload.title')}
+            {t(market ? 'marketSkillModal.upload.title' : 'agentSkillModal.upload.title')}
           </Typography.Title>
-          <Typography.Text type="secondary">{t('agentSkillModal.upload.desc')}</Typography.Text>
+          <Typography.Text type="secondary">
+            {t(market ? 'marketSkillModal.upload.desc' : 'agentSkillModal.upload.desc')}
+          </Typography.Text>
         </Flexbox>
       </Flexbox>
 
       {error && <Alert showIcon title={t('agentSkillModal.importError', { error })} type="error" />}
 
       <Upload.Dragger
-        accept=".zip,.skill"
+        accept={market ? '.zip' : '.zip,.skill'}
         disabled={loading || !canCreate}
         showUploadList={false}
         beforeUpload={(file) => {
@@ -138,6 +154,22 @@ UploadSkillContent.displayName = 'UploadSkillContent';
 export const openUploadSkillModal = (): ModalInstance =>
   createModal({
     content: <UploadSkillContent />,
+    footer: null,
+    maskClosable: true,
+    styles: { header: { display: 'none' } },
+    width: 480,
+  });
+
+export const openPublishMarketSkillModal = (
+  params: {
+    identifier?: string;
+    onSuccess?: () => void;
+  } = {},
+): ModalInstance =>
+  createModal({
+    content: (
+      <UploadSkillContent market identifier={params.identifier} onSuccess={params.onSuccess} />
+    ),
     footer: null,
     maskClosable: true,
     styles: { header: { display: 'none' } },

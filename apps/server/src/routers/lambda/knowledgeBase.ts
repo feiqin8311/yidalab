@@ -6,6 +6,7 @@ import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPer
 import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
 import { serverDBEnv } from '@/config/db';
 import { KnowledgeBaseModel } from '@/database/models/knowledgeBase';
+import { ResourceGrantModel } from '@/database/models/resourceGrant';
 import { insertKnowledgeBasesSchema } from '@/database/schemas';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
@@ -21,6 +22,7 @@ const knowledgeBaseProcedure = wsCompatProcedure.use(serverDatabase).use(async (
   return opts.next({
     ctx: {
       knowledgeBaseModel: new KnowledgeBaseModel(ctx.serverDB, ctx.userId, wsId),
+      resourceGrantModel: new ResourceGrantModel(ctx.serverDB, ctx.userId, wsId),
     },
   });
 });
@@ -63,7 +65,8 @@ export const knowledgeBaseRouter = router({
         avatar: input.avatar,
         description: input.description,
         name: input.name,
-        visibility: input.visibility,
+        // Default private in workspace mode when caller omits visibility.
+        visibility: input.visibility ?? (ctx.workspaceId ? 'private' : undefined),
       });
 
       return data?.id;
@@ -129,12 +132,65 @@ export const knowledgeBaseRouter = router({
     .input(
       z
         .object({
+          listScope: z.enum(['mine', 'shared_with_me', 'workspace', 'admin_all']).optional(),
           visibility: z.enum(['private', 'public']).optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }): Promise<KnowledgeBaseItem[]> => {
-      return ctx.knowledgeBaseModel.query({ visibility: input?.visibility });
+      return ctx.knowledgeBaseModel.query({
+        listScope: input?.listScope,
+        visibility: input?.visibility,
+      });
+    }),
+
+  listKnowledgeBaseGrants: knowledgeBaseProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.workspaceId) return [];
+      const kb = await ctx.knowledgeBaseModel.findById(input.id);
+      if (!kb) throw new TRPCError({ code: 'NOT_FOUND', message: 'Knowledge base not found' });
+      return ctx.resourceGrantModel.list('knowledge_base', input.id);
+    }),
+
+  setKnowledgeBaseGrants: knowledgeBaseProcedure
+    .use(withScopedPermission('knowledge_base:update'))
+    .input(
+      z.object({
+        grants: z.array(
+          z.object({
+            granteeId: z.string(),
+            granteeType: z.enum(['user', 'department']),
+            role: z.enum(['viewer', 'editor']).optional(),
+          }),
+        ),
+        id: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.workspaceId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Knowledge base grants only apply inside a workspace',
+        });
+      }
+
+      const kb = await ctx.knowledgeBaseModel.findById(input.id);
+      if (!kb) throw new TRPCError({ code: 'NOT_FOUND', message: 'Knowledge base not found' });
+
+      if (kb.userId !== ctx.userId) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the creator can manage knowledge base grants',
+        });
+      }
+
+      if (kb.visibility === 'public') {
+        await ctx.knowledgeBaseModel.setVisibility(input.id, 'private');
+      }
+
+      const grants = await ctx.resourceGrantModel.set('knowledge_base', input.id, input.grants);
+      return { grants, success: true };
     }),
 
   publishKnowledgeBaseToWorkspace: knowledgeBaseProcedure

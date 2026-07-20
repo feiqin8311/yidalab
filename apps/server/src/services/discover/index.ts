@@ -325,6 +325,10 @@ export class DiscoverService {
 
   private isLegacySource = (source?: AssistantMarketSource) => source === 'legacy';
 
+  private isUnauthorizedError = (error: unknown) => (error as { status?: number })?.status === 401;
+
+  private publicMarket = () => new MarketService().market;
+
   private legacyGetAssistantListRaw = async (locale?: string): Promise<DiscoverAssistantItem[]> => {
     log('legacyGetAssistantListRaw: locale=%s', locale);
     const normalizedLocale = normalizeLocale(locale);
@@ -560,89 +564,98 @@ export class DiscoverService {
     const { locale, identifier, version } = rest;
     const normalizedLocale = normalizeLocale(locale);
 
+    let data;
     try {
       // @ts-ignore
-      const data = await this.market.agents.getAgentDetail(identifier, {
+      data = await this.market.agents.getAgentDetail(identifier, {
         locale: normalizedLocale,
         version,
       });
-
-      if (!data) {
-        log('getAssistantDetail: assistant not found for identifier=%s', identifier);
-        return;
-      }
-
-      const normalizedAuthor = this.normalizeAuthorField(data.author);
-      const assistant = {
-        author:
-          normalizedAuthor.name || (data.ownerId !== null ? `User${data.ownerId}` : 'Unknown'),
-        avatar: data.avatar || normalizedAuthor.name || '',
-        category: (data as any).category || 'general',
-        config: data.config || {},
-        createdAt: (data as any).createdAt,
-        currentVersion: data.version,
-        description: (data as any).description || data.summary,
-        // @ts-ignore
-        editorData: data.editorData || {},
-
-        examples: Array.isArray((data as any).examples)
-          ? (data as any).examples.map((example: any) => ({
-              content: typeof example === 'string' ? example : example.content || '',
-              role: example.role || 'user',
-            }))
-          : [],
-        forkCount: (data as any).forkCount,
-        forkedFromAgentId: (data as any).forkedFromAgentId,
-        homepage:
-          (data as any).homepage ||
-          `https://lobehub.com/discover/assistant/${(data as any).identifier}`,
-        identifier: (data as any).identifier,
-        isValidated: (data as any).isValidated,
-        knowledgeCount:
-          (data.config as any)?.knowledgeBases?.length || (data as any).knowledgeCount || 0,
-        pluginCount: (data.config as any)?.plugins?.length || (data as any).pluginCount || 0,
-        readme: data.documentationUrl || '',
-        schemaVersion: 1,
-        ownerType: normalizedAuthor.ownerType,
-        status: (data.status as AgentStatus) || undefined,
-        summary: data.summary || '',
-        systemRole: (data.config as any)?.systemRole || '',
-        tags: data.tags || [],
-        title: (data as any).name || (data as any).identifier,
-        tokenUsage: data.tokenUsage || 0,
-        userName: normalizedAuthor.userName,
-        versions:
-          // @ts-ignore
-          data.versions?.map((item) => ({
-            createdAt: (item as any).createdAt || item.updatedAt,
-            isLatest: item.isLatest,
-            isValidated: item.isValidated,
-            status: item.status as any,
-            version: item.version,
-          })) || [],
-      };
-
-      // Get related assistants
-      const list = await this.getAssistantList({
-        category: assistant.category,
-        includeAgentGroup: true,
-        locale,
-        page: 1,
-        pageSize: 7,
-        source,
-      });
-
-      const result = {
-        ...assistant,
-        related: list.items.filter((item) => item.identifier !== assistant.identifier).slice(0, 6),
-      };
-
-      log('getAssistantDetail: returning assistant with %d related items', result.related.length);
-      return result;
     } catch (error) {
       log('getAssistantDetail: error fetching from market SDK: %O', error);
+      if (this.isUnauthorizedError(error)) {
+        data = await this.publicMarket().agents.getAgentDetail(identifier, {
+          locale: normalizedLocale,
+          version,
+        });
+      } else if ((error as { status?: number })?.status !== 404) {
+        throw error;
+      } else {
+        return;
+      }
+    }
+
+    if (!data) {
+      log('getAssistantDetail: assistant not found for identifier=%s', identifier);
       return;
     }
+
+    const normalizedAuthor = this.normalizeAuthorField(data.author);
+    const assistant = {
+      author: normalizedAuthor.name || (data.ownerId !== null ? `User${data.ownerId}` : 'Unknown'),
+      avatar: data.avatar || normalizedAuthor.name || '',
+      category: (data as any).category || 'general',
+      config: data.config || {},
+      createdAt: (data as any).createdAt,
+      currentVersion: data.version,
+      description: (data as any).description || data.summary,
+      // @ts-ignore
+      editorData: data.editorData || {},
+
+      examples: Array.isArray((data as any).examples)
+        ? (data as any).examples.map((example: any) => ({
+            content: typeof example === 'string' ? example : example.content || '',
+            role: example.role || 'user',
+          }))
+        : [],
+      forkCount: (data as any).forkCount,
+      forkedFromAgentId: (data as any).forkedFromAgentId,
+      homepage:
+        (data as any).homepage ||
+        `https://lobehub.com/discover/assistant/${(data as any).identifier}`,
+      identifier: (data as any).identifier,
+      isValidated: (data as any).isValidated,
+      knowledgeCount:
+        (data.config as any)?.knowledgeBases?.length || (data as any).knowledgeCount || 0,
+      pluginCount: (data.config as any)?.plugins?.length || (data as any).pluginCount || 0,
+      readme: data.documentationUrl || '',
+      schemaVersion: 1,
+      ownerType: normalizedAuthor.ownerType,
+      status: (data.status as AgentStatus) || undefined,
+      summary: data.summary || '',
+      systemRole: (data.config as any)?.systemRole || '',
+      tags: data.tags || [],
+      title: (data as any).name || (data as any).identifier,
+      tokenUsage: data.tokenUsage || 0,
+      userName: normalizedAuthor.userName,
+      versions:
+        // @ts-ignore
+        data.versions?.map((item) => ({
+          createdAt: (item as any).createdAt || item.updatedAt,
+          isLatest: item.isLatest,
+          isValidated: item.isValidated,
+          status: item.status as any,
+          version: item.version,
+        })) || [],
+    };
+
+    // Get related assistants
+    const list = await this.getAssistantList({
+      category: assistant.category,
+      includeAgentGroup: true,
+      locale,
+      page: 1,
+      pageSize: 7,
+      source,
+    });
+
+    const result = {
+      ...assistant,
+      related: list.items.filter((item) => item.identifier !== assistant.identifier).slice(0, 6),
+    };
+
+    log('getAssistantDetail: returning assistant with %d related items', result.related.length);
+    return result;
   };
 
   getAssistantIdentifiers = async (
@@ -819,14 +832,28 @@ export class DiscoverService {
     log('getMcpDetail: params=%O', params);
     const { locale } = params;
     const normalizedLocale = normalizeLocale(locale);
-    const mcp = await this.market.plugins.getPluginDetail(
-      { ...params, locale: normalizedLocale },
-      {
-        next: {
-          revalidate: 3600,
+    let mcp;
+    try {
+      mcp = await this.market.plugins.getPluginDetail(
+        { ...params, locale: normalizedLocale },
+        {
+          next: {
+            revalidate: 3600,
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      if (!this.isUnauthorizedError(error)) throw error;
+
+      mcp = await this.publicMarket().plugins.getPluginDetail(
+        { ...params, locale: normalizedLocale },
+        {
+          next: {
+            revalidate: 3600,
+          },
+        },
+      );
+    }
 
     // Fetch related MCPs
     const list = await this.getMcpList({
@@ -939,18 +966,97 @@ export class DiscoverService {
     pluginId: string;
   }): Promise<AssistantListResponse> => {
     log('getAgentsByPlugin: params=%O', params);
-    const { locale, pluginId, page = 1, pageSize = 20 } = params;
-    const normalizedLocale = normalizeLocale(locale);
+    const { pluginId, page = 1, pageSize = 20 } = params;
+
+    // Company market MCP/skills: resolve local agents that pin this identifier.
+    if (pluginId.startsWith('company.')) {
+      try {
+        const { getServerDB } = await import('@/database/core/db-adaptor');
+        const { agents, users } = await import('@/database/schemas');
+        const { and, desc, eq, sql } = await import('drizzle-orm');
+        const db = await getServerDB();
+        const offset = (Math.max(page, 1) - 1) * pageSize;
+
+        // plugins jsonb may be string ids or {identifier, mode} objects
+        const pinCondition = sql`(
+          EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(${agents.plugins}, '[]'::jsonb)) AS e
+            WHERE COALESCE(e->>'identifier', e #>> '{}') = ${pluginId}
+          )
+        )`;
+
+        const [rows, countRows] = await Promise.all([
+          db
+            .select({
+              avatar: agents.avatar,
+              createdAt: agents.createdAt,
+              description: agents.description,
+              id: agents.id,
+              slug: agents.slug,
+              title: agents.title,
+              username: users.username,
+            })
+            .from(agents)
+            .leftJoin(users, eq(agents.userId, users.id))
+            .where(and(pinCondition, eq(agents.slug, 'inbox')))
+            .orderBy(desc(agents.updatedAt))
+            .limit(pageSize)
+            .offset(offset),
+          db
+            .select({ total: sql<number>`count(*)` })
+            .from(agents)
+            .where(and(pinCondition, eq(agents.slug, 'inbox'))),
+        ]);
+
+        const totalCount = Number(countRows[0]?.total || 0);
+        const items: DiscoverAssistantItem[] = rows.map((row) => ({
+          author: row.username || 'User',
+          avatar: row.avatar || '',
+          category: undefined,
+          config: {} as any,
+          createdAt: row.createdAt?.toISOString?.() || new Date().toISOString(),
+          description: row.description || '',
+          homepage: `/agent/${row.id}`,
+          identifier: row.id,
+          installCount: 0,
+          knowledgeCount: 0,
+          pluginCount: 0,
+          schemaVersion: 1,
+          tags: [],
+          title: row.title || row.username || row.id,
+          tokenUsage: 0,
+          userName: row.username || undefined,
+        }));
+
+        return {
+          currentPage: page,
+          items,
+          pageSize,
+          totalCount,
+          totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+        };
+      } catch (error) {
+        log('getAgentsByPlugin local company lookup failed: %O', error);
+        return {
+          currentPage: page,
+          items: [],
+          pageSize,
+          totalCount: 0,
+          totalPages: 0,
+        };
+      }
+    }
 
     try {
+      const locale = normalizeLocale(params.locale);
       const data = await this.market.agents.getAgentsByPlugin({
-        locale: normalizedLocale,
+        locale,
         page,
         pageSize,
         pluginId,
       });
 
-      // Transform to DiscoverAssistantItem format
       const items: DiscoverAssistantItem[] = (data.items || []).map((item: any) => {
         const normalizedAuthor = this.normalizeAuthorField(item.author);
         return {
@@ -974,21 +1080,13 @@ export class DiscoverService {
         };
       });
 
-      const result: AssistantListResponse = {
+      return {
         currentPage: data.currentPage || page,
         items,
         pageSize: data.pageSize || pageSize,
         totalCount: data.totalCount || 0,
         totalPages: data.totalPages || 0,
       };
-
-      log(
-        'getAgentsByPlugin: returning page %d/%d with %d items',
-        result.currentPage,
-        result.totalPages,
-        result.items.length,
-      );
-      return result;
     } catch (error) {
       log('getAgentsByPlugin: error fetching from market SDK: %O', error);
       return {

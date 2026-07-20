@@ -29,6 +29,8 @@ interface KVCredFormProps {
   disabled?: boolean;
   onBack: () => void;
   onSuccess: () => void;
+  /** personal (default) | company — company requires admin/owner server-side */
+  scope?: 'personal' | 'company';
   type: 'kv-env' | 'kv-header';
 }
 
@@ -39,7 +41,14 @@ interface FormValues {
   name: string;
 }
 
-const KVCredForm: FC<KVCredFormProps> = ({ credsApi, type, disabled, onBack, onSuccess }) => {
+const KVCredForm: FC<KVCredFormProps> = ({
+  credsApi,
+  type,
+  disabled,
+  onBack,
+  onSuccess,
+  scope = 'personal',
+}) => {
   const { t } = useTranslation('setting');
   const [form] = Form.useForm<FormValues>();
 
@@ -62,6 +71,7 @@ const KVCredForm: FC<KVCredFormProps> = ({ credsApi, type, disabled, onBack, onS
         description: values.description,
         key: values.key,
         name: values.name,
+        scope,
         type,
         values: valuesObj,
       });

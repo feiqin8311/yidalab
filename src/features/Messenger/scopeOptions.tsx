@@ -36,13 +36,13 @@ export const messengerScopeSelectClassNames = { value: styles.scopeValue };
 
 interface ResolvePersonalScopeLabelParams {
   fallbackLabel: string;
-  fullName?: string | null;
+  username?: string | null;
 }
 
 export const resolvePersonalScopeLabel = ({
   fallbackLabel,
-  fullName,
-}: ResolvePersonalScopeLabelParams): string => fullName?.trim() || fallbackLabel;
+  username,
+}: ResolvePersonalScopeLabelParams): string => username?.trim() || fallbackLabel;
 
 interface ScopeWorkspace {
   avatar?: string | null;

@@ -1,8 +1,4 @@
-import type {
-  LobeAgentAgencyConfig,
-  LobeAgentChatConfig,
-  LobeAgentConfig,
-} from '@lobechat/types';
+import type { LobeAgentAgencyConfig, LobeAgentChatConfig, LobeAgentConfig } from '@lobechat/types';
 
 import type { GroupSupervisorContext } from './agents/group-supervisor/type';
 
@@ -59,6 +55,9 @@ export interface BuiltinAgentRuntimeResult {
  * Runtime Context - context passed to runtime function
  */
 export interface RuntimeContext {
+  /** Display name for the agent (e.g. inbox title / username) */
+  agentDisplayName?: string;
+
   /** Document content for PageAgent */
   documentContent?: string;
 
@@ -87,8 +86,7 @@ export interface RuntimeContext {
  * - Object: BuiltinAgentRuntimeResult (static config)
  */
 export type BuiltinAgentRuntimeConfig =
-  | ((ctx: RuntimeContext) => BuiltinAgentRuntimeResult)
-  | BuiltinAgentRuntimeResult;
+  ((ctx: RuntimeContext) => BuiltinAgentRuntimeResult) | BuiltinAgentRuntimeResult;
 
 /**
  * Builtin Agent Definition - complete definition with persist and runtime parts

@@ -22,10 +22,19 @@ interface SignUpErrorLike {
   details?: {
     cause?: {
       code?: string;
+      constraint?: string;
     };
   };
   message?: string;
 }
+
+const isUniqueViolation = (error: SignUpErrorLike) =>
+  error.code === 'FAILED_TO_CREATE_USER' && error.details?.cause?.code === '23505';
+
+const isUsernameDuplicate = (error: SignUpErrorLike) =>
+  isUniqueViolation(error) &&
+  (error.details?.cause?.constraint === 'users_username_unique' ||
+    JSON.stringify(error).toLowerCase().includes('username'));
 
 export const useSignUp = () => {
   const { t } = useTranslation(['auth', 'authError']);
@@ -56,16 +65,18 @@ export const useSignUp = () => {
       // New users always go through onboarding first; the original target is
       // threaded via the `callbackUrl` query param and restored on finish.
       const redirectUrl = buildOnboardingRedirectUrl(callbackUrl);
-      const username = values.email.split('@')[0];
+      const email = values.email.trim().toLowerCase();
+      const username = values.username.trim();
       const fetchOptions = await getFetchOptions();
 
       const submit = async (nextFetchOptions?: AuthFetchOptions) =>
         signUp.email({
           callbackURL: redirectUrl,
-          email: values.email,
+          email,
           fetchOptions: nextFetchOptions,
           name: username,
           password: values.password,
+          username,
         });
 
       let { error } = await submit(fetchOptions);
@@ -81,8 +92,12 @@ export const useSignUp = () => {
       if (error) {
         const signUpError = error as SignUpErrorLike;
         const isEmailDuplicate =
-          signUpError.code === 'FAILED_TO_CREATE_USER' &&
-          signUpError.details?.cause?.code === '23505';
+          isUniqueViolation(signUpError) && !isUsernameDuplicate(signUpError);
+
+        if (isUsernameDuplicate(signUpError)) {
+          message.error(t('betterAuth.errors.usernameExists'));
+          return;
+        }
 
         if (isEmailDuplicate) {
           message.error(t('betterAuth.errors.emailExists'));
@@ -103,7 +118,7 @@ export const useSignUp = () => {
 
       if (enableEmailVerification) {
         navigate(
-          `/verify-email?email=${encodeURIComponent(values.email)}&callbackUrl=${encodeURIComponent(redirectUrl)}`,
+          `/verify-email?email=${encodeURIComponent(email)}&callbackUrl=${encodeURIComponent(redirectUrl)}`,
         );
       } else {
         // onboarding lives in the main app, outside this auth SPA — full page load required

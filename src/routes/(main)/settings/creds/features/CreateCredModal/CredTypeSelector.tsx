@@ -4,7 +4,7 @@ import { type CredType } from '@lobechat/types';
 import { Flexbox } from '@lobehub/ui';
 import { Card } from 'antd';
 import { createStaticStyles } from 'antd-style';
-import { File, Globe, Key, TerminalSquare } from 'lucide-react';
+import { Globe, TerminalSquare } from 'lucide-react';
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -68,16 +68,6 @@ const typeConfigs: Array<{
     description: 'creds.typeDesc.kv-header',
     icon: <Globe size={24} />,
     type: 'kv-header',
-  },
-  {
-    description: 'creds.typeDesc.oauth',
-    icon: <Key size={24} />,
-    type: 'oauth',
-  },
-  {
-    description: 'creds.typeDesc.file',
-    icon: <File size={24} />,
-    type: 'file',
   },
 ];
 

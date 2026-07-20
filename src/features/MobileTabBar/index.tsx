@@ -8,7 +8,11 @@ import { useTranslation } from 'react-i18next';
 
 import { useRouter } from '@/libs/router/navigation';
 import { SidebarTabKey } from '@/store/global/initialState';
-import { featureFlagsSelectors, useServerConfigStore } from '@/store/serverConfig';
+import {
+  featureFlagsSelectors,
+  serverConfigSelectors,
+  useServerConfigStore,
+} from '@/store/serverConfig';
 
 const styles = createStaticStyles(({ css }) => ({
   active: css`
@@ -26,10 +30,8 @@ interface Props {
 export default memo<Props>(({ className, tabBarKey }) => {
   const { t } = useTranslation('common');
   const router = useRouter();
-  const openSettings = () => {
-    router.push('/settings/provider/all');
-  };
   const { showMarket } = useServerConfigStore(featureFlagsSelectors);
+  const hidePersonalSettings = useServerConfigStore(serverConfigSelectors.hidePersonalSettings);
 
   const items: TabBarProps['items'] = useMemo(
     () =>
@@ -54,16 +56,19 @@ export default memo<Props>(({ className, tabBarKey }) => {
           },
           title: t('tab.community'),
         },
-        {
+        // The Setting tab is hidden once the workspace-only settings rollout
+        // lands — every entry that used to live under `/settings` is reachable
+        // from the workspace settings sidebar instead.
+        !hidePersonalSettings && {
           icon: (active: boolean) => (
             <Icon className={active ? styles.active : undefined} icon={User} />
           ),
           key: SidebarTabKey.Setting,
-          onClick: openSettings,
+          onClick: () => router.push('/settings/provider/all'),
           title: t('tab.setting'),
         },
       ].filter(Boolean) as TabBarProps['items'],
-    [t],
+    [t, hidePersonalSettings, router, showMarket],
   );
 
   return <TabBar safeArea activeKey={tabBarKey} className={className} items={items} />;

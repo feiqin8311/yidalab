@@ -11,8 +11,7 @@ const userState = {
   user: {
     avatar: 'user-avatar',
     email: 'demo@example.com',
-    fullName: 'Demo Name',
-    username: 'demo-user',
+    username: 'Demo Name',
   },
 };
 

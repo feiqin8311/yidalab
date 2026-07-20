@@ -36,46 +36,52 @@ declare global {
       AUTH_COGNITO_SECRET?: string;
 
       AUTH_COGNITO_USERPOOL_ID?: string;
-      AUTH_DISABLE_EMAIL_PASSWORD?: string;
-      AUTH_EMAIL_VERIFICATION?: string;
+      /** DingTalk workbench free-login (免登) */
+      AUTH_DINGTALK_AGENT_ID?: string;
+      AUTH_DINGTALK_APP_KEY?: string;
 
+      AUTH_DINGTALK_APP_SECRET?: string;
+      AUTH_DINGTALK_CORP_ID?: string;
+      AUTH_DISABLE_EMAIL_PASSWORD?: string;
+
+      AUTH_EMAIL_VERIFICATION?: string;
       AUTH_ENABLE_MAGIC_LINK?: string;
       AUTH_FEISHU_APP_ID?: string;
-      AUTH_FEISHU_APP_SECRET?: string;
 
+      AUTH_FEISHU_APP_SECRET?: string;
       AUTH_GENERIC_OIDC_ID?: string;
       AUTH_GENERIC_OIDC_ISSUER?: string;
-      AUTH_GENERIC_OIDC_SECRET?: string;
 
+      AUTH_GENERIC_OIDC_SECRET?: string;
       AUTH_GITHUB_ID?: string;
       AUTH_GITHUB_SECRET?: string;
+
       // ===== Auth Provider Credentials ===== //
       AUTH_GOOGLE_ID?: string;
-
       AUTH_GOOGLE_SECRET?: string;
+
       AUTH_KEYCLOAK_ID?: string;
       AUTH_KEYCLOAK_ISSUER?: string;
-
       AUTH_KEYCLOAK_SECRET?: string;
-      AUTH_LOGTO_ID?: string;
 
+      AUTH_LOGTO_ID?: string;
       AUTH_LOGTO_ISSUER?: string;
       AUTH_LOGTO_SECRET?: string;
-      AUTH_MICROSOFT_AUTHORITY_URL?: string;
 
+      AUTH_MICROSOFT_AUTHORITY_URL?: string;
       AUTH_MICROSOFT_ID?: string;
       AUTH_MICROSOFT_SECRET?: string;
-      AUTH_MICROSOFT_TENANT_ID?: string;
 
+      AUTH_MICROSOFT_TENANT_ID?: string;
       AUTH_OKTA_ID?: string;
       AUTH_OKTA_ISSUER?: string;
-      AUTH_OKTA_SECRET?: string;
 
+      AUTH_OKTA_SECRET?: string;
       // ===== Better Auth ===== //
       AUTH_SECRET?: string;
+
       AUTH_SSO_PROVIDERS?: string;
       AUTH_TRUSTED_ORIGINS?: string;
-
       AUTH_WECHAT_ID?: string;
       AUTH_WECHAT_SECRET?: string;
 
@@ -181,6 +187,11 @@ export const getAuthConfig = () => {
       AUTH_WECHAT_ID: z.string().optional(),
       AUTH_WECHAT_SECRET: z.string().optional(),
 
+      AUTH_DINGTALK_AGENT_ID: z.string().optional(),
+      AUTH_DINGTALK_APP_KEY: z.string().optional(),
+      AUTH_DINGTALK_APP_SECRET: z.string().optional(),
+      AUTH_DINGTALK_CORP_ID: z.string().optional(),
+
       AUTH_ZITADEL_ID: z.string().optional(),
       AUTH_ZITADEL_SECRET: z.string().optional(),
       AUTH_ZITADEL_ISSUER: z.string().optional(),
@@ -273,6 +284,11 @@ export const getAuthConfig = () => {
 
       AUTH_WECHAT_ID: process.env.AUTH_WECHAT_ID,
       AUTH_WECHAT_SECRET: process.env.AUTH_WECHAT_SECRET,
+
+      AUTH_DINGTALK_AGENT_ID: process.env.AUTH_DINGTALK_AGENT_ID,
+      AUTH_DINGTALK_APP_KEY: process.env.AUTH_DINGTALK_APP_KEY,
+      AUTH_DINGTALK_APP_SECRET: process.env.AUTH_DINGTALK_APP_SECRET,
+      AUTH_DINGTALK_CORP_ID: process.env.AUTH_DINGTALK_CORP_ID,
 
       AUTH_ZITADEL_ID: process.env.AUTH_ZITADEL_ID,
       AUTH_ZITADEL_SECRET: process.env.AUTH_ZITADEL_SECRET,

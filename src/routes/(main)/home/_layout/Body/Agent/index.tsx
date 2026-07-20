@@ -30,10 +30,9 @@ const Agent = memo<AgentProps>(({ itemKey }) => {
 
   const { openConfigGroupModal } = useAgentModal();
 
-  // Create menu items
-  const { createTopLevelMenuItems, isLoading } = useCreateMenuItems();
-
-  const addMenuItems = useMemo(() => createTopLevelMenuItems(), [createTopLevelMenuItems]);
+  // Temporary product hold: agent creation is disabled for YidaLab.
+  const { isLoading } = useCreateMenuItems();
+  const addMenuItems = useMemo(() => [], []);
 
   const handleOpenConfigGroupModal = useCallback(() => {
     openConfigGroupModal();

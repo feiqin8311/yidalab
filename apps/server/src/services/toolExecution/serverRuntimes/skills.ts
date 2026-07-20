@@ -28,6 +28,7 @@ import { AgentSkillModel } from '@/database/models/agentSkill';
 import { FileModel } from '@/database/models/file';
 import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
+import { isCloudSandboxExecutionEnabled } from '@/helpers/executionTarget';
 import { filterBuiltinSkills } from '@/helpers/skillFilters';
 import { AgentDocumentsService } from '@/server/services/agentDocuments';
 import { deviceGateway } from '@/server/services/deviceGateway';
@@ -39,6 +40,11 @@ import { preprocessLhCommand } from '@/server/services/toolExecution/preprocessL
 
 import { resolveRunWorkspaceId } from './resolveWorkspaceScope';
 import { type ServerRuntimeRegistration } from './types';
+
+const SANDBOX_DISABLED_STDERR =
+  'Cloud sandbox is disabled in this deployment. Do not write under /home/user. ' +
+  'For interactive HTML reports use Artifacts (<lobeArtifact>). ' +
+  'For shell work, select an online execution device first.';
 
 const log = debug('lobe-server:skills-runtime');
 
@@ -188,6 +194,15 @@ class SkillServerRuntimeService implements SkillRuntimeService {
         output: '',
         stderr:
           'runCommand targets the cloud sandbox and is unavailable while a local device is routed. Use execScript for skill scripts, or lobe-local-system runCommand for other shell commands on the device.',
+        success: false,
+      };
+    }
+
+    if (!isCloudSandboxExecutionEnabled()) {
+      return {
+        exitCode: 1,
+        output: '',
+        stderr: SANDBOX_DISABLED_STDERR,
         success: false,
       };
     }
@@ -501,6 +516,15 @@ class SkillServerRuntimeService implements SkillRuntimeService {
   ): Promise<CommandResult> => {
     const { activatedSkills, description } = options;
 
+    if (!isCloudSandboxExecutionEnabled()) {
+      return {
+        exitCode: 1,
+        output: '',
+        stderr: SANDBOX_DISABLED_STDERR,
+        success: false,
+      };
+    }
+
     if (!this.topicId) {
       throw new Error('topicId is required for execScript');
     }
@@ -556,6 +580,9 @@ class SkillServerRuntimeService implements SkillRuntimeService {
   };
 
   exportFile = async (path: string, filename: string): Promise<ExportFileResult> => {
+    if (!this.device && !isCloudSandboxExecutionEnabled()) {
+      throw new Error(SANDBOX_DISABLED_STDERR);
+    }
     // Same manifest-hidden guard as `runCommand`: the message reaches the
     // model through the ExecutionRuntime catch ("Failed to export file: ...").
     if (this.device) {

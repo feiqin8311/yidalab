@@ -1,7 +1,7 @@
 'use client';
 
 import { useLayoutEffect } from 'react';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { useIsWorkspaceLoading } from '@/business/client/hooks/useIsWorkspaceLoading';
@@ -21,6 +21,7 @@ const RESERVED_FIRST_SEGMENTS = new Set([
   'agent',
   'group',
   'community',
+  'company',
   'memory',
   'page',
   'resource',
@@ -38,6 +39,25 @@ const RESERVED_FIRST_SEGMENTS = new Set([
   'desktop-onboarding',
 ]);
 
+/**
+ * Main product surfaces that must live under `/{companySlug}/...` when the
+ * user belongs to a company. Personal-only routes (settings, invite, share…)
+ * stay unprefixed so they keep working outside workspace scope.
+ */
+const COMPANY_SCOPED_FIRST_SEGMENTS = new Set([
+  'agent',
+  'group',
+  'community',
+  'memory',
+  'page',
+  'resource',
+  'image',
+  'video',
+  'eval',
+  'tasks',
+  'task',
+]);
+
 const FIRST_SEGMENT_REGEX = /^\/([^/?#]+)/;
 
 const parseFirstSegment = (pathname: string): string | null => {
@@ -50,33 +70,40 @@ const parseFirstSegment = (pathname: string): string | null => {
  * slug — i.e. it's present and not one of the reserved root segments.
  *
  * Top-level rendering only needs to block on the workspace list (to avoid a
- * false 404 / wrong-scope paint) when this is `true`. On personal / reserved
- * routes (`/`, `/agent/...`, `/settings/...`) the list isn't required to render,
- * so callers can show personal context immediately and let the list hydrate in
- * the background.
+ * false 404 / wrong-scope paint) when this is `true`. On reserved routes
+ * (`/`, `/agent/...`, `/settings/...`) the list isn't required to render, so
+ * callers can paint the page while the current company hydrates in the background.
  */
 export const isWorkspaceSlugCandidatePath = (pathname: string): boolean => {
   const first = parseFirstSegment(pathname);
   return !!first && !RESERVED_FIRST_SEGMENTS.has(first);
 };
 
+const shouldPrefixWithCompanySlug = (pathname: string, first: string | null) => {
+  if (!first) return true; // `/`
+  return COMPANY_SCOPED_FIRST_SEGMENTS.has(first);
+};
+
 /**
  * URL is the source of truth for workspace context.
  *
  * - `/{slug}/...` where `slug` is a known workspace → activate that workspace
- * - `/` or `/agent/...` / `/settings/...` etc. (or any non-slug surface) → personal
+ * - With a company: bare main surfaces (`/`, `/agent/...`) redirect to
+ *   `/{companySlug}/...` so inbox/builtin agents always resolve in company scope
+ * - `/settings/...` etc. stay unprefixed but still activate the company for API headers
  * - `/{unknown}/...` (slug not in workspaces) → leave store alone so
  *   `WorkspaceSlugBoundary` can render its 404
  */
 export const useWorkspaceUrlSync = (): void => {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const workspaces = useWorkspaces();
   const activeId = useActiveWorkspaceId();
   const isLoading = useIsWorkspaceLoading();
   // URL is a passive source, not an explicit user intent — use the silent
   // variant so refreshing or following a `/{slug}` link is not treated as
   // a user-driven switch.
-  const { switchWorkspace, switchToPersonal } = useSilentSwitchWorkspace();
+  const { switchWorkspace } = useSilentSwitchWorkspace();
 
   // `useLayoutEffect` (not `useEffect`) so the workspace switch is scheduled
   // before the browser paints. With `useEffect` there is one paintable frame
@@ -102,7 +129,17 @@ export const useWorkspaceUrlSync = (): void => {
       return;
     }
 
-    // URL has no workspace slug → personal context.
-    if (activeId !== null) void switchToPersonal();
-  }, [pathname, workspaces, isLoading, activeId, switchWorkspace, switchToPersonal]);
+    const defaultWorkspace = workspaces[0];
+    if (!defaultWorkspace) return;
+
+    if (activeId !== defaultWorkspace.id) void switchWorkspace(defaultWorkspace.id);
+
+    // Company-first: keep chat/home surfaces under the company slug so the
+    // inbox agent is always the workspace-scoped one, not the personal copy.
+    if (shouldPrefixWithCompanySlug(pathname, first)) {
+      const suffix = pathname === '/' ? '' : pathname;
+      const target = `/${defaultWorkspace.slug}${suffix}`;
+      if (pathname !== target) navigate(target, { replace: true });
+    }
+  }, [pathname, workspaces, isLoading, activeId, switchWorkspace, navigate]);
 };

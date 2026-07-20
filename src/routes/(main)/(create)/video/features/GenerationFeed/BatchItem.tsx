@@ -59,7 +59,7 @@ export const VideoGenerationBatchItem = memo<VideoGenerationBatchItemProps>(({ b
 
   const creator = batch.creator;
   const showCreator = Boolean(activeWorkspaceId && creator?.id);
-  const creatorName = creator?.fullName || creator?.username || '';
+  const creatorName = creator?.username || creator?.username || '';
 
   const time = useMemo(() => {
     return dayjs(batch.createdAt).format('YYYY-MM-DD HH:mm:ss');

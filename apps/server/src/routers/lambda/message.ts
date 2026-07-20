@@ -29,12 +29,18 @@ const { logTiming, runTimedStage } = createTimingHelpers('lobe-server:chat:lobeh
 const messageProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
   const wsId = ctx.workspaceId ?? undefined;
+  const role = (ctx as { company?: { role?: string } }).company?.role;
+  const canViewWorkspaceStats = role === 'owner' || role === 'admin';
 
   return opts.next({
     ctx: {
       compressionRepo: new CompressionRepository(ctx.serverDB, ctx.userId, wsId),
       fileService: new FileService(ctx.serverDB, ctx.userId, wsId),
-      messageModel: new MessageModel(ctx.serverDB, ctx.userId, wsId),
+      // Stats heatmaps/ranks self-restrict for ordinary members; chat list
+      // ownership is unchanged (still full workspace via ownership()).
+      messageModel: new MessageModel(ctx.serverDB, ctx.userId, wsId, {
+        analyticsSelfOnly: !!wsId && !canViewWorkspaceStats,
+      }),
       messageService: new MessageService(ctx.serverDB, ctx.userId, wsId),
     },
   });

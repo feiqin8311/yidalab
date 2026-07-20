@@ -72,7 +72,7 @@ const SaveUserQuestion = memo<BuiltinRenderProps<SaveUserQuestionInput, unknown,
 
     const agentName = args?.agentName?.trim();
     const agentEmoji = args?.agentEmoji?.trim();
-    const fullName = args?.fullName?.trim();
+    const username = args?.username?.trim();
     const interestLabels = useMemo(() => {
       const predefined = (args?.interests ?? []).map((key) =>
         tOnboarding(`interests.area.${key as InterestAreaKey}`),
@@ -84,7 +84,7 @@ const SaveUserQuestion = memo<BuiltinRenderProps<SaveUserQuestionInput, unknown,
     }, [args?.interests, args?.customInterests, tOnboarding]);
 
     const hasAgentIdentity = Boolean(agentName || agentEmoji);
-    const hasUserProfile = Boolean(fullName);
+    const hasUserProfile = Boolean(username);
     const hasInterests = interestLabels.length > 0;
 
     if (!hasAgentIdentity && !hasUserProfile && !hasInterests) return null;
@@ -108,10 +108,10 @@ const SaveUserQuestion = memo<BuiltinRenderProps<SaveUserQuestionInput, unknown,
         {hasUserProfile && (
           <Flexbox gap={8}>
             <Text className={styles.sectionLabel}>
-              {t('builtins.lobe-web-onboarding.render.fullName')}
+              {t('builtins.lobe-web-onboarding.render.username')}
             </Text>
             <div className={styles.detailCard}>
-              <div className={styles.value}>{fullName}</div>
+              <div className={styles.value}>{username}</div>
             </div>
           </Flexbox>
         )}

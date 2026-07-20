@@ -19,7 +19,7 @@ export default defineFixtures({
       args: {
         agentEmoji: '🧪',
         agentName: 'Devtools Tester',
-        fullName: 'Arvin',
+        username: 'arvin',
         interests: ['observability', 'dev-tools', 'agent-runtime'],
       },
     }),

@@ -2,6 +2,75 @@ import type { BuiltinServerRuntimeOutput } from '@lobechat/types';
 
 import type { ActivatedToolInfo, ActivateSkillParams, ActivateToolsParams } from '../types';
 
+/** Same separator as ToolNameResolver / PLUGIN_SCHEMA_SEPARATOR (`identifier____apiName`). */
+const TOOL_NAME_SEPARATOR = '____';
+
+/**
+ * Models sometimes pass function-call form `tool____api` (or `tool____api____type`)
+ * into activateTools. Activation only knows tool identifiers — strip the rest.
+ */
+export function normalizeActivationIdentifier(id: string): string {
+  if (!id) return id;
+  const sep = id.indexOf(TOOL_NAME_SEPARATOR);
+  return sep === -1 ? id : id.slice(0, sep);
+}
+
+/** Normalize, drop empties, preserve order, dedupe. */
+export function normalizeActivationIdentifiers(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of ids) {
+    const id = normalizeActivationIdentifier(raw.trim());
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** One-line short desc for activation summaries (keeps token cost down). */
+export function summarizeApiDescription(description: string | undefined, maxLen = 80): string {
+  if (!description) return '';
+  const firstLine = description.split(/\r?\n/)[0].replaceAll(/\s+/g, ' ').trim();
+  if (!firstLine) return '';
+  if (firstLine.length <= maxLen) return firstLine;
+  return `${firstLine.slice(0, Math.max(0, maxLen - 1))}…`;
+}
+
+function isCompanyMcpIdentifier(identifier: string): boolean {
+  return identifier.startsWith('company.mcp.');
+}
+
+function formatActivatedToolContent(manifest: ToolManifestInfo): string {
+  const header = `\n## ${manifest.name} (${manifest.identifier})`;
+
+  // Company MCP manifests ship very long API docs / systemRole; activation only
+  // needs names + a short hint. Full request schemas are injected as native tools next turn.
+  if (isCompanyMcpIdentifier(manifest.identifier)) {
+    const lines = [
+      header,
+      'Tool activated. Full request schemas are available as native function calls — use APIs by name:',
+    ];
+    for (const api of manifest.apiDescriptions) {
+      const short = summarizeApiDescription(api.description);
+      lines.push(short ? `- **${api.name}**: ${short}` : `- **${api.name}**`);
+    }
+    return lines.join('\n');
+  }
+
+  const parts = [header];
+  if (manifest.systemRole) {
+    parts.push(manifest.systemRole);
+  }
+  if (manifest.apiDescriptions.length > 0) {
+    parts.push('\nAvailable APIs:');
+    for (const api of manifest.apiDescriptions) {
+      parts.push(`- **${api.name}**: ${api.description}`);
+    }
+  }
+  return parts.join('\n');
+}
+
 export interface ToolManifestInfo {
   apiDescriptions: Array<{ description: string; name: string }>;
   avatar?: string;
@@ -50,11 +119,13 @@ export class ActivatorExecutionRuntime {
     }
 
     try {
+      // Accept `tool____api` typos from the model as tool-level identifiers.
+      const normalizedIds = normalizeActivationIdentifiers(identifiers);
       const alreadyActive = this.service.getActivatedToolIds();
       const toActivate: string[] = [];
       const alreadyActiveList: string[] = [];
 
-      for (const id of identifiers) {
+      for (const id of normalizedIds) {
         if (alreadyActive.includes(id)) {
           alreadyActiveList.push(id);
         } else {
@@ -107,16 +178,7 @@ export class ActivatorExecutionRuntime {
       if (activatedTools.length > 0) {
         parts.push('Successfully activated tools:');
         for (const manifest of manifests) {
-          parts.push(`\n## ${manifest.name} (${manifest.identifier})`);
-          if (manifest.systemRole) {
-            parts.push(manifest.systemRole);
-          }
-          if (manifest.apiDescriptions.length > 0) {
-            parts.push('\nAvailable APIs:');
-            for (const api of manifest.apiDescriptions) {
-              parts.push(`- **${api.name}**: ${api.description}`);
-            }
-          }
+          parts.push(formatActivatedToolContent(manifest));
         }
       }
 

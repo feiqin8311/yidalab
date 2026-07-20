@@ -15,14 +15,7 @@ import {
 import { Alert, Input, Steps, Tag, Typography } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { t as i18nT } from 'i18next';
-import {
-  BotIcon,
-  CheckCircle2,
-  Download,
-  MonitorSmartphone,
-  RefreshCw,
-  XCircle,
-} from 'lucide-react';
+import { BotIcon, CheckCircle2, MonitorSmartphone, RefreshCw, XCircle } from 'lucide-react';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -392,18 +385,6 @@ const CreatePlatformAgentContent = memo<CreatePlatformAgentContentProps>(
                 type="info"
                 description={
                   <Flexbox gap={12}>
-                    <Flexbox gap={6}>
-                      <span>{t('platformAgent.create.noDevicesDesktopHint')}</span>
-                      <a href="https://lobehub.com/downloads" rel="noreferrer" target="_blank">
-                        <Button
-                          icon={<Icon icon={Download} size={13} />}
-                          size="small"
-                          type="primary"
-                        >
-                          {t('platformAgent.create.downloadDesktop')}
-                        </Button>
-                      </a>
-                    </Flexbox>
                     <Flexbox gap={4}>
                       <span>{t('platformAgent.create.noDevicesCliHint')}</span>
                       <Typography.Text code copyable>

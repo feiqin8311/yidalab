@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { message } from '@/components/AntdStaticMethods';
 import { useFileStore } from '@/store/file';
 
 import type { UploadData } from './UploadCard';
@@ -75,6 +77,7 @@ export const useReferenceImageUpload = ({
   onFirstDimensions,
   onLimitExceeded,
 }: UseReferenceImageUploadOptions) => {
+  const { t } = useTranslation(['error', 'components']);
   const uploadWithProgress = useFileStore((s) => s.uploadWithProgress);
 
   const maxCount = useMemo(() => slots.reduce((sum, slot) => sum + slot.capacity, 0), [slots]);
@@ -106,7 +109,12 @@ export const useReferenceImageUpload = ({
       const uploadableFiles = maxFileSize
         ? imageFiles.filter((file) => file.size <= maxFileSize)
         : imageFiles;
-      if (uploadableFiles.length === 0) return;
+      if (uploadableFiles.length === 0) {
+        if (maxFileSize) {
+          message.warning(t('components:MultiImagesUpload.validation.fileSizeExceeded'));
+        }
+        return;
+      }
 
       // Account for both landed images and any in-flight uploads.
       const remaining = maxCount - imagePreviewUrls.length - uploadingPreviews.length;
@@ -145,6 +153,10 @@ export const useReferenceImageUpload = ({
         const results = settled.map((outcome) =>
           outcome.status === 'fulfilled' ? outcome.value : null,
         );
+        const failedCount = settled.filter(
+          (outcome, index) =>
+            outcome.status === 'rejected' || (outcome.status === 'fulfilled' && !results[index]),
+        ).length;
 
         // Collect successful URLs and the first available dimensions.
         const uploadedUrls: string[] = [];
@@ -155,6 +167,12 @@ export const useReferenceImageUpload = ({
           if (!url) continue;
           if (!firstDimensions && dimensions) firstDimensions = dimensions;
           uploadedUrls.push(url);
+        }
+
+        if (failedCount > 0 && uploadedUrls.length === 0) {
+          message.error(t('error:upload.uploadFailed'));
+        } else if (failedCount > 0) {
+          message.warning(t('error:upload.uploadFailed'));
         }
 
         if (firstDimensions) onFirstDimensions?.(firstDimensions);
@@ -191,6 +209,7 @@ export const useReferenceImageUpload = ({
       removeUploadingPreviews,
       onFirstDimensions,
       onLimitExceeded,
+      t,
     ],
   );
 

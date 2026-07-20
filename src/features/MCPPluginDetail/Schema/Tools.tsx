@@ -6,6 +6,8 @@ import { useTranslation } from 'react-i18next';
 
 import InlineTable from '@/components/InlineTable';
 import Title from '@/routes/(main)/community/features/Title';
+import { useToolStore } from '@/store/tool';
+import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
 import { markdownToTxt } from '@/utils/markdownToTxt';
 
 import CollapseDesc from '../CollapseDesc';
@@ -22,9 +24,22 @@ interface ToolsProps {
 
 const Tools = memo<ToolsProps>(({ mode, activeKey = [], setActiveKey }) => {
   const { t } = useTranslation(['discover', 'plugin']);
-  const { tools } = useDetailContext();
+  const { tools, identifier } = useDetailContext();
+  // Market detail may lag; fall back to installed plugin manifest.api
+  const installedApi = useToolStore((s) => {
+    if (!identifier) return undefined;
+    return pluginSelectors.getToolManifestById(identifier)(s)?.api;
+  });
+  const resolvedTools =
+    tools && tools.length > 0
+      ? tools
+      : (installedApi || []).map((api) => ({
+          description: api.description,
+          inputSchema: api.parameters,
+          name: api.name,
+        }));
 
-  if (!tools)
+  if (!resolvedTools || resolvedTools.length === 0)
     return (
       <Block variant={'outlined'}>
         <Empty
@@ -42,7 +57,7 @@ const Tools = memo<ToolsProps>(({ mode, activeKey = [], setActiveKey }) => {
       expandIconPlacement={'end'}
       gap={8}
       variant={'outlined'}
-      items={tools.map((item) => {
+      items={resolvedTools.map((item) => {
         let properties: {
           description?: string;
           name: string;

@@ -480,9 +480,12 @@ export const knowledgeBaseKeys = {
   item: def('knowledgeBase:item', (id: string) => ['knowledgeBase:item', id]),
   list: def(
     'knowledgeBase:list',
-    (workspaceId?: string | null, visibility?: 'private' | 'public') => {
+    (
+      workspaceId?: string | null,
+      filter?: 'private' | 'public' | 'mine' | 'shared_with_me' | 'workspace' | 'admin_all',
+    ) => {
       const base = workspaceId ? ['knowledgeBase:list', workspaceId] : ['knowledgeBase:list'];
-      return visibility ? [...base, visibility] : base;
+      return filter ? [...base, filter] : base;
     },
   ),
 };
@@ -680,6 +683,11 @@ export const statsKeys = {
   topics: def('stats:topics', () => ['stats:topics']),
   usageLogs: def('stats:usageLogs', () => ['stats:usageLogs']),
   usageStat: def('stats:usageStat', () => ['stats:usageStat']),
+  toolUsageStat: def('stats:toolUsageStat', (startAt: string, endAt: string) => [
+    'stats:toolUsageStat',
+    startAt,
+    endAt,
+  ]),
   welcome: def('stats:welcome', () => ['stats:welcome']),
 };
 

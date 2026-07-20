@@ -11,7 +11,7 @@ const mockLambdaClient = vi.hoisted(() => ({
     getUserSSOProviders: { query: vi.fn() },
     makeUserOnboarded: { mutate: vi.fn() },
     updateAvatar: { mutate: vi.fn() },
-    updateFullName: { mutate: vi.fn() },
+    updateProfile: { mutate: vi.fn() },
     updatePreference: { mutate: vi.fn() },
     updateGuide: { mutate: vi.fn() },
     updateSettings: { mutate: vi.fn() },
@@ -86,13 +86,14 @@ describe('UserService', () => {
     });
   });
 
-  describe('updateFullName', () => {
-    it('should call lambdaClient.user.updateFullName.mutate with fullName string', async () => {
-      mockLambdaClient.user.updateFullName.mutate.mockResolvedValueOnce({ success: true });
+  describe('updateProfile', () => {
+    it('should call lambdaClient.user.updateProfile.mutate with profile fields', async () => {
+      const profile = { company: 'YidaLab', position: 'Engineer' };
+      mockLambdaClient.user.updateProfile.mutate.mockResolvedValueOnce({ success: true });
 
-      await userService.updateFullName('John Doe');
+      await userService.updateProfile(profile);
 
-      expect(mockLambdaClient.user.updateFullName.mutate).toHaveBeenCalledWith('John Doe');
+      expect(mockLambdaClient.user.updateProfile.mutate).toHaveBeenCalledWith(profile);
     });
   });
 

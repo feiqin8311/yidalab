@@ -7,14 +7,14 @@ export const LobeActivatorManifest: BuiltinToolManifest = {
   api: [
     {
       description:
-        'Activate tools from the <available_tools> list so their full API schemas become available for use. Call this before using any tool that is not yet activated. You can activate multiple tools at once.',
+        'Activate tools from the <available_tools> list so their full API schemas become available for use. Call this before using any tool that is not yet activated. You can activate multiple tools at once. Pass tool identifiers only (e.g. lobe-web-browsing), not function-call forms (e.g. lobe-web-browsing____search).',
       humanIntervention: 'required',
       name: ActivatorApiName.activateTools,
       parameters: {
         properties: {
           identifiers: {
             description:
-              'Array of tool identifiers to activate. Use the identifiers from the <available_tools> list.',
+              'Array of tool identifiers from <available_tools> (e.g. "lobe-web-browsing", "company.mcp.sif-mcp"). Do not use API function names with ____ separators.',
             items: {
               type: 'string',
             },

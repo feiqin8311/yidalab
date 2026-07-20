@@ -959,24 +959,9 @@
       "count": 1
     }
   },
-  "src/routes/(main)/community/(detail)/model/features/Sidebar/ActionButton/ChatWithModel.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/(main)/community/(detail)/provider/features/Sidebar/ActionButton/ProviderConfig.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/routes/(main)/community/(detail)/skill/features/Header.tsx": {
     "no-restricted-imports": {
       "count": 1
-    }
-  },
-  "src/routes/(main)/community/(detail)/skill/features/Sidebar/Platform.tsx": {
-    "no-restricted-imports": {
-      "count": 2
     }
   },
   "src/routes/(main)/community/(detail)/user/features/Header/index.tsx": {
@@ -995,11 +980,6 @@
     }
   },
   "src/routes/(main)/community/(detail)/workspace/features/WorkspaceProfileModal/Content.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/(main)/community/(list)/(home)/features/CreatorRewardBanner.tsx": {
     "no-restricted-imports": {
       "count": 1
     }
@@ -1030,11 +1010,6 @@
     }
   },
   "src/routes/(main)/community/features/LikeButton.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/(main)/community/features/UserAvatar/index.tsx": {
     "no-restricted-imports": {
       "count": 1
     }
@@ -1204,11 +1179,6 @@
       "count": 1
     }
   },
-  "src/routes/(main)/settings/about/features/Version.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/routes/(main)/settings/agent/features/SystemAgentForm.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -1240,11 +1210,6 @@
     }
   },
   "src/routes/(main)/settings/creds/features/CredItem.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/routes/(main)/settings/creds/features/CredsList.tsx": {
     "no-restricted-imports": {
       "count": 1
     }
@@ -1364,11 +1329,6 @@
       "count": 1
     }
   },
-  "src/routes/onboarding/features/AgentPickerStep/index.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/routes/onboarding/features/FullNameStep.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -1392,11 +1352,6 @@
   "src/routes/onboarding/features/ResponseLanguageStep.tsx": {
     "no-restricted-imports": {
       "count": 2
-    }
-  },
-  "src/routes/onboarding/features/TelemetryStep.tsx": {
-    "no-restricted-imports": {
-      "count": 1
     }
   },
   "src/routes/share/t/[id]/features/ActionBar.tsx": {

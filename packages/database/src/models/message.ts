@@ -298,19 +298,43 @@ const computeTopicMessageStats = (counts: number[]): TopicMessageStats => {
   };
 };
 
+export type MessageModelOptions = {
+  /**
+   * When true with a workspace scope, analytics queries (heatmaps / ranks used
+   * by stats UI) are limited to the caller's own messages. Chat message APIs
+   * still use {@link ownership} so members keep normal conversation access.
+   */
+  analyticsSelfOnly?: boolean;
+};
+
 export class MessageModel {
   private userId: string;
   private db: LobeChatDatabase;
   private workspaceId?: string;
+  private analyticsSelfOnly: boolean;
 
-  constructor(db: LobeChatDatabase, userId: string, workspaceId?: string) {
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    workspaceId?: string,
+    options?: MessageModelOptions,
+  ) {
     this.userId = userId;
     this.db = db;
     this.workspaceId = workspaceId;
+    this.analyticsSelfOnly = !!options?.analyticsSelfOnly;
   }
 
   private ownership = () =>
     buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, messages);
+
+  /** Stats-only predicate: members may only aggregate their own workspace rows. */
+  private analyticsOwnership = () => {
+    if (this.analyticsSelfOnly && this.workspaceId) {
+      return and(eq(messages.workspaceId, this.workspaceId), eq(messages.userId, this.userId));
+    }
+    return this.ownership();
+  };
 
   private pluginsOwnership = () =>
     buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, messagePlugins);
@@ -529,9 +553,8 @@ export class MessageModel {
 
             sender: {
               avatar: users.avatar,
-              fullName: users.fullName,
-              id: users.id,
               username: users.username,
+              id: users.id,
             },
 
             tools: messages.tools,
@@ -1620,10 +1643,11 @@ export class MessageModel {
   /**
    * Ownership-scoped analytics filter conditions, shared by count /
    * countGroupByTopic / topicMessageStats. The first entry is always the
-   * `userId × workspace` ownership predicate; later entries are optional.
+   * analytics ownership predicate (workspace-wide for admins, self-only for
+   * ordinary members when {@link analyticsSelfOnly} is set).
    */
   private analyticsConditions = (params?: MessageAnalyticsFilters) => [
-    this.ownership(),
+    this.analyticsOwnership(),
     params?.agentId ? eq(messages.agentId, params.agentId) : undefined,
     params?.topicId ? eq(messages.topicId, params.topicId) : undefined,
     params?.role ? eq(messages.role, params.role) : undefined,
@@ -1721,7 +1745,7 @@ export class MessageModel {
       .from(messages)
       .where(
         genWhere([
-          this.ownership(),
+          this.analyticsOwnership(),
           params?.range
             ? genRangeWhere(params.range, messages.createdAt, (date) => date.toDate())
             : undefined,
@@ -1744,7 +1768,7 @@ export class MessageModel {
         id: messages.model,
       })
       .from(messages)
-      .where(and(this.ownership(), isNotNull(messages.model)))
+      .where(and(this.analyticsOwnership(), isNotNull(messages.model)))
       .having(({ count }) => gt(count, 0))
       .groupBy(messages.model)
       .orderBy(desc(sql`count`), asc(messages.model))
@@ -1763,7 +1787,7 @@ export class MessageModel {
       .from(messages)
       .where(
         genWhere([
-          this.ownership(),
+          this.analyticsOwnership(),
           genRangeWhere(
             [startDate.format('YYYY-MM-DD'), endDate.add(1, 'day').format('YYYY-MM-DD')],
             messages.createdAt,
@@ -1830,7 +1854,7 @@ export class MessageModel {
       .from(messages)
       .where(
         genWhere([
-          this.ownership(),
+          this.analyticsOwnership(),
           eq(messages.role, 'assistant'),
           genRangeWhere(
             [startDate.format('YYYY-MM-DD'), endDate.add(1, 'day').format('YYYY-MM-DD')],

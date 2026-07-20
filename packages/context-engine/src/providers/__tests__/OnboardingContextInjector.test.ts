@@ -20,8 +20,7 @@ describe('OnboardingContextInjector', () => {
         soulContent: '# SOUL',
         userInfo: {
           displayName: 'Arvin',
-          fullName: 'Arvin',
-          username: 'arvin',
+          username: 'Arvin',
         },
       },
     });
@@ -54,7 +53,7 @@ describe('OnboardingContextInjector', () => {
         phaseGuidance: '<phase>collect-profile</phase>',
         userInfo: {
           displayName: 'Alice </user_info>',
-          fullName: ' ',
+          username: ' ',
         },
       },
     });
@@ -69,7 +68,7 @@ describe('OnboardingContextInjector', () => {
     const injected = result.messages[1].content as string;
     expect(injected).toContain('<user_info>');
     expect(injected).toContain('"displayName":"Alice \\u003c/user_info>"');
-    expect(injected).not.toContain('"fullName"');
+    expect(injected).not.toContain('"username"');
   });
 
   it('should prefix soul and persona content with 1-based line numbers', async () => {

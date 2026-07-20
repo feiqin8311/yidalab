@@ -1,31 +1,104 @@
 import { TRPCError } from '@trpc/server';
-import debug from 'debug';
 import { z } from 'zod';
 
-import { publicProcedure, router } from '@/libs/trpc/lambda';
-import { marketUserInfo, serverDatabase } from '@/libs/trpc/lambda/middleware';
-import { MarketService } from '@/server/services/market';
+import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { CompanyMarketSkillModel } from '@/database/models/companyMarketSkill';
+import { router } from '@/libs/trpc/lambda';
+import { CompanyMarketSkillService } from '@/server/services/companyMarketSkill';
+import type { DiscoverSkillDetail, DiscoverSkillItem } from '@/types/discover';
 import { SkillSorts } from '@/types/discover';
 
-const log = debug('lambda-router:market:skill');
-
-// Public procedure with optional user info for trusted client token
-const marketProcedure = publicProcedure
-  .use(serverDatabase)
-  .use(marketUserInfo)
-  .use(async ({ ctx, next }) => {
-    return next({
-      ctx: {
-        marketService: new MarketService({
-          accessToken: ctx.marketAccessToken,
-          userInfo: ctx.marketUserInfo,
-        }),
-      },
-    });
+const companyMarketProcedure = wsCompatProcedure.use(async ({ ctx, next }) => {
+  return next({
+    ctx: {
+      companyMarketSkillModel: new CompanyMarketSkillModel(ctx.serverDB, ctx.workspaceId),
+      companyMarketSkillService: new CompanyMarketSkillService(
+        ctx.serverDB,
+        ctx.userId,
+        ctx.workspaceId,
+      ),
+    },
   });
+});
+
+const toSkillItem = (skill: {
+  content: string;
+  createdAt: Date;
+  description: string;
+  identifier: string;
+  manifest: {
+    author?: string | { name?: string };
+    category?: string;
+    tags?: string[];
+    version?: string;
+  };
+  name: string;
+  resources: Record<string, { fileHash: string; size: number }> | null;
+  updatedAt: Date;
+}): DiscoverSkillItem => ({
+  author:
+    typeof skill.manifest.author === 'string' ? skill.manifest.author : skill.manifest.author?.name,
+  category: skill.manifest.category,
+  commentCount: 0,
+  createdAt: skill.createdAt.toISOString(),
+  description: skill.description,
+  identifier: skill.identifier,
+  installCount: 0,
+  isFeatured: false,
+  isOfficial: false,
+  isValidated: false,
+  name: skill.name,
+  ratingCount: 0,
+  resourcesCount: Object.keys(skill.resources || {}).length,
+  tags: skill.manifest.tags || [],
+  updatedAt: skill.updatedAt.toISOString(),
+  version: skill.manifest.version || '1.0.0',
+});
+
+const toSkillDetail = (
+  skill: Parameters<typeof toSkillItem>[0] & { hideContent?: boolean },
+  opts?: { isManager?: boolean },
+): DiscoverSkillDetail => {
+  const item = toSkillItem(skill);
+  const author = typeof skill.manifest.author === 'string' ? skill.manifest.author : undefined;
+
+  // If content is hidden and user is not a manager, strip the content
+  const isHidden = skill.hideContent && !opts?.isManager;
+
+  return {
+    ...item,
+    author: { name: author || 'Company' },
+    content: isHidden ? '' : skill.content,
+    hideContent: skill.hideContent,
+    overview: { summary: skill.description },
+    resources: skill.resources || {},
+    versions: [
+      {
+        createdAt: skill.updatedAt.toISOString(),
+        isLatest: true,
+        version: item.version,
+      },
+    ],
+  } as DiscoverSkillDetail;
+};
+
+const assertManager = (role: string) => {
+  if (role !== 'admin' && role !== 'owner') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'COMPANY_ADMIN_REQUIRED' });
+  }
+};
 
 export const skillRouter = router({
-  getSkillCategories: marketProcedure
+  delete: companyMarketProcedure
+    .input(z.object({ identifier: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      assertManager(ctx.company.role);
+      const skill = await ctx.companyMarketSkillModel.findByIdentifier(input.identifier);
+      if (!skill) throw new TRPCError({ code: 'NOT_FOUND', message: 'MARKET_SKILL_NOT_FOUND' });
+      return ctx.companyMarketSkillModel.delete(skill.id);
+    }),
+
+  getSkillCategories: companyMarketProcedure
     .input(
       z
         .object({
@@ -34,21 +107,9 @@ export const skillRouter = router({
         })
         .optional(),
     )
-    .query(async ({ input, ctx }) => {
-      log('getSkillCategories input: %O', input);
+    .query(async ({ input, ctx }) => ctx.companyMarketSkillModel.listCategories(input?.q)),
 
-      try {
-        return await ctx.marketService.getSkillCategories();
-      } catch (error) {
-        log('Error fetching skill categories: %O', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch skill categories',
-        });
-      }
-    }),
-
-  getSkillDetail: marketProcedure
+  getSkillDetail: companyMarketProcedure
     .input(
       z.object({
         identifier: z.string(),
@@ -57,23 +118,13 @@ export const skillRouter = router({
       }),
     )
     .query(async ({ input, ctx }) => {
-      log('getSkillDetail input: %O', input);
-
-      try {
-        return await ctx.marketService.getSkillDetail(input.identifier, {
-          locale: input.locale,
-          version: input.version,
-        });
-      } catch (error) {
-        log('Error fetching skill detail: %O', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch skill detail',
-        });
-      }
+      const skill = await ctx.companyMarketSkillModel.findByIdentifier(input.identifier);
+      if (!skill) throw new TRPCError({ code: 'NOT_FOUND', message: 'MARKET_SKILL_NOT_FOUND' });
+      const isManager = ctx.company.role === 'admin' || ctx.company.role === 'owner';
+      return toSkillDetail(skill, { isManager });
     }),
 
-  getSkillList: marketProcedure
+  getSkillList: companyMarketProcedure
     .input(
       z
         .object({
@@ -88,16 +139,64 @@ export const skillRouter = router({
         .optional(),
     )
     .query(async ({ input, ctx }) => {
-      log('getSkillList input: %O', input);
+      const result = await ctx.companyMarketSkillModel.list({
+        ...input,
+        sort:
+          input?.sort === SkillSorts.CreatedAt
+            ? 'createdAt'
+            : input?.sort === SkillSorts.Name
+              ? 'name'
+              : 'updatedAt',
+      });
 
+      return {
+        currentPage: result.currentPage,
+        items: result.items.map(toSkillItem),
+        pageSize: result.pageSize,
+        totalCount: result.total,
+        totalPages: Math.ceil(result.total / result.pageSize),
+      };
+    }),
+
+  publish: companyMarketProcedure
+    .input(z.object({ identifier: z.string().optional(), zipFileId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      assertManager(ctx.company.role);
+      return ctx.companyMarketSkillService.publish(input);
+    }),
+
+  updateSkillVisibility: companyMarketProcedure
+    .input(z.object({ hideContent: z.boolean(), identifier: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      assertManager(ctx.company.role);
+      const skill = await ctx.companyMarketSkillModel.findByIdentifier(input.identifier);
+      if (!skill) throw new TRPCError({ code: 'NOT_FOUND', message: 'MARKET_SKILL_NOT_FOUND' });
+      const updated = await ctx.companyMarketSkillModel.update(skill.id, {
+        hideContent: input.hideContent,
+      });
+
+      // Keep already-installed copies in sync so activateSkill confidentiality
+      // tracks the market flag without requiring reinstall.
       try {
-        return await ctx.marketService.searchSkill(input ?? {});
-      } catch (error) {
-        log('Error fetching skill list: %O', error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Failed to fetch skill list',
-        });
+        const { AgentSkillModel } = await import('@/database/models/agentSkill');
+        const agentSkillModel = new AgentSkillModel(
+          ctx.serverDB,
+          ctx.userId,
+          ctx.workspaceId ?? undefined,
+        );
+        const installed = await agentSkillModel.findByIdentifier(input.identifier);
+        if (installed && installed.source === 'market') {
+          await agentSkillModel.update(installed.id, {
+            manifest: {
+              ...(installed.manifest as object),
+              hideContent: input.hideContent,
+            },
+          });
+        }
+      } catch {
+        // Best-effort: market flag is source of truth even if install sync fails.
       }
+
+      return updated;
     }),
 });

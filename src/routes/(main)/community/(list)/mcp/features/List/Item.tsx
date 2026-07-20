@@ -184,7 +184,9 @@ const McpItem = memo<DiscoverMcpItem>(
             installationMethods={installationMethods}
             isClaimed={isClaimed}
             isValidated={isValidated}
-            overview={{ readme: github?.url }}
+            // List items lack full overview; treat description as readme so
+            // company/catalog MCPs without github aren't scored F for missing docs.
+            overview={{ readme: description || github?.url }}
             promptsCount={promptsCount}
             resourcesCount={resourcesCount}
             toolsCount={toolsCount}

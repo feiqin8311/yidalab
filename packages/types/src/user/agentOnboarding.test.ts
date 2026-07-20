@@ -5,14 +5,14 @@ import { SaveUserQuestionInputSchema, UserAgentOnboardingContextSchema } from '.
 describe('SaveUserQuestionInputSchema', () => {
   it('accepts the flat structured payload', () => {
     const parsed = SaveUserQuestionInputSchema.parse({
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
       customInterests: ['AI tooling'],
       interests: ['coding'],
     });
 
     expect(parsed).toEqual({
       customInterests: ['AI tooling'],
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
       interests: ['coding'],
     });
   });
@@ -25,10 +25,10 @@ describe('SaveUserQuestionInputSchema', () => {
     const parsed = SaveUserQuestionInputSchema.parse({
       agentEmoji: '',
       agentName: '   ',
-      fullName: 'Ada Lovelace',
+      username: 'Ada Lovelace',
     });
 
-    expect(parsed).toEqual({ fullName: 'Ada Lovelace' });
+    expect(parsed).toEqual({ username: 'Ada Lovelace' });
   });
 
   it('drops empty interests entries and an all-empty array', () => {
@@ -40,10 +40,10 @@ describe('SaveUserQuestionInputSchema', () => {
 
     const allEmpty = SaveUserQuestionInputSchema.parse({
       customInterests: ['', '   '],
-      fullName: 'Ada',
+      username: 'Ada',
       interests: ['', '   '],
     });
-    expect(allEmpty).toEqual({ fullName: 'Ada' });
+    expect(allEmpty).toEqual({ username: 'Ada' });
   });
 
   it('accepts a fully empty object as a no-op', () => {
@@ -55,7 +55,7 @@ describe('UserAgentOnboardingContextSchema', () => {
   it('accepts the minimal onboarding context', () => {
     const parsed = UserAgentOnboardingContextSchema.parse({
       finished: false,
-      missingStructuredFields: ['fullName', 'agentName'],
+      missingStructuredFields: ['username', 'agentName'],
       phase: 'user_identity',
       topicId: 'topic-1',
       version: 2,
@@ -63,7 +63,7 @@ describe('UserAgentOnboardingContextSchema', () => {
 
     expect(parsed).toEqual({
       finished: false,
-      missingStructuredFields: ['fullName', 'agentName'],
+      missingStructuredFields: ['username', 'agentName'],
       phase: 'user_identity',
       topicId: 'topic-1',
       version: 2,

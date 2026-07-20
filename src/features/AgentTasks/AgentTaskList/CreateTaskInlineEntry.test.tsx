@@ -124,15 +124,9 @@ describe('CreateTaskInlineEntry', () => {
     expect(focusMock).not.toHaveBeenCalled();
   });
 
-  it('clears the private-agent visibility lock when switching to the all-tasks create form', () => {
-    const { rerender } = render(
-      <CreateTaskInlineEntry lockAssignee agentId="agent-private" variant="hero" />,
-    );
+  it('does not render the task visibility chooser in the create form', () => {
+    render(<CreateTaskInlineEntry lockAssignee agentId="agent-private" variant="hero" />);
 
-    expect(screen.getByTestId('visibility-trigger')).toHaveAttribute('data-locked', 'true');
-
-    rerender(<CreateTaskInlineEntry variant="hero" />);
-
-    expect(screen.getByTestId('visibility-trigger')).toHaveAttribute('data-locked', 'false');
+    expect(screen.queryByTestId('visibility-trigger')).not.toBeInTheDocument();
   });
 });

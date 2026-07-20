@@ -11,6 +11,7 @@ import SkeletonList from '@/features/NavPanel/components/SkeletonList';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { usePermission } from '@/hooks/usePermission';
 import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
+import { listVisibilityToListScope } from '@/routes/(main)/resource/features/store/listScope';
 import { useKnowledgeBaseStore } from '@/store/library';
 
 import Item from './Item';
@@ -21,12 +22,9 @@ import { getLibraryListAsyncState } from './state';
  */
 const LibraryList = memo(() => {
   const { t } = useTranslation('file');
-  // Mirrors the file-explorer mode: `private` → only own private KBs,
-  // `workspace` → only public KBs. Personal-mode users never render this list
-  // with a filter (the toggle isn't shown), so `visibility` stays undefined
-  // and the query returns everything the ownership predicate allows.
+  // Mirrors the file-explorer mode → listScope. Personal mode has no toggle.
   const listVisibility = useResourceManagerStore((s) => s.listVisibility);
-  const visibility = listVisibility === 'private' ? ('private' as const) : ('public' as const);
+  const listScope = listVisibilityToListScope(listVisibility);
 
   const useFetchKnowledgeBaseList = useKnowledgeBaseStore((s) => s.useFetchKnowledgeBaseList);
   // `isValidating` catches the first fetch after switching mode — SWR's key
@@ -37,7 +35,7 @@ const LibraryList = memo(() => {
   // `fallbackData: []` keeps `data` an array even on failure, so a failed KB-list
   // fetch used to render the "create your first library" empty (Read §1.1
   // failure-as-empty). Read `error` / `mutate` and branch the failure before empty.
-  const { data, isLoading, isValidating, error, mutate } = useFetchKnowledgeBaseList(visibility);
+  const { data, isLoading, isValidating, error, mutate } = useFetchKnowledgeBaseList(listScope);
 
   const navigate = useWorkspaceAwareNavigate();
 
@@ -71,7 +69,11 @@ const LibraryList = memo(() => {
         <EmptyNavItem
           disabled={!canCreate}
           title={t(
-            listVisibility === 'private' ? 'library.privateEmpty' : 'library.workspaceEmpty',
+            listVisibility === 'workspace'
+              ? 'library.workspaceEmpty'
+              : listVisibility === 'shared'
+                ? 'library.privateEmpty'
+                : 'library.privateEmpty',
           )}
           onClick={handleCreate}
         />

@@ -1,6 +1,5 @@
 'use client';
 
-import { MAX_ONBOARDING_STEPS } from '@lobechat/types';
 import { Flexbox } from '@lobehub/ui';
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { Navigate, useNavigate } from 'react-router';
@@ -8,13 +7,12 @@ import { Navigate, useNavigate } from 'react-router';
 import Loading from '@/components/Loading/BrandTextLoading';
 import ModeSwitch from '@/features/Onboarding/components/ModeSwitch';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { useOnboardingAgentTemplates } from '@/hooks/useOnboardingAgentTemplates';
 import OnboardingContainer from '@/routes/onboarding/_layout';
-import AgentPickerStep from '@/routes/onboarding/features/AgentPickerStep';
 import FullNameStep from '@/routes/onboarding/features/FullNameStep';
 import InterestsStep from '@/routes/onboarding/features/InterestsStep';
 import ProSettingsStep from '@/routes/onboarding/features/ProSettingsStep';
 import {
+  trackOnboardingCompleted,
   trackOnboardingStepCompleted,
   trackOnboardingStepViewed,
 } from '@/services/onboardingMetrics';
@@ -22,6 +20,7 @@ import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfi
 import { useUserStore } from '@/store/user';
 import { onboardingSelectors } from '@/store/user/selectors';
 import { isDev } from '@/utils/env';
+import { consumeOnboardingCallbackUrl } from '@/utils/onboardingRedirect';
 
 const INTERESTS_STEP = 2;
 const PRO_SETTINGS_STEP = 3;
@@ -30,7 +29,6 @@ const CLASSIC_STEP_TRACKING = {
   1: { flow: 'classic', step: 'fullname', stepIndex: 1 },
   [INTERESTS_STEP]: { flow: 'classic', step: 'interests', stepIndex: 2 },
   [PRO_SETTINGS_STEP]: { flow: 'classic', step: 'prosettings', stepIndex: 3 },
-  [MAX_ONBOARDING_STEPS]: { flow: 'classic', step: 'agentpicker', stepIndex: 4 },
 } as const;
 
 const getClassicStepTrackingPayload = (step: number) =>
@@ -39,27 +37,39 @@ const getClassicStepTrackingPayload = (step: number) =>
 const ClassicOnboardingPage = memo(() => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const [isUserStateInit, commonStepsCompleted, currentStep, goToNextStep, goToPreviousStep] =
-    useUserStore((s) => [
-      s.isUserStateInit,
-      onboardingSelectors.commonStepsCompleted(s),
-      onboardingSelectors.currentStep(s),
-      s.goToNextStep,
-      s.goToPreviousStep,
-    ]);
+  const [
+    finishOnboarding,
+    isUserStateInit,
+    commonStepsCompleted,
+    currentStep,
+    goToNextStep,
+    goToPreviousStep,
+  ] = useUserStore((s) => [
+    s.finishOnboarding,
+    s.isUserStateInit,
+    onboardingSelectors.commonStepsCompleted(s),
+    onboardingSelectors.currentStep(s),
+    s.goToNextStep,
+    s.goToPreviousStep,
+  ]);
   const enableComposio = useServerConfigStore(serverConfigSelectors.enableComposio);
   const serverConfigInit = useServerConfigStore((s) => s.serverConfigInit);
   const shouldSkipProSettingsStep = serverConfigInit && !enableComposio;
   const autoSkippedStepKeysRef = useRef<Set<string>>(new Set());
   const viewedStepKeysRef = useRef<Set<string>>(new Set());
 
-  useOnboardingAgentTemplates(isUserStateInit && commonStepsCompleted);
-
   // FullNameStep is the branch's first step, so its back button leaves the
   // branch and re-enters the shared prefix's ResponseLanguageStep (step 2).
   const backToResponseLanguageStep = useCallback(() => {
     navigate('/onboarding?step=2', { replace: true });
   }, [navigate]);
+
+  const finishClassicOnboarding = useCallback(async () => {
+    await finishOnboarding();
+    const targetUrl = consumeOnboardingCallbackUrl() || '/';
+    trackOnboardingCompleted({ flow: 'classic', targetUrl });
+    navigate(targetUrl);
+  }, [finishOnboarding, navigate]);
 
   useEffect(() => {
     if (
@@ -80,8 +90,14 @@ const ClassicOnboardingPage = memo(() => {
       action: 'auto_skip',
       skipped: true,
     });
-    goToNextStep();
-  }, [commonStepsCompleted, currentStep, goToNextStep, isUserStateInit, shouldSkipProSettingsStep]);
+    void finishClassicOnboarding();
+  }, [
+    commonStepsCompleted,
+    currentStep,
+    finishClassicOnboarding,
+    isUserStateInit,
+    shouldSkipProSettingsStep,
+  ]);
 
   useEffect(() => {
     if (!isUserStateInit || !commonStepsCompleted) return;
@@ -118,28 +134,17 @@ const ClassicOnboardingPage = memo(() => {
     );
 
     if (shouldSkipProSettingsStep) {
-      goToNextStep();
-      goToNextStep();
+      void finishClassicOnboarding();
       return;
     }
 
     goToNextStep();
-  }, [goToNextStep, shouldSkipProSettingsStep]);
+  }, [finishClassicOnboarding, goToNextStep, shouldSkipProSettingsStep]);
 
   const goToNextStepFromProSettings = useCallback(() => {
     trackOnboardingStepCompleted(CLASSIC_STEP_TRACKING[PRO_SETTINGS_STEP]);
-    goToNextStep();
-  }, [goToNextStep]);
-
-  const goToPreviousStepFromAgentPicker = useCallback(() => {
-    if (shouldSkipProSettingsStep) {
-      goToPreviousStep();
-      goToPreviousStep();
-      return;
-    }
-
-    goToPreviousStep();
-  }, [goToPreviousStep, shouldSkipProSettingsStep]);
+    void finishClassicOnboarding();
+  }, [finishClassicOnboarding]);
 
   if (!isUserStateInit) {
     return <Loading debugId="ClassicOnboarding" />;
@@ -165,24 +170,15 @@ const ClassicOnboardingPage = memo(() => {
 
         return <ProSettingsStep onBack={goToPreviousStep} onNext={goToNextStepFromProSettings} />;
       }
-      case MAX_ONBOARDING_STEPS: {
-        return <AgentPickerStep onBack={goToPreviousStepFromAgentPicker} />;
-      }
       default: {
         return null;
       }
     }
   };
 
-  const contentMaxWidth = currentStep === MAX_ONBOARDING_STEPS ? 780 : 600;
-
   return (
     <OnboardingContainer>
-      <Flexbox
-        gap={24}
-        paddingInline={isMobile ? 16 : 0}
-        style={{ maxWidth: contentMaxWidth, width: '100%' }}
-      >
+      <Flexbox gap={24} paddingInline={isMobile ? 16 : 0} style={{ maxWidth: 600, width: '100%' }}>
         {isDev && <ModeSwitch />}
         {renderStep()}
       </Flexbox>

@@ -815,17 +815,17 @@ export class AgentBridgeService {
         }
       }
     } else if (!supportsMessageEdit) {
-      // Edit-incapable platform (QQ today): the user still wants immediate
-      // feedback that we received their message, but every "edit" the
-      // adapter performs surfaces as a NEW message. So fire-and-forget the
-      // ack here without tracking it as `progressMessage` — afterStep/onComplete
-      // will see `progressMessage === undefined` and correctly post the final
-      // reply as its own message instead of editing.
+      // Edit-incapable platform (QQ / DingTalk): every "edit" surfaces as a NEW
+      // message, so don't track progressMessage. QQ still wants a text ack;
+      // DingTalk uses native emotion reactions instead — a text ack would stick
+      // forever as a second bubble ("Insomnia mode." etc.).
       await safeSideEffect(() => thread.startTyping(), 'startTyping (executeWithWebhooks)');
-      await safeSideEffect(
-        () => thread.post(renderStart(userMessage.text, { lng: replyLocale, timezone })),
-        'post ack (no-edit platform)',
-      );
+      if (botContext?.platform !== 'dingtalk') {
+        await safeSideEffect(
+          () => thread.post(renderStart(userMessage.text, { lng: replyLocale, timezone })),
+          'post ack (no-edit platform)',
+        );
+      }
     } else {
       await safeSideEffect(() => thread.startTyping(), 'startTyping (executeWithWebhooks)');
       try {

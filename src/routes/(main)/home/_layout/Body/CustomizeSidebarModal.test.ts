@@ -11,10 +11,10 @@ describe('CustomizeSidebarModal', () => {
     expect(items.some((item) => item.id === 'memory')).toBe(true);
   });
 
-  it('removes Memory from workspace mode customization', () => {
+  it('keeps Memory available in workspace mode customization', () => {
     const items = getAvailableSidebarItems(true);
 
-    expect(items.some((item) => item.id === 'memory')).toBe(false);
+    expect(items.some((item) => item.id === 'memory')).toBe(true);
   });
 
   it('keeps the spacer in the sortable item set', () => {
@@ -22,8 +22,8 @@ describe('CustomizeSidebarModal', () => {
     expect(getSortableSidebarItemIds(true).has(SIDEBAR_SPACER_ID)).toBe(true);
   });
 
-  it('keeps workspace-only exclusions in the sortable item set', () => {
+  it('sortable ids include Memory in both modes', () => {
     expect(getSortableSidebarItemIds(false).has('memory')).toBe(true);
-    expect(getSortableSidebarItemIds(true).has('memory')).toBe(false);
+    expect(getSortableSidebarItemIds(true).has('memory')).toBe(true);
   });
 });

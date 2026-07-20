@@ -62,8 +62,8 @@ const EditingIndicator = memo(() => {
   // collaborator-blocked one (which uses the user's own name and reads wrong).
   const label = isLockedBySelf
     ? t('pageEditor.editMode.lockedBySelf')
-    : holder?.fullName
-      ? t('pageEditor.editMode.lockedByOther', { name: holder.fullName })
+    : holder?.username
+      ? t('pageEditor.editMode.lockedByOther', { name: holder.username })
       : t('pageEditor.editMode.lockedBySomeone');
 
   return (

@@ -32,6 +32,7 @@ import {
   taskTopics,
   threads,
   topics,
+  users,
 } from '../schemas';
 import type { LobeChatDatabase } from '../type';
 import { genEndDateWhere, genRangeWhere, genStartDateWhere, genWhere } from '../utils/genWhere';
@@ -229,6 +230,97 @@ export class AgentModel {
     return (rows[0]?.visibility as 'private' | 'public' | undefined) ?? null;
   };
 
+  /**
+   * Agents that can be selected as a **task assignee**.
+   *
+   * - Non-virtual agents the caller can already see (public + own private).
+   * - Every workspace member **inbox** (virtual ok) in the same workspace —
+   *   so company members can assign tasks to a colleague's assistant.
+   *
+   * Personal mode: own non-virtual agents + own inbox.
+   */
+  listAssignableForTasks = async (): Promise<
+    Array<{
+      avatar: string | null;
+      backgroundColor: string | null;
+      id: string;
+      isInbox: boolean;
+      title: string | null;
+      userId: string;
+      visibility: 'private' | 'public';
+    }>
+  > => {
+    const isInbox = eq(agents.slug, INBOX_SESSION_ID);
+    const nonVirtual = or(eq(agents.virtual, false), isNull(agents.virtual));
+
+    const where = this.workspaceId
+      ? and(
+          eq(agents.workspaceId, this.workspaceId),
+          or(
+            // Normal agents (visibility-aware)
+            and(
+              nonVirtual,
+              or(
+                isNull(agents.visibility),
+                eq(agents.visibility, 'public'),
+                and(eq(agents.visibility, 'private'), eq(agents.userId, this.userId)),
+              ),
+            ),
+            // All member inboxes in this workspace (task-assignable assistants)
+            isInbox,
+          ),
+        )
+      : and(eq(agents.userId, this.userId), isNull(agents.workspaceId), or(nonVirtual, isInbox));
+
+    const rows = await this.db
+      .select({
+        avatar: agents.avatar,
+        backgroundColor: agents.backgroundColor,
+        id: agents.id,
+        slug: agents.slug,
+        title: agents.title,
+        userId: agents.userId,
+        visibility: agents.visibility,
+      })
+      .from(agents)
+      .where(where)
+      .orderBy(desc(agents.updatedAt));
+
+    return rows.map((row) => ({
+      avatar: row.avatar,
+      backgroundColor: row.backgroundColor,
+      id: row.id,
+      isInbox: row.slug === INBOX_SESSION_ID,
+      title: row.title,
+      userId: row.userId,
+      visibility: (row.visibility as 'private' | 'public' | null) ?? 'public',
+    }));
+  };
+
+  /**
+   * Visibility for task assignee checks — ownership first, then same-workspace
+   * inbox (even when private / not visible for chat).
+   */
+  getTaskAssigneeVisibility = async (id: string): Promise<'private' | 'public' | null> => {
+    const owned = await this.getAgentVisibility(id);
+    if (owned) return owned;
+    if (!this.workspaceId) return null;
+
+    const rows = await this.db
+      .select({ visibility: agents.visibility })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, id),
+          eq(agents.workspaceId, this.workspaceId),
+          eq(agents.slug, INBOX_SESSION_ID),
+        ),
+      )
+      .limit(1);
+
+    return (rows[0]?.visibility as 'private' | 'public' | undefined) ?? null;
+  };
+
   existsById = async (id: string): Promise<boolean> => {
     const rows = await this.db
       .select({ id: agents.id })
@@ -273,6 +365,8 @@ export class AgentModel {
   getAgentSnapshotForTaskCreate = async (
     idOrSlug: string,
   ): Promise<{
+    /** True when the agent is only visible via task-assignee inbox grant. */
+    isColleagueInbox?: boolean;
     snapshot: { model: string; provider: string } | null;
     visibility: 'private' | 'public';
   } | null> => {
@@ -287,10 +381,39 @@ export class AgentModel {
       .limit(1);
 
     const row = rows[0];
-    if (!row) return null;
+    if (row) {
+      const snapshot =
+        row.model && row.provider ? { model: row.model, provider: row.provider } : null;
+      return { snapshot, visibility: row.visibility as 'private' | 'public' };
+    }
+
+    // Colleague workspace inbox — assignable for tasks even when private.
+    if (!this.workspaceId) return null;
+    const inboxRows = await this.db
+      .select({
+        model: agents.model,
+        provider: agents.provider,
+        visibility: agents.visibility,
+      })
+      .from(agents)
+      .where(
+        and(
+          or(eq(agents.id, idOrSlug), eq(agents.slug, idOrSlug)),
+          eq(agents.workspaceId, this.workspaceId),
+          eq(agents.slug, INBOX_SESSION_ID),
+        ),
+      )
+      .limit(1);
+
+    const inbox = inboxRows[0];
+    if (!inbox) return null;
     const snapshot =
-      row.model && row.provider ? { model: row.model, provider: row.provider } : null;
-    return { snapshot, visibility: row.visibility as 'private' | 'public' };
+      inbox.model && inbox.provider ? { model: inbox.model, provider: inbox.provider } : null;
+    return {
+      isColleagueInbox: true,
+      snapshot,
+      visibility: (inbox.visibility as 'private' | 'public' | null) ?? 'public',
+    };
   };
 
   /**
@@ -401,7 +524,32 @@ export class AgentModel {
       .from(agents)
       .where(and(this.ownership(), inArray(agents.id, ids)));
 
-    return rows.map(({ slug, ...row }) => normalizeInboxAgentMeta(row, { slug }));
+    const found = new Map(rows.map((r) => [r.id, r]));
+    const missing = ids.filter((id) => !found.has(id));
+
+    // Task assignees may be colleague workspace inboxes (private/virtual).
+    // Ownership hides them; still resolve avatars/titles for task UI.
+    if (missing.length > 0 && this.workspaceId) {
+      const inboxRows = await this.db
+        .select({
+          avatar: agents.avatar,
+          backgroundColor: agents.backgroundColor,
+          id: agents.id,
+          slug: agents.slug,
+          title: agents.title,
+        })
+        .from(agents)
+        .where(
+          and(
+            inArray(agents.id, missing),
+            eq(agents.workspaceId, this.workspaceId),
+            eq(agents.slug, INBOX_SESSION_ID),
+          ),
+        );
+      for (const row of inboxRows) found.set(row.id, row);
+    }
+
+    return [...found.values()].map(({ slug, ...row }) => normalizeInboxAgentMeta(row, { slug }));
   };
 
   /**
@@ -1082,7 +1230,27 @@ export class AgentModel {
       where: and(eq(agents.slug, slug), this.ownership()),
     });
 
-    if (existing) return normalizeInboxAgentMeta(existing, { slug: existing.slug });
+    if (existing) {
+      if (slug === INBOX_SESSION_ID) {
+        const inboxUser = await this.db.query.users.findFirst({
+          columns: { username: true },
+          where: eq(users.id, this.userId),
+        });
+        const inboxTitle = inboxUser?.username?.trim();
+
+        if (inboxTitle && existing.title !== inboxTitle) {
+          const [updatedAgent] = await this.db
+            .update(agents)
+            .set({ title: inboxTitle, updatedAt: new Date() })
+            .where(eq(agents.id, existing.id))
+            .returning();
+
+          return normalizeInboxAgentMeta(updatedAgent, { slug: updatedAgent.slug });
+        }
+      }
+
+      return normalizeInboxAgentMeta(existing, { slug: existing.slug });
+    }
 
     // For inbox agent, it has special compatibility handling:
     // Historical inbox was stored as session with slug='inbox' and linked agent via agentsToSessions
@@ -1114,6 +1282,15 @@ export class AgentModel {
     const persistConfig = getAgentPersistConfig(slug);
     if (!persistConfig) return null;
 
+    const inboxUser =
+      slug === INBOX_SESSION_ID
+        ? await this.db.query.users.findFirst({
+            columns: { username: true },
+            where: eq(users.id, this.userId),
+          })
+        : undefined;
+    const inboxTitle = inboxUser?.username?.trim();
+
     // 4. Create the builtin agent with persist config.
     // Idempotent under concurrent callers: two parallel requests for the same
     // (userId, slug) both see no existing row and race to insert. Without
@@ -1136,6 +1313,7 @@ export class AgentModel {
             model: persistConfig.model,
             provider: persistConfig.provider,
             slug: persistConfig.slug,
+            ...(inboxTitle ? { title: inboxTitle } : {}),
             virtual: true,
           },
         ),

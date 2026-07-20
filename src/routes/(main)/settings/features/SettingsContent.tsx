@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect } from 'react';
 
+import { useMyCompany } from '@/features/Company/hooks';
 import NavHeader from '@/features/NavHeader';
 import SettingContainer from '@/features/Setting/SettingContainer';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
@@ -11,8 +12,10 @@ import { serverConfigSelectors, useServerConfigStore } from '@/store/serverConfi
 import { componentMap } from './componentMap';
 
 const REDIRECT_MAP: Record<string, string> = {
+  [SettingsTabs.About]: SettingsTabs.Profile,
   [SettingsTabs.Common]: SettingsTabs.Appearance,
   [SettingsTabs.ChatAppearance]: SettingsTabs.Appearance,
+  [SettingsTabs.Creds]: SettingsTabs.Profile,
   [SettingsTabs.Agent]: SettingsTabs.ServiceModel,
   [SettingsTabs.TTS]: SettingsTabs.ServiceModel,
   [SettingsTabs.Image]: SettingsTabs.ServiceModel,
@@ -26,15 +29,19 @@ interface SettingsContentProps {
 const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
   const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
   const navigate = useWorkspaceAwareNavigate();
+  const { data: company } = useMyCompany();
+  const isCompanyAiRestricted = !!company && company.role !== 'admin' && company.role !== 'owner';
+  const isCompanyAiTab =
+    activeTab === SettingsTabs.Provider || activeTab === SettingsTabs.ServiceModel;
 
   useEffect(() => {
-    if (activeTab && REDIRECT_MAP[activeTab]) {
-      // Personal-only redirect: legacy URL aliases (common, agent, tts, image,
-      // chat-appearance) map to personal-settings tabs. `escape: true` keeps the
-      // user in personal context even when a workspace happens to be active.
-      navigate(`/settings/${REDIRECT_MAP[activeTab]}`, { escape: true, replace: true });
+    if (activeTab && (REDIRECT_MAP[activeTab] || (isCompanyAiRestricted && isCompanyAiTab))) {
+      // Legacy aliases map to their current tab; company members are sent back to
+      // their profile when they reach the centrally managed AI settings by URL.
+      const targetTab = REDIRECT_MAP[activeTab] || SettingsTabs.Profile;
+      navigate(`/settings/${targetTab}`, { escape: true, replace: true });
     }
-  }, [activeTab, navigate]);
+  }, [activeTab, isCompanyAiRestricted, isCompanyAiTab, navigate]);
 
   const renderComponent = (tab: string) => {
     const Component = componentMap[tab as keyof typeof componentMap] || componentMap.appearance;
@@ -43,7 +50,6 @@ const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
     const componentProps: { mobile?: boolean } = {};
     if (
       [
-        SettingsTabs.About,
         SettingsTabs.ServiceModel,
         SettingsTabs.Provider,
         SettingsTabs.Profile,
@@ -61,7 +67,9 @@ const SettingsContent = ({ mobile, activeTab }: SettingsContentProps) => {
     return <Component {...componentProps} />;
   };
 
-  if (activeTab && REDIRECT_MAP[activeTab]) return null;
+  if (activeTab && (REDIRECT_MAP[activeTab] || (isCompanyAiRestricted && isCompanyAiTab))) {
+    return null;
+  }
 
   if (mobile) {
     return activeTab ? renderComponent(activeTab) : renderComponent(SettingsTabs.Profile);

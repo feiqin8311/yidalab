@@ -1054,6 +1054,46 @@ describe('AiInfraRepos', () => {
       });
     });
 
+    it('should preserve builtin image type when DB record has wrong chat type (e.g. gpt-image-2)', async () => {
+      const mockProviders = [
+        { enabled: true, id: 'openai', name: 'OpenAI', source: 'builtin' as const },
+      ];
+
+      // Remote fetch of /v1/models has no type field → stored as chat
+      const mockAllModels = [
+        {
+          abilities: {},
+          enabled: true,
+          id: 'gpt-image-2',
+          providerId: 'openai',
+          type: 'chat' as const,
+        },
+      ] as EnabledAiModel[];
+
+      vi.spyOn(repo, 'getAiProviderList').mockResolvedValue(mockProviders);
+      vi.spyOn(repo.aiModelModel, 'getAllModels').mockResolvedValue(mockAllModels);
+      vi.spyOn(repo as any, 'fetchBuiltinModels').mockResolvedValue([
+        {
+          abilities: {},
+          displayName: 'GPT Image 2',
+          enabled: true,
+          id: 'gpt-image-2',
+          parameters: {
+            prompt: { default: '' },
+            size: { default: 'auto', enum: ['auto', '1024x1024'] },
+          },
+          type: 'image' as const,
+        },
+      ]);
+
+      const result = await repo.getEnabledModels();
+      const merged = result.find((m) => m.id === 'gpt-image-2');
+
+      expect(merged).toBeDefined();
+      expect(merged?.type).toBe('image');
+      expect(merged?.enabled).toBe(true);
+    });
+
     it('should retain pricing for appended user-only models', async () => {
       const mockProviders = [
         {

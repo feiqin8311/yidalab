@@ -118,8 +118,14 @@ const CreateTaskContent = memo<CreateTaskContentProps>(
             identifier: result.identifier,
           });
         }
-      } catch {
-        message.error(t('createTask.createFailed'));
+      } catch (error) {
+        const raw = (error as { message?: string })?.message ?? '';
+        const isPrivateAgentBlock = /public task cannot be assigned to a private agent/i.test(raw);
+        message.error(
+          isPrivateAgentBlock
+            ? t('createTask.visibility.privateAgentLocked')
+            : t('createTask.createFailed'),
+        );
       }
     }, [
       activeWorkspaceId,

@@ -53,16 +53,16 @@ beforeEach(() => {
     activeGenerationTopicId: null,
     generationTopics: [],
     loadingGenerationTopicIds: [],
-    newGenerationTopicVisibility: 'private',
+    newGenerationTopicVisibility: 'public',
   });
 });
 
 describe('VideoGenerationTopicAction', () => {
   describe('setNewGenerationTopicVisibility', () => {
-    it('should default new generation topics to private visibility', () => {
+    it('should default new generation topics to public visibility', () => {
       const { result } = renderHook(() => useVideoStore());
 
-      expect(result.current.newGenerationTopicVisibility).toBe('private');
+      expect(result.current.newGenerationTopicVisibility).toBe('public');
     });
 
     it('should update new generation topic visibility', () => {
@@ -77,7 +77,7 @@ describe('VideoGenerationTopicAction', () => {
   });
 
   describe('internal_createGenerationTopic', () => {
-    it('should create video topic with private visibility by default', async () => {
+    it('should create video topic with public visibility by default', async () => {
       const { result } = renderHook(() => useVideoStore());
       const newTopicId = 'video-topic-private';
 
@@ -88,7 +88,7 @@ describe('VideoGenerationTopicAction', () => {
         expect(topicId).toBe(newTopicId);
       });
 
-      expect(generationTopicService.createTopic).toHaveBeenCalledWith('video', 'private');
+      expect(generationTopicService.createTopic).toHaveBeenCalledWith('video', 'public');
       expect(mutate).toHaveBeenCalledWith(['video:generationTopics']);
     });
 

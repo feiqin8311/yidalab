@@ -10,8 +10,6 @@ import urlJoin from 'url-join';
 import NavHeader from '@/features/NavHeader';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import StoreSearchBar from '@/routes/(main)/community/features/Search';
-import UserAvatar from '@/routes/(main)/community/features/UserAvatar';
-import { useDiscoverStore } from '@/store/discover';
 
 import { styles } from './Header/style';
 
@@ -21,16 +19,6 @@ const Header = memo(() => {
   const path = location.pathname.split('/').filter(Boolean);
   const communityIndex = path.indexOf('community');
   const detailType = communityIndex >= 0 ? path[communityIndex + 1] : undefined;
-  const detailSlug = communityIndex >= 0 ? path[communityIndex + 2] : undefined;
-  const profileUsername =
-    (detailType === 'user' || detailType === 'org') && detailSlug
-      ? decodeURIComponent(detailSlug)
-      : '';
-
-  const useUserProfile = useDiscoverStore((s) => s.useUserProfile);
-  const { data: detailProfile } = useUserProfile({ username: profileUsername });
-  const detailAvatar =
-    detailProfile?.user.avatarUrl || detailProfile?.user.userName || detailProfile?.user.namespace;
 
   const handleGoBack = () => {
     // group_agent goes back to agent list page
@@ -57,7 +45,6 @@ const Header = memo(() => {
   return (
     <NavHeader
       className={styles.headerContainer}
-      right={<UserAvatar avatarOverride={detailAvatar} />}
       style={cssVariables}
       left={
         <Flexbox horizontal align={'center'} flex={1} gap={8}>

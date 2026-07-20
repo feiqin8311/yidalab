@@ -14,11 +14,11 @@ import CredItem from '@/routes/(main)/settings/creds/features/CredItem';
 import { createEditCredModal } from '@/routes/(main)/settings/creds/features/EditCredModal';
 import { createViewCredModal } from '@/routes/(main)/settings/creds/features/ViewCredModal';
 
-import ShareToggle from './ShareToggle';
-
-// Always the personal namespace — this section is deliberately personal-scoped
-// regardless of page context, so it bypasses `useCredsApi()` entirely.
-const personalCredsApi = { client: lambdaClient.market.creds, query: lambdaQuery.market.creds };
+// Local DB-backed personal credentials (no Market).
+const personalCredsApi = {
+  client: lambdaClient.localCreds,
+  query: lambdaQuery.localCreds,
+};
 
 const styles = createStaticStyles(({ css }) => ({
   desc: css`
@@ -62,7 +62,7 @@ interface PersonalCredsSectionProps {
 const PersonalCredsSection: FC<PersonalCredsSectionProps> = ({ onWorkspaceCredsChange }) => {
   const { t } = useTranslation('setting');
 
-  const { data, error, isLoading, refetch } = lambdaQuery.market.creds.list.useQuery(undefined);
+  const { data, error, isLoading, refetch } = lambdaQuery.localCreds.list.useQuery(undefined);
 
   // Refreshes both this personal list and the workspace section above.
   // Deleting or editing a credential that's currently shared/public changes
@@ -76,7 +76,7 @@ const PersonalCredsSection: FC<PersonalCredsSectionProps> = ({ onWorkspaceCredsC
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await lambdaClient.market.creds.delete.mutate({ id });
+      await lambdaClient.localCreds.delete.mutate({ id });
     },
     onSuccess: refetchLists,
   });
@@ -117,7 +117,6 @@ const PersonalCredsSection: FC<PersonalCredsSectionProps> = ({ onWorkspaceCredsC
           {credentials.map((cred) => (
             <CredItem
               cred={cred}
-              extra={<ShareToggle cred={cred} onChange={refetchLists} />}
               key={cred.id}
               onDelete={(id) => deleteMutation.mutate(id)}
               onEdit={handleEdit}

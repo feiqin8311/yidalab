@@ -86,9 +86,11 @@ import { UserModel } from '@/database/models/user';
 import { UserPersonaModel } from '@/database/models/userMemory/persona';
 import { WorkspaceUserSettingsModel } from '@/database/models/workspaceUserSettings';
 import { toolsEnv } from '@/envs/tools';
+import { getAgentRunLimits } from '@/helpers/agentRunLimits';
 import {
   type ExecutionPlan,
   executionTargetToRuntimeMode,
+  isCloudSandboxExecutionEnabled,
   isDeviceCapablePlan,
   isDeviceLockedPlan,
   resolveExecutionPlan,
@@ -1163,6 +1165,8 @@ export class AiAgentService {
       }
 
       const runtimeConfig = getAgentRuntimeConfig(agentSlug, {
+        // Inbox self-intro uses title (username); omit → falls back to "Yida AI".
+        agentDisplayName: agentConfig.title || undefined,
         model: agentConfig.model,
         plugins: activePluginIds,
         userLocale,
@@ -2773,6 +2777,8 @@ export class AiAgentService {
         // importantly the `device-unrouted` degradation, where the user picked
         // a local device that is offline and exec silently lands in the sandbox.
         manifestContext: {
+          // YidaLab kill-switch: hide skills sandbox APIs when cloud sandbox is off.
+          cloudSandboxAvailable: isCloudSandboxExecutionEnabled(),
           executionEnv: executionPlan.kind,
           executionEnvUnroutedReason:
             executionPlan.kind === 'device-unrouted' ? executionPlan.reason : undefined,
@@ -3682,7 +3688,7 @@ export class AiAgentService {
         initialContext,
         initialMessages: allMessages,
         initialStepCount,
-        maxSteps,
+        maxSteps: maxSteps ?? getAgentRunLimits().maxSteps,
         modelRuntimeConfig: { model, provider },
         hooks,
         operationId,

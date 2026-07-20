@@ -1,0 +1,35 @@
+name: Sync Model Bank
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    if: ${{ github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: canary
+
+      - name: Sync model definitions from upstream canary
+        run: |
+          git remote add upstream https://github.com/lobehub/lobehub.git
+          git fetch --depth=1 upstream canary
+          git checkout upstream/canary -- packages/model-bank
+
+      - name: Create update pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          add-paths: packages/model-bank
+          branch: chore/sync-model-bank
+          commit-message: '💄 chore(model-bank): sync upstream catalog'
+          delete-branch: true
+          title: '💄 chore(model-bank): sync upstream catalog'
+          body: 'Automated synchronization of all AI provider model definitions from lobehub/lobehub canary.'

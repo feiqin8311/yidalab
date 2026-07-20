@@ -87,8 +87,9 @@ export const createTaskRuntime = (deps: TaskRuntimeDeps) => {
   const resolveAssigneeAgent = async (assigneeAgentId?: string | null) => {
     if (!assigneeAgentId) return { success: true } as const;
 
-    const exists = await agentModel().existsById(assigneeAgentId);
-    if (exists) return { success: true } as const;
+    // Includes colleague workspace inboxes (task-assignable even when private).
+    const assignable = await agentModel().listAssignableForTasks();
+    if (assignable.some((a) => a.id === assigneeAgentId)) return { success: true } as const;
 
     return {
       content: `Assignee agent not found: ${assigneeAgentId}`,

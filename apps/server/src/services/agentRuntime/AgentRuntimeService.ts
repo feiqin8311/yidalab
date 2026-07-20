@@ -41,6 +41,7 @@ import { AgentOperationModel } from '@/database/models/agentOperation';
 import { MessageModel } from '@/database/models/message';
 import { type LobeChatDatabase } from '@/database/type';
 import { appEnv } from '@/envs/app';
+import { getAgentRunLimits } from '@/helpers/agentRunLimits';
 import { type AgentRuntimeCoordinatorOptions } from '@/server/modules/AgentRuntime';
 import { AgentRuntimeCoordinator, createStreamEventManager } from '@/server/modules/AgentRuntime';
 import { formatErrorForState } from '@/server/modules/AgentRuntime/formatErrorForState';
@@ -451,7 +452,7 @@ export class AgentRuntimeService {
       discordContext,
       evalContext,
       executionPlan,
-      maxSteps,
+      maxSteps: maxStepsParam,
       userMemory,
       deviceSystemInfo,
       operationSkillSet,
@@ -461,6 +462,13 @@ export class AgentRuntimeService {
       initialStepCount = 0,
       workspaceId,
     } = params;
+
+    // YidaLab run brakes: default maxSteps / token / fail-streak when caller
+    // omits them (web chat historically left maxSteps undefined → no real cap).
+    const runLimits = getAgentRunLimits();
+    const maxSteps = maxStepsParam ?? runLimits.maxSteps;
+    const maxTotalTokens = runLimits.maxTotalTokens;
+    const toolFailStreakLimit = runLimits.toolFailStreak;
 
     // Persist initial agent_operations row. CompletionLifecycle owns both
     // ends of the persistence lifecycle (start row here, terminal update
@@ -548,6 +556,7 @@ export class AgentRuntimeService {
           ...appContext,
         },
         maxSteps,
+        maxTotalTokens,
         // modelRuntimeConfig at state level for executor fallback
         modelRuntimeConfig,
         operationId,
@@ -556,6 +565,7 @@ export class AgentRuntimeService {
         stepCount: initialStepCount,
         // Backward-compat: resolved tool fields read by RuntimeExecutors
         toolExecutorMap: operationToolSet.executorMap,
+        toolFailStreakLimit,
         toolManifestMap: operationToolSet.manifestMap,
         toolSourceMap: operationToolSet.sourceMap,
         tools: operationToolSet.tools,

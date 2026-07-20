@@ -50,8 +50,8 @@ const LockedAlert = memo(() => {
     );
   }
 
-  const title = holder?.fullName
-    ? t('pageEditor.editMode.lockedByOther', { name: holder.fullName })
+  const title = holder?.username
+    ? t('pageEditor.editMode.lockedByOther', { name: holder.username })
     : t('pageEditor.editMode.lockedBySomeone');
 
   return (

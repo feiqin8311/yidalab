@@ -1,9 +1,10 @@
+import { INBOX_SESSION_ID } from '@lobechat/const';
 import type { UserPreference } from '@lobechat/types';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
-import { messages, nextauthAccounts, topics, users, userSettings } from '../../schemas';
+import { agents, messages, nextauthAccounts, topics, users, userSettings } from '../../schemas';
 import type { LobeChatDatabase } from '../../type';
 import type { ListUsersForMemoryExtractorCursor } from '../user';
 import { UserModel, UserNotFoundError } from '../user';
@@ -21,7 +22,13 @@ describe('UserModel', () => {
   beforeEach(async () => {
     await serverDB.delete(users);
     await serverDB.insert(users).values([
-      { id: userId, email: 'test@example.com', fullName: 'Test User' },
+      {
+        company: 'YidaLab',
+        email: 'test@example.com',
+        username: 'Test User',
+        id: userId,
+        position: 'Engineer',
+      },
       { id: otherUserId, email: 'other@example.com' },
     ]);
   });
@@ -118,7 +125,9 @@ describe('UserModel', () => {
 
       expect(result.userId).toBe(userId);
       expect(result.email).toBe('test@example.com');
-      expect(result.fullName).toBe('Test User');
+      expect(result.username).toBe('Test User');
+      expect(result.company).toBe('YidaLab');
+      expect(result.position).toBe('Engineer');
       expect(result.settings.general).toEqual({ fontSize: 14 });
       expect(result.settings.tts).toEqual({ voice: 'default' });
       expect(result.settings.notification).toEqual({ inbox: { enabled: false } });
@@ -192,7 +201,7 @@ describe('UserModel', () => {
   describe('updateUser', () => {
     it('should update user properties', async () => {
       await userModel.updateUser({
-        fullName: 'Updated Name',
+        username: 'Updated Name',
         avatar: 'https://example.com/avatar.jpg',
       });
 
@@ -200,8 +209,24 @@ describe('UserModel', () => {
         where: eq(users.id, userId),
       });
 
-      expect(updated?.fullName).toBe('Updated Name');
+      expect(updated?.username).toBe('Updated Name');
       expect(updated?.avatar).toBe('https://example.com/avatar.jpg');
+    });
+
+    it('syncs the inbox agent title to the user full name', async () => {
+      await serverDB.insert(agents).values({
+        id: 'user-model-inbox-agent',
+        slug: INBOX_SESSION_ID,
+        title: 'Ke Pengxiang',
+        userId,
+      });
+
+      await userModel.updateUser({ username: '柯鹏翔' });
+
+      const inboxAgent = await serverDB.query.agents.findFirst({
+        where: eq(agents.id, 'user-model-inbox-agent'),
+      });
+      expect(inboxAgent?.title).toBe('柯鹏翔');
     });
 
     it('should normalize empty string email to null', async () => {
@@ -740,7 +765,7 @@ describe('UserModel', () => {
         expect(result.responseLanguage).toBe('en-US');
       });
 
-      it('should use firstName when fullName is not available', async () => {
+      it('should use firstName when username is not available', async () => {
         await serverDB.delete(users);
         await serverDB.insert(users).values({
           id: userId,

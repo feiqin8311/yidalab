@@ -41,19 +41,21 @@ export class MCPActionImpl {
 
   useFetchMcpList = (params: McpQueryParams): SWRResponse<McpListResponse> => {
     const locale = globalHelpers.getCurrentLanguage();
-    return useClientDataSWR(discoverKeys.mcpList(locale, params), async () =>
-      discoverService.getMcpList({
-        ...params,
-        page: params.page ? Number(params.page) : 1,
-        pageSize: params.pageSize ? Number(params.pageSize) : 21,
-      }),
+    return useClientDataSWR(
+      discoverKeys.mcpList(locale, { ...params, source: 'company' }),
+      async () =>
+        discoverService.getMcpList({
+          ...params,
+          page: params.page ? Number(params.page) : 1,
+          pageSize: params.pageSize ? Number(params.pageSize) : 21,
+        }),
     );
   };
 
   useMcpCategories = (params: CategoryListQuery): SWRResponse<CategoryItem[]> => {
     const locale = globalHelpers.getCurrentLanguage();
     return useClientDataSWR(
-      discoverKeys.mcpCategories(locale, params),
+      discoverKeys.mcpCategories(locale, { ...params, source: 'company' }),
       async () => discoverService.getMcpCategories(params),
       {
         revalidateOnFocus: false,

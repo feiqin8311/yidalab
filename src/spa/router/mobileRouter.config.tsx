@@ -73,13 +73,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
       // List routes (with ListLayout)
       {
         children: [
-          {
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(list)/(home)'),
-              'Mobile > Discover > List > Home',
-            ),
-            index: true,
-          },
+          { element: redirectElement('agent'), index: true },
           {
             children: [
               {
@@ -90,24 +84,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
                 path: 'agent',
               },
             ],
-          },
-          {
-            children: [
-              {
-                element: dynamicElement(
-                  () => import('@/routes/(main)/community/(list)/model'),
-                  'Mobile > Discover > List > Model',
-                ),
-                path: 'model',
-              },
-            ],
-          },
-          {
-            element: dynamicElement(
-              () => import('@/routes/(main)/community/(list)/provider'),
-              'Mobile > Discover > List > Provider',
-            ),
-            path: 'provider',
           },
           {
             children: [
@@ -148,24 +124,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
               'Mobile > Discover > Detail > Agent',
             ),
             path: 'agent/:slug',
-          },
-          {
-            element: dynamicElement(
-              () =>
-                import('@/routes/(main)/community/(detail)/model').then((m) => m.MobileModelPage),
-              'Mobile > Discover > Detail > Model',
-            ),
-            path: 'model/:slug',
-          },
-          {
-            element: dynamicElement(
-              () =>
-                import('@/routes/(main)/community/(detail)/provider').then(
-                  (m) => m.MobileProviderPage,
-                ),
-              'Mobile > Discover > Detail > Provider',
-            ),
-            path: 'provider/:slug',
           },
           {
             element: dynamicElement(
@@ -264,13 +222,6 @@ export const mobileRoutes: RouteObject[] = [
     children: [
       ...sharedMainAreaChildren,
 
-      // Downloads page (personal-only — never mirrored under /:workspaceSlug)
-      {
-        element: dynamicElement(() => import('@/routes/(main)/downloads'), 'Mobile > Downloads'),
-        errorElement: <ErrorBoundary />,
-        path: 'downloads',
-      },
-
       // Settings routes (personal-only — never mirrored under /:workspaceSlug)
       {
         children: [
@@ -302,6 +253,14 @@ export const mobileRoutes: RouteObject[] = [
               'Mobile > Settings > Provider > Layout',
             ),
             path: 'provider',
+          },
+          {
+            element: redirectElement('/agent/channel'),
+            path: 'messenger',
+          },
+          {
+            element: redirectElement('/agent/channel'),
+            path: 'messenger/:sub',
           },
           // Other settings tabs (common, agent, memory, tts, about, etc.)
           {

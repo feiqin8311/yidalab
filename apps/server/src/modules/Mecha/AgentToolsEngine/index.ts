@@ -34,6 +34,7 @@ import debug from 'debug';
 
 import {
   executionTargetToRuntimeMode,
+  isCloudSandboxExecutionEnabled,
   isDeviceLockedPlan,
   resolveExecutionTarget,
   resolveToolMode,
@@ -289,6 +290,19 @@ export const createServerAgentToolsEngine = (
   } else if (deviceLocked) {
     for (const identifier of REMOTE_DEVICE_TOOL_IDENTIFIERS) excludedIdentifiers.add(identifier);
   }
+  // Kill-switch: never seed / activate cloud sandbox when the deployment has
+  // no provisioned market sandbox (YidaLab default).
+  const sandboxOn = isCloudSandboxExecutionEnabled();
+  if (!sandboxOn) excludedIdentifiers.add(CloudSandboxManifest.identifier);
+
+  const baseDefaultToolIds = isCustomMode
+    ? (agentConfig.plugins ?? [])
+    : isChatMode
+      ? chatModeAllowedToolIds
+      : [...defaultToolIds, ...(isGroupSupervisor ? groupSupervisorToolIds : [])];
+  const resolvedDefaultToolIds = sandboxOn
+    ? baseDefaultToolIds
+    : baseDefaultToolIds.filter((id) => id !== CloudSandboxManifest.identifier);
 
   return createServerToolsEngine(context, {
     // Pass additional manifests (e.g., LobeHub Skills)
@@ -305,11 +319,7 @@ export const createServerAgentToolsEngine = (
     // here (the `agentModeRules` above then enable them). Enabling a tool that
     // isn't a candidate is a no-op — the checker only filters
     // `union(toolIds, defaultToolIds)`.
-    defaultToolIds: isCustomMode
-      ? (agentConfig.plugins ?? [])
-      : isChatMode
-        ? chatModeAllowedToolIds
-        : [...defaultToolIds, ...(isGroupSupervisor ? groupSupervisorToolIds : [])],
+    defaultToolIds: resolvedDefaultToolIds,
     // Post-merge wall: a plugin or Skill/Composio manifest claiming a
     // device identifier survives `buildAllowedBuiltinTools` (which only
     // filters the builtin source). Excluding the identifiers here drops
@@ -320,7 +330,11 @@ export const createServerAgentToolsEngine = (
     excludeIdentifiers: excludedIdentifiers.size > 0 ? excludedIdentifiers : undefined,
     // Conversation context for context-aware builtin manifests (scope /
     // isSubAgent), e.g. hiding lobe-agent's callSubAgent in sub-agent / group runs.
-    manifestContext,
+    // Also carry cloudSandboxAvailable so lobe-skills strips sandbox APIs.
+    manifestContext: {
+      ...manifestContext,
+      cloudSandboxAvailable: sandboxOn,
+    },
     enableChecker: createEnableChecker({
       // Allow lobe-activator to dynamically enable tools at runtime (e.g., lobe-creds, lobe-cron).
       // Only in agent mode; chat/custom modes can't let the activator bypass their fixed set.

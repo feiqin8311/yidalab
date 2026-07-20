@@ -1,53 +1,21 @@
 import { LOBE_CHAT_CLOUD, UTM_SOURCE } from '@lobechat/business-const';
-import { isDesktop } from '@lobechat/const';
-import { Flexbox, Hotkey, Icon, Tag } from '@lobehub/ui';
+import { Icon } from '@lobehub/ui';
 import type { ItemType } from 'antd/es/menu/interface';
-import { BrainCircuit, Cloudy, Download, HardDriveDownload, LogOut, Settings2 } from 'lucide-react';
-import type { PropsWithChildren } from 'react';
-import { memo } from 'react';
+import { BrainCircuit, Building2, Cloudy, HardDriveDownload, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import useBusinessMenuItems from '@/business/client/features/User/useBusinessMenuItems';
-import { useHasActiveWorkspace } from '@/business/client/hooks/useHasActiveWorkspace';
+import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
 import { type MenuProps } from '@/components/Menu';
-import { DEFAULT_DESKTOP_HOTKEY_CONFIG } from '@/const/desktop';
 import { OFFICIAL_URL } from '@/const/url';
 import DataImporter from '@/features/DataImporter';
-import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { useNavLayout } from '@/hooks/useNavLayout';
 import { featureFlagsSelectors, useServerConfigStore } from '@/store/serverConfig';
 import { useUserStore } from '@/store/user';
 import { authSelectors } from '@/store/user/selectors';
 
-import { useNewVersion } from './useNewVersion';
-
-const NewVersionBadge = memo(
-  ({
-    children,
-    showBadge,
-    onClick,
-  }: PropsWithChildren & { onClick?: () => void; showBadge?: boolean }) => {
-    const { t } = useTranslation('common');
-    if (!showBadge)
-      return (
-        <Flexbox flex={1} onClick={onClick}>
-          {children}
-        </Flexbox>
-      );
-    return (
-      <Flexbox horizontal align={'center'} flex={1} gap={8} width={'100%'} onClick={onClick}>
-        {children}
-        <Tag color={'info'} size={'small'} style={{ borderRadius: 16, paddingInline: 8 }}>
-          {t('upgradeVersion.hasNew')}
-        </Tag>
-      </Flexbox>
-    );
-  },
-);
-
 export const useMenu = () => {
-  const hasNewVersion = useNewVersion();
   const { t } = useTranslation(['common', 'setting', 'auth']);
   const { showCloudPromotion, hideDocs } = useServerConfigStore(featureFlagsSelectors);
   const [isLogin, isLoginWithAuth] = useUserStore((s) => [
@@ -56,26 +24,28 @@ export const useMenu = () => {
   ]);
   const { userPanel } = useNavLayout();
   const businessMenuItems = useBusinessMenuItems(isLogin);
-  const hasActiveWorkspace = useHasActiveWorkspace();
+  const activeWorkspaceSlug = useActiveWorkspaceSlug();
 
-  const settings: MenuProps['items'] = [
-    {
-      extra: isDesktop ? (
-        <div>
-          <Hotkey keys={DEFAULT_DESKTOP_HOTKEY_CONFIG.openSettings} />
-        </div>
-      ) : undefined,
-      icon: <Icon icon={Settings2} />,
-      key: 'setting',
-      label: (
-        <WorkspaceLink to="/settings">
-          <NewVersionBadge showBadge={hasNewVersion}>
-            {t(hasActiveWorkspace ? 'userPanel.workspaceSetting' : 'userPanel.setting')}
-          </NewVersionBadge>
-        </WorkspaceLink>
-      ),
-    },
-    ...(userPanel.showMemory
+  // Company settings is the primary settings surface after join/create company.
+  // Personal settings entry is intentionally omitted when a workspace is active
+  // (account-only needs stay under company settings / auth flows).
+  const workspaceSettingsItem: MenuProps['items'] = activeWorkspaceSlug
+    ? [
+        {
+          icon: <Icon icon={Building2} />,
+          key: 'workspace-settings',
+          label: (
+            <Link to={`/${activeWorkspaceSlug}/settings`}>
+              {t('workspaceSetting.entryPoint', { ns: 'setting' })}
+            </Link>
+          ),
+        },
+      ]
+    : [];
+
+  // Pre-company only: thin memory shortcut if enabled (no full personal settings).
+  const settings: MenuProps['items'] =
+    !activeWorkspaceSlug && userPanel.showMemory
       ? [
           {
             icon: <Icon icon={BrainCircuit} />,
@@ -83,8 +53,7 @@ export const useMenu = () => {
             label: <Link to="/memory">{t('tab.memory')}</Link>,
           },
         ]
-      : []),
-  ];
+      : [];
 
   const helps: MenuProps['items'] = [
     showCloudPromotion && {
@@ -102,23 +71,12 @@ export const useMenu = () => {
     },
   ].filter(Boolean) as ItemType[];
 
-  const getApp: MenuProps['items'] = [
-    {
-      icon: <Icon icon={Download} />,
-      key: 'get-app',
-      label: (
-        <WorkspaceLink escape to="/downloads">
-          {t('getApp')}
-        </WorkspaceLink>
-      ),
-    },
-  ];
-
   const mainItems = [
     {
       type: 'divider',
     },
 
+    ...(isLogin ? workspaceSettingsItem : []),
     ...(isLogin ? settings : []),
     ...businessMenuItems,
     ...(userPanel.showDataImporter && isLogin
@@ -134,7 +92,6 @@ export const useMenu = () => {
         ]
       : []),
     ...(!hideDocs ? helps : []),
-    ...(!isDesktop ? getApp : []),
   ]
     .filter(Boolean)
     // Remove consecutive dividers to prevent double divider lines

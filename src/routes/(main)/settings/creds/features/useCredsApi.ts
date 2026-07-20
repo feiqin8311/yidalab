@@ -7,23 +7,22 @@ import { lambdaClient, lambdaQuery } from '@/libs/trpc/client';
 /**
  * Personal vs workspace creds API binding.
  *
- * The personal page (`/settings/creds`) and the workspace page
- * (`/[workspaceSlug]/settings/creds`) share UI components but talk to
- * different tRPC routers — `market.creds` (Market user account) versus
- * `workspaceCreds` (Market organization mirroring the cloud workspace).
+ * Self-hosted / second-party default: personal page uses `localCreds`
+ * (DB-backed, no Market login). Workspace page may still inject
+ * `workspaceCreds` via {@link CredsApiProvider} when implemented.
  *
- * The workspace shell wraps the page in {@link CredsApiProvider} with the
- * workspace bindings. Forms/modals read whichever client/query namespace is
- * active via {@link useCredsApi} and otherwise behave identically.
+ * Forms/modals read whichever client/query namespace is active via
+ * {@link useCredsApi} and otherwise behave identically.
  */
 export interface CredsApi {
-  client: typeof lambdaClient.market.creds;
-  query: typeof lambdaQuery.market.creds;
+  // Structural mirror of market.creds / localCreds — cast keeps shared UI typed.
+  client: typeof lambdaClient.localCreds;
+  query: typeof lambdaQuery.localCreds;
 }
 
 const defaultCredsApi: CredsApi = {
-  client: lambdaClient.market.creds,
-  query: lambdaQuery.market.creds,
+  client: lambdaClient.localCreds,
+  query: lambdaQuery.localCreds,
 };
 
 const CredsApiContext = createContext<CredsApi | null>(null);

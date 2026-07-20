@@ -9,7 +9,6 @@ import { HardDriveDownload, HardDriveUpload } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import AccountDeletion from '@/business/client/features/AccountDeletion';
 import { useTransferAgentsFormItem } from '@/business/client/hooks/useTransferAgentsFormItem';
 import { FORM_STYLE } from '@/const/layoutTokens';
 import DataImporter from '@/features/DataImporter';
@@ -131,7 +130,6 @@ const AdvancedActions = () => {
         ]}
         {...FORM_STYLE}
       />
-      {enableBusinessFeatures && <AccountDeletion />}
     </>
   );
 };

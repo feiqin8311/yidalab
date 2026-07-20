@@ -3,6 +3,7 @@ import type { MenuItemConstructorOptions } from 'electron';
 import { app as electronApp } from 'electron';
 
 import type { App } from '@/core/App';
+import { isPersonalSettingsHidden } from '@/utils/featureFlags';
 
 const PINNED_LIMIT = 3;
 const RECENT_AGENT_LIMIT = 3;
@@ -90,6 +91,7 @@ export const buildTrayMenuTemplate = (
     {
       click: () => openRoute(app, '/settings'),
       label: t('tray.settings'),
+      visible: !isPersonalSettingsHidden(),
     },
     { type: 'separator' },
     { label: t('tray.quit'), role: 'quit' },

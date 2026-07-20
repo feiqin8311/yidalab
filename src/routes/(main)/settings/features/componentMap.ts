@@ -22,18 +22,12 @@ export const componentMap = {
   [SettingsTabs.Memory]: dynamic(() => import('../memory'), {
     loading: loading('Settings > Memory'),
   }),
-  [SettingsTabs.Messenger]: dynamic(() => import('../messenger'), {
-    loading: loading('Settings > Messenger'),
-  }),
   [SettingsTabs.Notification]: dynamic(
     () => import('@/business/client/BusinessSettingPages/Notification'),
     {
       loading: loading('Settings > Notification'),
     },
   ),
-  [SettingsTabs.About]: dynamic(() => import('../about'), {
-    loading: loading('Settings > About'),
-  }),
   [SettingsTabs.Hotkey]: dynamic(() => import('../hotkey'), {
     loading: loading('Settings > Hotkey'),
   }),
@@ -62,9 +56,6 @@ export const componentMap = {
   [SettingsTabs.APIKey]: dynamic(() => import('../apikey'), {
     loading: loading('Settings > APIKey'),
   }),
-  [SettingsTabs.Creds]: dynamic(() => import('../creds'), {
-    loading: loading('Settings > Creds'),
-  }),
   [SettingsTabs.Security]: dynamic(() => import('../security'), {
     loading: loading('Settings > Security'),
   }),
@@ -73,6 +64,9 @@ export const componentMap = {
   }),
   [SettingsTabs.Connector]: dynamic(() => import('../connector'), {
     loading: loading('Settings > Connector'),
+  }),
+  [SettingsTabs.Company]: dynamic(() => import('../company'), {
+    loading: loading('Settings > Company'),
   }),
 
   [SettingsTabs.Plans]: dynamic(() => import('@/business/client/BusinessSettingPages/Plans'), {

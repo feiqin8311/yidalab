@@ -15,7 +15,7 @@ export interface GenerationMediaModeSegmentProps {
   mode: 'image' | 'video';
 }
 
-const styles = createStaticStyles(({ css, cssVar }) => ({
+const styles = createStaticStyles(({ css }) => ({
   lite: css`
     height: 36px;
   `,

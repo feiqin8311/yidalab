@@ -1,35 +1,50 @@
+import { isDesktop } from '@lobechat/const';
 import { SkillsIcon } from '@lobehub/ui/icons';
 import {
+  BellIcon,
   Blocks,
   Brain,
+  BrainCircuit,
   Building2,
   ChartColumnBigIcon,
   Coins,
   CreditCard,
   Database,
+  EllipsisIcon,
+  EthernetPort,
+  Gift,
+  KeyboardIcon,
   KeyIcon,
   KeyRound,
   Map,
   MonitorSmartphoneIcon,
-  ScrollText,
+  Palette as PaletteIcon,
   Sparkles,
+  TerminalSquare,
+  UserRound,
   Users,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useIsWorkspaceOwner } from '@/business/client/hooks/useIsWorkspaceOwner';
-import { useShowWorkspaceApiKey } from '@/business/client/hooks/useShowWorkspaceApiKey';
+import {
+  featureFlagsSelectors,
+  serverConfigSelectors,
+  useServerConfigStore,
+} from '@/store/serverConfig';
+import { useUserStore } from '@/store/user';
+import { userGeneralSettingsSelectors } from '@/store/user/slices/settings/selectors';
 import { WorkspaceSettingsTabs } from '@/types/workspaceSettings';
 
 export enum WorkspaceSettingsGroupKey {
-  Admin = 'admin',
   Agent = 'agent',
   General = 'general',
   Subscription = 'subscription',
+  System = 'system',
 }
 
 export interface WorkspaceSettingCategoryItem {
+  href?: string;
   icon: any;
   key: WorkspaceSettingsTabs;
   label: string;
@@ -45,14 +60,27 @@ export const useWorkspaceSettingCategory = (): WorkspaceSettingCategoryGroup[] =
   const { t } = useTranslation('setting');
   const { t: tAuth } = useTranslation('auth');
   const { t: tSubscription } = useTranslation('subscription');
-  const showApiKey = useShowWorkspaceApiKey();
-  const isOwner = useIsWorkspaceOwner();
+
+  const mobile = useServerConfigStore((s) => s.isMobile);
+  const { showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
+  const enableBusinessFeatures = useServerConfigStore(serverConfigSelectors.enableBusinessFeatures);
+  const isDevMode = useUserStore((s) => userGeneralSettingsSelectors.config(s).isDevMode);
 
   return useMemo(
     () =>
       [
         {
           items: [
+            {
+              icon: UserRound,
+              key: WorkspaceSettingsTabs.Profile,
+              label: t('workspaceSetting.tab.profile'),
+            },
+            {
+              icon: ChartColumnBigIcon,
+              key: WorkspaceSettingsTabs.Stats,
+              label: tAuth('tab.stats'),
+            },
             {
               icon: Building2,
               key: WorkspaceSettingsTabs.General,
@@ -64,31 +92,34 @@ export const useWorkspaceSettingCategory = (): WorkspaceSettingCategoryGroup[] =
               label: t('workspaceSetting.tab.members'),
             },
             {
+              icon: PaletteIcon,
+              key: WorkspaceSettingsTabs.Appearance,
+              label: t('tab.appearance'),
+            },
+            {
               icon: MonitorSmartphoneIcon,
               key: WorkspaceSettingsTabs.Devices,
               label: t('tab.devices'),
             },
-            {
-              icon: ChartColumnBigIcon,
-              key: WorkspaceSettingsTabs.Stats,
-              label: tAuth('tab.stats'),
+            !mobile && {
+              icon: KeyboardIcon,
+              key: WorkspaceSettingsTabs.Hotkey,
+              label: t('tab.hotkey'),
             },
-          ],
+            enableBusinessFeatures && {
+              icon: BellIcon,
+              key: WorkspaceSettingsTabs.Notification,
+              label: t('tab.notification'),
+            },
+          ].filter(Boolean) as WorkspaceSettingCategoryItem[],
           key: WorkspaceSettingsGroupKey.General,
-          title: t('workspaceSetting.group.general'),
+          title: t('group.common'),
         },
-        {
+
+        enableBusinessFeatures && {
           items: [
-            {
-              icon: Map,
-              key: WorkspaceSettingsTabs.Plans,
-              label: tSubscription('tab.plans'),
-            },
-            {
-              icon: ChartColumnBigIcon,
-              key: WorkspaceSettingsTabs.Usage,
-              label: t('tab.usage'),
-            },
+            { icon: Map, key: WorkspaceSettingsTabs.Plans, label: tSubscription('tab.plans') },
+            { icon: ChartColumnBigIcon, key: WorkspaceSettingsTabs.Usage, label: t('tab.usage') },
             {
               icon: Coins,
               key: WorkspaceSettingsTabs.Credits,
@@ -99,13 +130,19 @@ export const useWorkspaceSettingCategory = (): WorkspaceSettingCategoryGroup[] =
               key: WorkspaceSettingsTabs.Billing,
               label: tSubscription('tab.billing'),
             },
+            {
+              icon: Gift,
+              key: WorkspaceSettingsTabs.Referral,
+              label: tSubscription('tab.referral'),
+            },
           ],
           key: WorkspaceSettingsGroupKey.Subscription,
           title: t('group.subscription'),
         },
+
         {
           items: [
-            {
+            showProvider && {
               icon: Brain,
               key: WorkspaceSettingsTabs.Provider,
               label: t('tab.provider'),
@@ -118,51 +155,74 @@ export const useWorkspaceSettingCategory = (): WorkspaceSettingCategoryGroup[] =
             {
               icon: SkillsIcon,
               key: WorkspaceSettingsTabs.Skill,
-              label: t('workspaceSetting.tab.skill'),
+              label: t('tab.skill'),
             },
             {
               icon: Blocks,
               key: WorkspaceSettingsTabs.Connector,
-              label: t('workspaceSetting.tab.connector'),
+              label: t('tab.connector'),
+            },
+            {
+              icon: BrainCircuit,
+              key: WorkspaceSettingsTabs.Memory,
+              label: t('tab.memory'),
             },
             {
               icon: KeyRound,
               key: WorkspaceSettingsTabs.Creds,
               label: t('tab.creds'),
             },
-            // Messenger (chat platform) is intentionally omitted from workspace
-            // settings: the System Bot binding is a per-user/personal identity
-            // (the link is owned by `userId`, not the workspace), and reaching a
-            // workspace's agents happens via the scope selector on the *personal*
-            // Messenger page. There is nothing workspace-level to configure here.
-          ],
+            showApiKeyManage && {
+              icon: KeyIcon,
+              key: WorkspaceSettingsTabs.APIKey,
+              label: tAuth('tab.apikey'),
+            },
+          ].filter(Boolean) as WorkspaceSettingCategoryItem[],
           key: WorkspaceSettingsGroupKey.Agent,
-          title: t('workspaceSetting.group.agent'),
+          title: t('group.aiConfig'),
         },
-        // The Admin group is owner-only — managing shared infra and audit
-        // surfaces is an owner action.
-        isOwner && {
+
+        {
           items: [
+            isDesktop && {
+              icon: EthernetPort,
+              key: WorkspaceSettingsTabs.Proxy,
+              label: t('tab.proxy'),
+            },
+            isDesktop && {
+              icon: TerminalSquare,
+              key: WorkspaceSettingsTabs.SystemTools,
+              label: t('tab.systemTools'),
+            },
             {
               icon: Database,
               key: WorkspaceSettingsTabs.Storage,
               label: t('tab.storage'),
             },
-            showApiKey && {
+            isDevMode && {
               icon: KeyIcon,
               key: WorkspaceSettingsTabs.APIKey,
               label: tAuth('tab.apikey'),
             },
             {
-              icon: ScrollText,
-              key: WorkspaceSettingsTabs.AuditLog,
-              label: t('workspaceSetting.tab.auditLog'),
+              icon: EllipsisIcon,
+              key: WorkspaceSettingsTabs.Advanced,
+              label: t('tab.advanced'),
             },
           ].filter(Boolean) as WorkspaceSettingCategoryItem[],
-          key: WorkspaceSettingsGroupKey.Admin,
-          title: t('workspaceSetting.group.admin'),
+          key: WorkspaceSettingsGroupKey.System,
+          title: t('group.system'),
         },
       ].filter(Boolean) as WorkspaceSettingCategoryGroup[],
-    [t, tAuth, tSubscription, showApiKey, isOwner],
+    [
+      t,
+      tAuth,
+      tSubscription,
+      enableBusinessFeatures,
+      mobile,
+      showApiKeyManage,
+      showProvider,
+      isDevMode,
+    ],
   );
 };

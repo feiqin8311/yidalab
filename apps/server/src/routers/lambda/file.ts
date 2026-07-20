@@ -18,6 +18,7 @@ import { AsyncTaskModel } from '@/database/models/asyncTask';
 import { ChunkModel } from '@/database/models/chunk';
 import { DocumentModel } from '@/database/models/document';
 import { FileModel } from '@/database/models/file';
+import { ResourceGrantModel } from '@/database/models/resourceGrant';
 import { KnowledgeRepo } from '@/database/repositories/knowledge';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
@@ -141,6 +142,7 @@ const fileProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => 
       fileModel: new FileModel(ctx.serverDB, ctx.userId, wsId),
       fileService: new FileService(ctx.serverDB, ctx.userId, wsId),
       knowledgeRepo: new KnowledgeRepo(ctx.serverDB, ctx.userId, wsId),
+      resourceGrantModel: new ResourceGrantModel(ctx.serverDB, ctx.userId, wsId),
     },
   });
 });
@@ -742,6 +744,61 @@ export const fileRouter = router({
 
       await ctx.fileModel.setVisibility(input.id, input.visibility);
       return { success: true };
+    }),
+
+  listFileGrants: fileProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.workspaceId) return [];
+      const file = await ctx.fileModel.findById(input.id);
+      if (!file) throw new TRPCError({ code: 'NOT_FOUND', message: 'File not found' });
+      // Creator or admin can view grants; grantees don't need the full list.
+      return ctx.resourceGrantModel.list('file', input.id);
+    }),
+
+  /**
+   * Full-replace share targets for a private file. Sets visibility to private
+   * and clears the mutual-exclusion with public. Empty grants = pure private.
+   */
+  setFileGrants: fileProcedure
+    .use(withScopedPermission('file:update'))
+    .input(
+      z.object({
+        grants: z.array(
+          z.object({
+            granteeId: z.string(),
+            granteeType: z.enum(['user', 'department']),
+            role: z.enum(['viewer', 'editor']).optional(),
+          }),
+        ),
+        id: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.workspaceId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'File grants only apply inside a workspace',
+        });
+      }
+
+      const file = await ctx.fileModel.findById(input.id);
+      if (!file) throw new TRPCError({ code: 'NOT_FOUND', message: 'File not found' });
+
+      if (file.userId !== ctx.userId) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the creator can manage file grants',
+        });
+      }
+
+      // Specified range is always private; clear public if needed.
+      if (file.visibility === 'public') {
+        await ctx.fileModel.setVisibility(input.id, 'private');
+      }
+
+      const grants = await ctx.resourceGrantModel.set('file', input.id, input.grants);
+      return { grants, success: true };
     }),
 
   transferEntity: fileProcedure

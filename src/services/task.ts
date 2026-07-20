@@ -20,6 +20,8 @@ class TaskService {
     visibility?: 'private' | 'public';
   }) => lambdaClient.task.list.query(params);
 
+  listAssignableAgents = async () => lambdaClient.task.listAssignableAgents.query();
+
   groupList = async (params: {
     assigneeAgentId?: string;
     groups: Array<{

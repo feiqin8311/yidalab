@@ -183,7 +183,7 @@ export const useMenu = (): { menuHeader?: ReactNode; menuItems: DropdownItem[] }
   const topicTitle = activeTopic?.title ?? '';
   const isFavorite = !!activeTopic?.favorite;
   const menuHeader = useMemo<ReactNode | undefined>(() => {
-    if (!authorInfo?.fullName || !topicId) return undefined;
+    if (!authorInfo?.username || !topicId) return undefined;
 
     const updatedAt = activeTopic?.updatedAt;
     const formattedDate = updatedAt
@@ -201,12 +201,12 @@ export const useMenu = (): { menuHeader?: ReactNode; menuItems: DropdownItem[] }
 
     return (
       <TopicInfoHeader
-        authorName={authorInfo.fullName}
+        authorName={authorInfo.username}
         title={t('info.title', { ns: 'topic' })}
         updatedAtLabel={updatedAtLabel}
       />
     );
-  }, [activeTopic?.updatedAt, authorInfo?.fullName, topicId, t]);
+  }, [activeTopic?.updatedAt, authorInfo?.username, topicId, t]);
 
   const menuItems = useMemo<DropdownItem[]>(() => {
     const items: DropdownItem[] = [];

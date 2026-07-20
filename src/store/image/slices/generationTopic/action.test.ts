@@ -58,7 +58,7 @@ beforeEach(() => {
     generationTopics: [],
     activeGenerationTopicId: null,
     loadingGenerationTopicIds: [],
-    newGenerationTopicVisibility: 'private',
+    newGenerationTopicVisibility: 'public',
   });
 });
 
@@ -68,10 +68,10 @@ afterEach(() => {
 
 describe('GenerationTopicAction', () => {
   describe('setNewGenerationTopicVisibility', () => {
-    it('should default new generation topics to private visibility', () => {
+    it('should default new generation topics to public visibility', () => {
       const { result } = renderHook(() => useImageStore());
 
-      expect(result.current.newGenerationTopicVisibility).toBe('private');
+      expect(result.current.newGenerationTopicVisibility).toBe('public');
     });
 
     it('should update new generation topic visibility', () => {
@@ -109,7 +109,7 @@ describe('GenerationTopicAction', () => {
       });
 
       expect(createdTopicId).toBe(newTopicId);
-      expect(generationTopicService.createTopic).toHaveBeenCalledWith('image', 'private');
+      expect(generationTopicService.createTopic).toHaveBeenCalledWith('image', 'public');
       expect(summaryTopicTitleSpy).toHaveBeenCalledWith(newTopicId, prompts);
     });
 
@@ -624,7 +624,7 @@ describe('GenerationTopicAction', () => {
       expect(dispatchSpy).toHaveBeenCalled();
       expect(loadingSpy).toHaveBeenCalledWith(expect.any(String), true);
       expect(loadingSpy).toHaveBeenCalledWith(newTopicId, false);
-      expect(generationTopicService.createTopic).toHaveBeenCalledWith('image', 'private');
+      expect(generationTopicService.createTopic).toHaveBeenCalledWith('image', 'public');
     });
 
     it('should create topic with selected public visibility', async () => {

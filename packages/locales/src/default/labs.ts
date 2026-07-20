@@ -18,7 +18,7 @@ export default {
     'Collapse the process (reasoning and tool calls) of finished agent turns under a "Processed" header once the final answer is visible. Click to expand the process.',
   'features.foldFinishedTurn.title': 'Fold Finished Turns',
   'features.imessage.desc':
-    'Connect agents to iMessage through the local LobeHub Desktop BlueBubbles bridge.',
+    'Connect agents to iMessage through the local YidaLab Desktop BlueBubbles bridge.',
   'features.imessage.title': 'iMessage Channel',
   'features.inAppBrowser.desc':
     'Show the Browser tab in the conversation side panel: an embedded browser that opens search results in place and lets agents browse visibly.',

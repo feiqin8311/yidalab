@@ -88,6 +88,7 @@ describe('useSignUp', () => {
       confirmPassword: 'Password123!',
       email: 'new@example.com',
       password: 'Password123!',
+      username: 'new_user',
     };
 
     it('should call signUp.email with correct params', async () => {
@@ -102,8 +103,9 @@ describe('useSignUp', () => {
       expect(mockSignUpEmail).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'new@example.com',
-          name: 'new',
+          name: 'new_user',
           password: 'Password123!',
+          username: 'new_user',
         }),
       );
     });
@@ -167,16 +169,22 @@ describe('useSignUp', () => {
       );
     });
 
-    it('should derive username from email prefix', async () => {
+    it('should use submitted username instead of deriving it from email', async () => {
       mockSignUpEmail.mockResolvedValue({ error: null });
 
       const { result } = renderHook(() => useSignUp());
 
       await act(async () => {
-        await result.current.onSubmit({ ...validValues, email: 'john.doe@gmail.com' });
+        await result.current.onSubmit({
+          ...validValues,
+          email: 'john.doe@gmail.com',
+          username: 'john_doe',
+        });
       });
 
-      expect(mockSignUpEmail).toHaveBeenCalledWith(expect.objectContaining({ name: 'john.doe' }));
+      expect(mockSignUpEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'john_doe', username: 'john_doe' }),
+      );
     });
 
     it('should show error for duplicate email', async () => {
@@ -184,6 +192,25 @@ describe('useSignUp', () => {
         error: {
           code: 'FAILED_TO_CREATE_USER',
           details: { cause: { code: '23505' } },
+        },
+      });
+
+      const { result } = renderHook(() => useSignUp());
+
+      await act(async () => {
+        await result.current.onSubmit(validValues);
+      });
+
+      expect(mockMessageError).toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(window.location.href).toBe('');
+    });
+
+    it('should show error for duplicate username', async () => {
+      mockSignUpEmail.mockResolvedValue({
+        error: {
+          code: 'FAILED_TO_CREATE_USER',
+          details: { cause: { code: '23505', constraint: 'users_username_unique' } },
         },
       });
 

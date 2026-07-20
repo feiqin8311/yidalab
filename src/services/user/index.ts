@@ -119,8 +119,8 @@ export class UserService {
     return lambdaClient.user.updateInterests.mutate(interests);
   };
 
-  updateFullName = async (fullName: string) => {
-    return lambdaClient.user.updateFullName.mutate(fullName);
+  updateProfile = async (profile: { company?: string; position?: string }) => {
+    return lambdaClient.user.updateProfile.mutate(profile);
   };
 
   updateUsername = async (username: string) => {

@@ -7,11 +7,9 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { Navigate, useSearchParams } from 'react-router';
 
 import Loading from '@/components/Loading/BrandTextLoading';
-import { useOnboardingAgentTemplates } from '@/hooks/useOnboardingAgentTemplates';
 import OnboardingContainer from '@/routes/onboarding/_layout';
 import { deriveOnboardingBranchPath } from '@/routes/onboarding/branch';
 import ResponseLanguageStep from '@/routes/onboarding/features/ResponseLanguageStep';
-import TelemetryStep from '@/routes/onboarding/features/TelemetryStep';
 import {
   trackOnboardingStepCompleted,
   trackOnboardingStepViewed,
@@ -27,20 +25,18 @@ import { clearStaleOnboardingCallbackUrl, isSafeRedirectPath } from '@/utils/onb
  * the current classic flow (1=FullName, 2=Interests, 3=ProSettings,
  * 4=AgentPicker).
  *
- * Telemetry/Language are extracted into the shared prefix, so an in-progress
- * legacy user must skip those positions when resuming classic. Legacy
- * Language/ProSettings (raw >= 4) resume at the new ProSettings step
- * (MAX_ONBOARDING_STEPS - 1) — never the trailing agent-picker step.
+ * The former telemetry page is removed, so the shared prefix now contains
+ * only language selection. Legacy users resume at the corresponding classic
+ * step without ever reaching the removed agent-picker page.
  */
 const remapLegacyClassicStep = (raw: number): number => {
   if (raw <= 2) return 1;
   if (raw === 3) return 2;
-  return MAX_ONBOARDING_STEPS - 1;
+  return MAX_ONBOARDING_STEPS;
 };
 
 const COMMON_STEP_TRACKING = {
-  1: { flow: 'common', step: 'telemetry', stepIndex: 1 },
-  2: { flow: 'common', step: 'response_language', stepIndex: 2 },
+  responseLanguage: { flow: 'common', step: 'response_language', stepIndex: 1 },
 } as const;
 
 const appendCallbackUrl = (path: string, searchParams: URLSearchParams): string => {
@@ -59,11 +55,9 @@ const CommonOnboardingPage = memo(() => {
   const serverConfigInit = useServerConfigStore((s) => s.serverConfigInit);
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const step: 1 | 2 = searchParams.get('step') === '2' ? 2 : 1;
   const hasStepParam = searchParams.has('step');
+  const isReenteringLanguage = searchParams.get('step') === '2';
   const viewedStepKeysRef = useRef<Set<string>>(new Set());
-
-  useOnboardingAgentTemplates(isUserStateInit && (!commonStepsCompleted || hasStepParam));
 
   // One-time legacy migration: when the user lands on the shared prefix, if
   // their persisted `currentStep` was authored under the old 5-step schema,
@@ -104,24 +98,24 @@ const CommonOnboardingPage = memo(() => {
   useEffect(() => {
     if (!isUserStateInit || (commonStepsCompleted && !hasStepParam)) return;
 
-    const payload = COMMON_STEP_TRACKING[step];
+    const payload = COMMON_STEP_TRACKING.responseLanguage;
     if (viewedStepKeysRef.current.has(payload.step)) return;
 
     viewedStepKeysRef.current.add(payload.step);
     trackOnboardingStepViewed(payload);
-  }, [commonStepsCompleted, hasStepParam, isUserStateInit, step]);
-
-  const goNextFromTelemetry = useCallback(() => {
-    trackOnboardingStepCompleted(COMMON_STEP_TRACKING[1]);
-    setSearchParams({ step: '2' }, { replace: true });
-  }, [setSearchParams]);
+  }, [commonStepsCompleted, hasStepParam, isUserStateInit]);
 
   const goBackFromLanguage = useCallback(() => {
-    setSearchParams({ step: '1' }, { replace: true });
-  }, [setSearchParams]);
+    if (isReenteringLanguage) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    window.history.back();
+  }, [isReenteringLanguage, setSearchParams]);
 
   const finishCommon = useCallback(() => {
-    trackOnboardingStepCompleted(COMMON_STEP_TRACKING[2]);
+    trackOnboardingStepCompleted(COMMON_STEP_TRACKING.responseLanguage);
     setSearchParams({}, { replace: true });
   }, [setSearchParams]);
 
@@ -145,11 +139,7 @@ const CommonOnboardingPage = memo(() => {
   return (
     <OnboardingContainer>
       <Flexbox gap={24} style={{ maxWidth: 600, width: '100%' }}>
-        {step === 1 ? (
-          <TelemetryStep onNext={goNextFromTelemetry} />
-        ) : (
-          <ResponseLanguageStep onBack={goBackFromLanguage} onNext={finishCommon} />
-        )}
+        <ResponseLanguageStep onBack={goBackFromLanguage} onNext={finishCommon} />
       </Flexbox>
     </OnboardingContainer>
   );
