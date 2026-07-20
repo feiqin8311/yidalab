@@ -3,6 +3,7 @@ import '../initialize';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router/dom';
 
+import DingTalkAccessGate from '@/components/DingTalkAccessGate';
 import NextThemeProvider from '@/layout/GlobalProvider/NextThemeProvider';
 import { bootTiming } from '@/libs/bootTiming';
 import { createAppRouter } from '@/utils/router';
@@ -16,7 +17,9 @@ startAppInitialization();
 const router = createAppRouter(mobileRoutes);
 
 createRoot(document.getElementById('root')!).render(
-  <NextThemeProvider>
-    <RouterProvider router={router} />
-  </NextThemeProvider>,
+  <DingTalkAccessGate>
+    <NextThemeProvider>
+      <RouterProvider router={router} />
+    </NextThemeProvider>
+  </DingTalkAccessGate>,
 );

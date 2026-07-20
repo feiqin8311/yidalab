@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router/dom';
 
 import BootErrorBoundary from '@/components/BootErrorBoundary';
+import DingTalkAccessGate from '@/components/DingTalkAccessGate';
 import NextThemeProvider from '@/layout/GlobalProvider/NextThemeProvider';
 import { bootTiming } from '@/libs/bootTiming';
 import { createAppRouter } from '@/utils/router';
@@ -24,8 +25,10 @@ const router = createAppRouter(desktopRoutes, { basename });
 
 createRoot(document.getElementById('root')!).render(
   <BootErrorBoundary>
-    <NextThemeProvider>
-      <RouterProvider router={router} />
-    </NextThemeProvider>
+    <DingTalkAccessGate>
+      <NextThemeProvider>
+        <RouterProvider router={router} />
+      </NextThemeProvider>
+    </DingTalkAccessGate>
   </BootErrorBoundary>,
 );

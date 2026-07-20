@@ -20,10 +20,12 @@ import {
   getVerificationEmailTemplate,
   getVerificationOTPEmailTemplate,
 } from '@/libs/better-auth/email-templates';
+import { dingtalkAuthPlugin } from '@/libs/better-auth/plugins/dingtalk';
 import { emailWhitelist } from '@/libs/better-auth/plugins/email-whitelist';
 import { initBetterAuthSSOProviders } from '@/libs/better-auth/sso';
 import { createSecondaryStorage, getTrustedOrigins } from '@/libs/better-auth/utils/config';
 import { parseSSOProviders } from '@/libs/better-auth/utils/server';
+import { isDingTalkAuthConfigured } from '@/server/services/dingtalk/auth';
 import { EmailService } from '@/server/services/email';
 import { UserService } from '@/server/services/user';
 
@@ -242,8 +244,7 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
       },
       fields: {
         image: 'avatar',
-        // NOTE: use drizzle filed instead of db field, so use fullName instead of full_name
-        name: 'fullName',
+        name: 'username',
       },
       modelName: 'users',
     },
@@ -271,11 +272,16 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
       customRules: {
         '/request-password-reset': { max: 3, window: 60 },
         '/send-verification-email': { max: 3, window: 60 },
+        '/dingtalk/login': { max: 20, window: 60 },
+        '/dingtalk/jsapi-sign': { max: 30, window: 60 },
+        '/dingtalk/bootstrap': { max: 60, window: 60 },
       },
     },
     plugins: [
       ...customOptions.plugins,
       emailWhitelist(),
+      // YidaLab: DingTalk workbench free-login (免登) when credentials are configured
+      ...(isDingTalkAuthConfigured() ? [dingtalkAuthPlugin()] : []),
       expo(),
       admin(),
       // Email OTP plugin for mobile verification
