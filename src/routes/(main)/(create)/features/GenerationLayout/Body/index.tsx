@@ -6,7 +6,6 @@ import { LayoutGrid, ListIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { useGlobalStore } from '@/store/global';
 import { systemStatusSelectors } from '@/store/global/selectors';
 import { useUserStore } from '@/store/user';
@@ -17,7 +16,6 @@ import List from './List';
 
 enum GroupKey {
   Topics = 'topics',
-  WorkspaceTopics = 'workspace-topics',
 }
 
 const Body = memo<GenerationLayoutCommonProps>((props) => {
@@ -26,15 +24,12 @@ const Body = memo<GenerationLayoutCommonProps>((props) => {
   const isLogin = useUserStore(authSelectors.isLogin);
   const viewMode = useGlobalStore((s) => systemStatusSelectors[viewModeStatusKey](s));
   const updateSystemStatus = useGlobalStore((s) => s.updateSystemStatus);
-  const activeWorkspaceId = useActiveWorkspaceId();
 
   const useFetchGenerationTopics = useStore((s: any) => s.useFetchGenerationTopics);
   useFetchGenerationTopics(!!isLogin);
 
   const generationTopics = useStore(generationTopicsSelector);
   const count = generationTopics?.length || 0;
-  const workspaceCount =
-    generationTopics?.filter((topic: any) => topic.visibility !== 'private').length || 0;
 
   const viewModeTabs = (
     <Flexbox horizontal gap={2}>
@@ -58,34 +53,8 @@ const Body = memo<GenerationLayoutCommonProps>((props) => {
     </Flexbox>
   );
 
-  if (activeWorkspaceId) {
-    return (
-      <Flexbox gap={1} paddingInline={4}>
-        <Accordion defaultExpandedKeys={[GroupKey.WorkspaceTopics]} gap={2}>
-          <AccordionItem
-            action={viewModeTabs}
-            itemKey={GroupKey.WorkspaceTopics}
-            paddingBlock={4}
-            paddingInline={'8px 4px'}
-            title={
-              <Text ellipsis fontSize={12} type={'secondary'} weight={500}>
-                {t('topic.workspaceTitle')}
-                {workspaceCount > 0 && ` ${workspaceCount}`}
-              </Text>
-            }
-          >
-            <List
-              namespace={namespace}
-              useStore={useStore}
-              viewModeStatusKey={viewModeStatusKey}
-              visibility="public"
-            />
-          </AccordionItem>
-        </Accordion>
-      </Flexbox>
-    );
-  }
-
+  // Image/video gen is per-member (default private). Workspace mode uses the same
+  // personal topic list — not a company-shared "workspace" bucket.
   return (
     <Flexbox gap={1} paddingInline={4}>
       <Accordion defaultExpandedKeys={[GroupKey.Topics]} gap={2}>

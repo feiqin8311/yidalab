@@ -1,9 +1,7 @@
 'use client';
 
-import { BRANDING_NAME } from '@lobechat/business-const';
 import type { FormGroupItemType } from '@lobehub/ui';
 import { Button, Form, Icon } from '@lobehub/ui';
-import { Switch } from 'antd';
 import { HardDriveDownload, HardDriveUpload } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,19 +12,6 @@ import { FORM_STYLE } from '@/const/layoutTokens';
 const WorkspaceStorageContent = memo(() => {
   const { t } = useTranslation('setting');
   const transferAgentsFormItems = useTransferAgentsFormItem();
-
-  const analytics: FormGroupItemType = {
-    children: [
-      {
-        children: <Switch disabled />,
-        desc: t('workspaceSetting.storage.telemetry.desc', { appName: BRANDING_NAME }),
-        label: t('workspaceSetting.storage.telemetry.title'),
-        minWidth: undefined,
-        valuePropName: 'checked',
-      },
-    ],
-    title: t('analytics.title'),
-  };
 
   const system: FormGroupItemType = {
     children: [
@@ -77,7 +62,7 @@ const WorkspaceStorageContent = memo(() => {
   return (
     <Form
       collapsible={false}
-      items={[analytics, ...(dataMigration ? [dataMigration] : []), system]}
+      items={[...(dataMigration ? [dataMigration] : []), system]}
       itemsType={'group'}
       variant={'filled'}
       {...FORM_STYLE}

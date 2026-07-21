@@ -217,6 +217,7 @@
   "builtins.lobe-delivery-checker.verifyPlan.portal.verifier.title": "检查方式",
   "builtins.lobe-delivery-checker.verifyPlan.required": "必选",
   "builtins.lobe-dingpan.apiName.dingpanStatus": "钉盘状态",
+  "builtins.lobe-dingpan.apiName.uploadHtmlToDingpan": "上传 HTML 到钉盘",
   "builtins.lobe-dingpan.apiName.uploadToDingpan": "上传到钉盘",
   "builtins.lobe-group-agent-builder.apiName.batchCreateAgents": "批量创建 Agent",
   "builtins.lobe-group-agent-builder.apiName.createAgent": "创建助理",

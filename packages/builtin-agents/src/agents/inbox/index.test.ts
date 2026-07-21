@@ -20,12 +20,17 @@ describe('INBOX runtime plugins', () => {
     ]);
   });
 
-  it('systemRole hard-requires Artifacts for HTML and forbids sandbox write paths', () => {
+  it('systemRole offers Artifact vs 钉盘 choice; Artifact needs no file', () => {
     const role = createSystemRole('zh-CN', 'TestAgent');
     expect(role).toContain('lobeArtifact');
+    expect(role).toContain('askUserQuestion');
+    expect(role).toContain('uploadHtmlToDingpan');
+    expect(role).toContain('聊天内预览（Artifact）');
+    expect(role).toContain('钉盘链接');
+    expect(role).toMatch(/No file|不生成文件/i);
     expect(role).toContain('/home/user/');
     expect(role).toContain('lobe-cloud-sandbox');
-    expect(role).toMatch(/HARD RULES|must contain a complete/i);
+    expect(role).toMatch(/HARD RULES|Deliverable rules/i);
   });
 
   it('systemRole routes file delivery to lobe-dingpan, not OpenClaw memory paths', () => {

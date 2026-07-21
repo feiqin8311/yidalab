@@ -59,7 +59,8 @@ export class PluginModel {
         identifier: userInstalledPlugins.identifier,
         manifest: userInstalledPlugins.manifest,
         settings: userInstalledPlugins.settings,
-        source: userInstalledPlugins.type,
+        // Real `source` column (e.g. market / plugin); fall back to type for legacy rows.
+        source: userInstalledPlugins.source,
         type: userInstalledPlugins.type,
         updatedAt: userInstalledPlugins.updatedAt,
       })
@@ -70,6 +71,8 @@ export class PluginModel {
     return data.map<LobeTool>((item) => ({
       ...item,
       runtimeType: item.manifest?.type || 'default',
+      // Older rows may have null source; keep UI filters working.
+      source: item.source ?? item.type,
     }));
   };
 

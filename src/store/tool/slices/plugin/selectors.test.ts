@@ -177,7 +177,8 @@ describe('pluginSelectors', () => {
     it('should return a list of meta information for installed plugins', () => {
       const result = pluginSelectors.installedCustomPluginMetaList(mockState);
 
-      expect(result).toEqual([{ identifier: 'plugin-3', type: 'customPlugin' }]);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ identifier: 'plugin-3', type: 'customPlugin' });
     });
   });
 });

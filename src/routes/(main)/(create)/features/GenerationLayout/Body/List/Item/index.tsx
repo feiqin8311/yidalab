@@ -4,7 +4,7 @@ import { Icon } from '@lobehub/ui';
 import { type MenuProps } from '@lobehub/ui';
 import { confirmModal } from '@lobehub/ui/base-ui';
 import { App } from 'antd';
-import { EyeOffIcon, Trash, UsersIcon } from 'lucide-react';
+import { EyeOffIcon, Trash } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -38,12 +38,9 @@ const TopicItem = memo<TopicItemProps>(({ topic, showMoreInfo, style }) => {
   const activeTopicId = useStore((s) => s.activeGenerationTopicId);
   const currentUserId = useUserStore(userProfileSelectors.userId);
 
-  // Only the topic's creator sees visibility controls. Backend enforces the same
-  // rule via `user_id = ?` guards on `setVisibility`; surfacing the menu entry
-  // to non-owners just so the toast can reject it is a footgun — the entry
-  // itself is the wrong affordance on someone else's row.
+  // Generation topics are personal per member. Keep "make private" only so
+  // legacy company-public rows can be pulled back; do not offer publish.
   const isOwnTopic = Boolean(currentUserId && topic.creator?.id === currentUserId);
-  const canPublish = Boolean(activeWorkspaceId && isOwnTopic && topic.visibility === 'private');
   const canMakePrivate = Boolean(activeWorkspaceId && isOwnTopic && topic.visibility === 'public');
 
   const flipVisibility = async (next: 'private' | 'public') => {
@@ -93,25 +90,6 @@ const TopicItem = memo<TopicItemProps>(({ topic, showMoreInfo, style }) => {
   };
 
   const menuItems: MenuProps['items'] = [
-    ...(canPublish
-      ? [
-          {
-            icon: <Icon icon={UsersIcon} />,
-            key: 'publishToWorkspace',
-            label: t('resources.publishToWorkspace.menu', { ns: 'chat' }),
-            onClick: () => {
-              confirmModal({
-                cancelText: t('cancel', { ns: 'common' }),
-                content: <VisibilityConfirmContent variant="publish" />,
-                okText: t('continue', { ns: 'common' }),
-                title: t('resources.publishToWorkspace.menu', { ns: 'chat' }),
-                onOk: () => flipVisibility('public'),
-              });
-            },
-          },
-          { type: 'divider' as const },
-        ]
-      : []),
     ...(canMakePrivate
       ? [
           {

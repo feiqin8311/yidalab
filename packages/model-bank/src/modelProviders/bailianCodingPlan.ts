@@ -4,9 +4,10 @@ import type { ModelProviderCard } from '@/types/llm';
 // Token Plan (includes image models): https://help.aliyun.com/zh/model-studio/token-plan-overview
 const BailianCodingPlan: ModelProviderCard = {
   chatModels: [],
+  // Keep a widely available plan model for connectivity checks; 3.8 preview is Token Plan-only.
   checkModel: 'qwen3.7-plus',
   description:
-    'Aliyun Bailian Coding Plan / Token Plan provides subscription access to Qwen, GLM, Kimi, MiniMax, DeepSeek and image models (Token Plan) via a dedicated endpoint.',
+    'Aliyun Bailian Coding Plan / Token Plan provides subscription access to Qwen (incl. qwen3.8-max-preview on Token Plan), GLM, Kimi, MiniMax, DeepSeek and image models via a dedicated endpoint.',
   disableBrowserRequest: true,
   id: 'bailiancodingplan',
   modelList: { showModelFetcher: false },

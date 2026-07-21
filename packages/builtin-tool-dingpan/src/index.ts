@@ -8,6 +8,7 @@ export {
   DingpanPersonalCredKey,
   type DingpanStatusParams,
   type DingpanStatusState,
+  type UploadHtmlToDingpanParams,
   type UploadToDingpanParams,
   type UploadToDingpanState,
 } from './types';

@@ -3,6 +3,7 @@ import { type ToolManifest } from '@lobechat/types';
 import { type PluginItem, type PluginListResponse } from '@lobehub/market-sdk';
 import { type TRPCClientError } from '@trpc/client';
 import debug from 'debug';
+import { uniqBy } from 'es-toolkit/compat';
 import { produce } from 'immer';
 import { gt, valid } from 'semver';
 import { type SWRResponse } from 'swr';
@@ -875,14 +876,6 @@ export class PluginMCPStoreActionImpl {
       ? params
       : { ...params, connectionType: McpConnectionType.http };
     const page = requestParams.page ?? 1;
-    const emptyMarket: PluginListResponse = {
-      categories: [],
-      currentPage: page,
-      items: [],
-      pageSize: requestParams.pageSize ?? 20,
-      totalCount: 0,
-      totalPages: 0,
-    };
 
     return useSWR<PluginListResponse>(
       toolKeys.mcpPluginList(locale, {
@@ -891,7 +884,8 @@ export class PluginMCPStoreActionImpl {
         pageSize: requestParams.pageSize,
         q: requestParams.q,
       }),
-      () => Promise.resolve(emptyMarket),
+      // YidaLab: market.getMcpList is company-catalog only (no external MCP market).
+      () => discoverService.getMCPPluginList(requestParams),
       {
         onSuccess: (data) => {
           this.#set(
@@ -900,7 +894,7 @@ export class PluginMCPStoreActionImpl {
 
               // Set basic information
               if (!draft.isMcpListInit) {
-                draft.activeMCPIdentifier = undefined;
+                draft.activeMCPIdentifier = data.items?.[0]?.identifier;
 
                 draft.isMcpListInit = true;
                 draft.categories = data.categories;
@@ -908,13 +902,15 @@ export class PluginMCPStoreActionImpl {
                 draft.totalPages = data.totalPages;
               }
 
-              // Accumulate data logic
+              // Accumulate pages; always uniq by identifier so revalidation /
+              // overlapping pages never paint the same MCP twice.
               if (page === 1) {
-                // First page, set directly
-                draft.mcpPluginItems = data.items;
+                draft.mcpPluginItems = uniqBy(data.items, 'identifier');
               } else {
-                // Subsequent pages, accumulate data
-                draft.mcpPluginItems = [...draft.mcpPluginItems, ...data.items];
+                draft.mcpPluginItems = uniqBy(
+                  [...draft.mcpPluginItems, ...data.items],
+                  'identifier',
+                );
               }
             }),
             false,

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { parse as parseUrl } from 'node:url';
 
@@ -107,10 +107,13 @@ const queryUploadInfo = async (input: {
   return jsonResponse(resp, 'uploadInfos/query');
 };
 
-const putToOss = async (ossUrl: string, headers: Record<string, string>, filePath: string) => {
-  const body = readFileSync(filePath);
+const putToOss = async (
+  ossUrl: string,
+  headers: Record<string, string>,
+  body: Buffer | Uint8Array,
+) => {
   const resp = await fetch(ossUrl, {
-    body,
+    body: Buffer.from(body),
     headers,
     method: 'PUT',
   });
@@ -156,18 +159,16 @@ export const extractFileId = (commit: Json): string => {
 export const buildPreviewUrl = (spaceId: string, fileId: string) =>
   `https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=${encodeURIComponent(spaceId)}&fileId=${encodeURIComponent(fileId)}&type=file`;
 
-export const uploadFileToDingpan = async (input: {
-  filePath: string;
+export const uploadBytesToDingpan = async (input: {
+  body: Buffer | Uint8Array;
   folderId?: string;
   folderLink?: string;
+  name: string;
   spaceId?: string;
-  uploadName?: string;
 }) => {
-  if (!existsSync(input.filePath)) {
-    throw new Error(`file not found: ${input.filePath}`);
-  }
-  const name = input.uploadName?.trim() || basename(input.filePath);
-  const size = statSync(input.filePath).size;
+  const name = input.name.trim() || 'report.html';
+  const size = Buffer.byteLength(input.body);
+  if (size === 0) throw new Error('empty file body');
   const { spaceId, folderId } = resolveFolderTarget(input);
   const accessToken = await getAccessToken();
   const unionId = await getUnionId(accessToken);
@@ -186,7 +187,7 @@ export const uploadFileToDingpan = async (input: {
   if (!uploadKey || resourceUrls.length === 0) {
     throw new Error(`unexpected uploadInfos/query response: ${JSON.stringify(info)}`);
   }
-  await putToOss(resourceUrls[0], ossHeaders, input.filePath);
+  await putToOss(resourceUrls[0], ossHeaders, input.body);
   const commit = await commitDentry({
     accessToken,
     folderId,
@@ -202,6 +203,51 @@ export const uploadFileToDingpan = async (input: {
     previewUrl: fileId ? buildPreviewUrl(spaceId, fileId) : '',
     spaceId,
   };
+};
+
+export const uploadFileToDingpan = async (input: {
+  filePath: string;
+  folderId?: string;
+  folderLink?: string;
+  spaceId?: string;
+  uploadName?: string;
+}) => {
+  if (!existsSync(input.filePath)) {
+    throw new Error(`file not found: ${input.filePath}`);
+  }
+  const name = input.uploadName?.trim() || basename(input.filePath);
+  const body = readFileSync(input.filePath);
+  return uploadBytesToDingpan({
+    body,
+    folderId: input.folderId,
+    folderLink: input.folderLink,
+    name,
+    spaceId: input.spaceId,
+  });
+};
+
+export const uploadHtmlToDingpan = async (input: {
+  folderId?: string;
+  folderLink?: string;
+  html: string;
+  spaceId?: string;
+  uploadName?: string;
+}) => {
+  const html = input.html?.trim();
+  if (!html) throw new Error('html content is required');
+  const stamp = new Date()
+    .toISOString()
+    .replaceAll(/[-:TZ.]/g, '')
+    .slice(0, 14);
+  const name = input.uploadName?.trim() || `report-${stamp}.html`;
+  const safeName = name.toLowerCase().endsWith('.html') ? name : `${name}.html`;
+  return uploadBytesToDingpan({
+    body: Buffer.from(html, 'utf8'),
+    folderId: input.folderId,
+    folderLink: input.folderLink,
+    name: safeName,
+    spaceId: input.spaceId,
+  });
 };
 
 export const dingpanConfigStatus = () => {

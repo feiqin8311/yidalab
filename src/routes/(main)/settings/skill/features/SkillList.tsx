@@ -315,9 +315,24 @@ const SkillList = memo<SkillListProps>(
         return 0;
       });
 
-      // Separate installed plugins into community and custom
-      const communityPlugins = installedPluginList.filter((plugin) => plugin.type === 'plugin');
-      const customPlugins = installedPluginList.filter((plugin) => plugin.type === 'customPlugin');
+      // Separate installed plugins into community and custom.
+      // Market installs use type='plugin' (source may be 'market' on the row).
+      // Dedupe by identifier so a plugin never appears twice in the sidebar.
+      const dedupeById = <T extends { identifier: string }>(list: T[]) => {
+        const seen = new Set<string>();
+        return list.filter((item) => {
+          if (seen.has(item.identifier)) return false;
+          seen.add(item.identifier);
+          return true;
+        });
+      };
+
+      const communityPlugins = dedupeById(
+        installedPluginList.filter((plugin) => plugin.type === 'plugin'),
+      );
+      const customPlugins = dedupeById(
+        installedPluginList.filter((plugin) => plugin.type === 'customPlugin'),
+      );
 
       return {
         communityMCPs: communityPlugins,

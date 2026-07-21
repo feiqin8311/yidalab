@@ -14,5 +14,6 @@ export const initialGenerationTopicState: GenerationTopicState = {
     typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('topic') : null,
   generationTopics: [],
   loadingGenerationTopicIds: [],
-  newGenerationTopicVisibility: 'public',
+  // Video generation is personal per member; do not default-share to the company.
+  newGenerationTopicVisibility: 'private',
 };

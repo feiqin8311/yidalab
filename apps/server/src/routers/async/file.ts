@@ -6,7 +6,6 @@ import pMap from 'p-map';
 import { z } from 'zod';
 
 import { checkEmbeddingUsage } from '@/business/server/trpc-middlewares/async';
-import { DEFAULT_FILE_EMBEDDING_MODEL_ITEM } from '@/const/settings/knowledge';
 import { AsyncTaskModel } from '@/database/models/asyncTask';
 import { ChunkModel } from '@/database/models/chunk';
 import { EmbeddingModel } from '@/database/models/embedding';
@@ -15,7 +14,7 @@ import { type NewChunkItem, type NewEmbeddingsItem } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { fileEnv } from '@/envs/file';
 import { asyncAuthedProcedure, asyncRouter as router } from '@/libs/trpc/async';
-import { getServerDefaultFilesConfig } from '@/server/globalConfig';
+import { resolveFileEmbeddingModel } from '@/server/globalConfig/resolveFileEmbedding';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import { ChunkService } from '@/server/services/chunk';
 import { DocumentService } from '@/server/services/document';
@@ -86,8 +85,7 @@ export const fileRouter = router({
 
       const asyncTask = await asyncTaskModel.findById(input.taskId);
 
-      const { model, provider } =
-        getServerDefaultFilesConfig().embeddingModel || DEFAULT_FILE_EMBEDDING_MODEL_ITEM;
+      const { model, provider } = await resolveFileEmbeddingModel(ctx.serverDB, ctx.userId);
 
       if (!asyncTask) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Async Task not found' });
 
@@ -304,14 +302,12 @@ export const fileRouter = router({
           });
 
           // after finish partition, we need to filter out some elements
-          const chunks = chunkResult.chunks.map(
-            ({ text, ...item }): NewChunkItem => ({
-              ...item,
-              text: text ? sanitizeUTF8(text) : '',
-              userId: ctx.userId,
-              workspaceId,
-            }),
-          );
+          const chunks = chunkResult.chunks.map(({ text, ...item }): NewChunkItem => ({
+            ...item,
+            text: text ? sanitizeUTF8(text) : '',
+            userId: ctx.userId,
+            workspaceId,
+          }));
 
           const duration = Date.now() - startAt;
 
@@ -327,14 +323,12 @@ export const fileRouter = router({
           await chunkModel.bulkCreate(chunks, input.fileId);
 
           if (chunkResult.unstructuredChunks) {
-            const unstructuredChunks = chunkResult.unstructuredChunks.map(
-              (item): NewChunkItem => ({
-                ...item,
-                fileId: input.fileId,
-                userId: ctx.userId,
-                workspaceId,
-              }),
-            );
+            const unstructuredChunks = chunkResult.unstructuredChunks.map((item): NewChunkItem => ({
+              ...item,
+              fileId: input.fileId,
+              userId: ctx.userId,
+              workspaceId,
+            }));
             await chunkModel.bulkCreateUnstructuredChunks(unstructuredChunks);
           }
 

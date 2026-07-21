@@ -44,8 +44,15 @@ export const DEFAULT_USER_MEMORY_EMBEDDING_SYSTEM_AGENT_ITEM: SystemAgentItem = 
   provider: DEFAULT_EMBEDDING_PROVIDER,
 };
 
+/** Same default as file/knowledge embedding bank (`DEFAULT_FILE_EMBEDDING_MODEL_ITEM`). */
+export const DEFAULT_FILE_EMBEDDING_SYSTEM_AGENT_ITEM: SystemAgentItem = {
+  model: DEFAULT_EMBEDDING_MODEL,
+  provider: DEFAULT_EMBEDDING_PROVIDER,
+};
+
 export const DEFAULT_SYSTEM_AGENT_CONFIG: UserServiceModelConfig = {
   agentMeta: DEFAULT_SYSTEM_AGENT_ITEM,
+  fileEmbedding: DEFAULT_FILE_EMBEDDING_SYSTEM_AGENT_ITEM,
   followUpAction: DEFAULT_FOLLOW_UP_ACTION_SYSTEM_AGENT_ITEM,
   generationTopic: DEFAULT_MINI_SYSTEM_AGENT_ITEM,
   historyCompress: DEFAULT_SYSTEM_AGENT_ITEM,

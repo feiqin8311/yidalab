@@ -62,6 +62,9 @@ export const getAuthShellLeaveTarget = (pathname: string, search: string): strin
   if (!isAuthShellPath(pathname)) return null;
 
   const callbackUrl = new URLSearchParams(search).get('callbackUrl');
+  // Prefer same-origin relative path. Cross-host callbackUrl (localhost vs LAN
+  // IP) is treated as unsafe by sanitizeRedirectPath and falls back to `/`,
+  // which is correct — stay on the host DingTalk actually opened.
   const target = sanitizeRedirectPath(callbackUrl, '/');
   const targetPath = target.split(/[?#]/)[0] || '/';
 

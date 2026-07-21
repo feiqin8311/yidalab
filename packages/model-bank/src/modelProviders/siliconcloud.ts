@@ -3,7 +3,8 @@ import type { ModelProviderCard } from '@/types/llm';
 // ref: https://siliconflow.cn/zh-cn/pricing
 const SiliconCloud: ModelProviderCard = {
   chatModels: [],
-  checkModel: 'Pro/zai-org/GLM-4.7',
+  // Pro/* defaults often need real-name verification; use a widely available free-tier model.
+  checkModel: 'Qwen/Qwen2.5-7B-Instruct',
   description:
     'SiliconCloud is a cost-effective GenAI cloud service built on strong open-source base models.',
   id: 'siliconcloud',

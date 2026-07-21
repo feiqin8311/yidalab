@@ -1,4 +1,3 @@
-import { DEFAULT_FILE_EMBEDDING_MODEL_ITEM } from '@lobechat/const';
 import { type LobeChatDatabase } from '@lobechat/database';
 import {
   type ChatSemanticSearchChunk,
@@ -15,7 +14,7 @@ import { FileModel } from '@/database/models/file';
 import { type KnowledgeBaseDocumentHit, SearchRepo } from '@/database/repositories/search';
 import { knowledgeBaseFiles } from '@/database/schemas';
 import { buildWorkspaceWhere } from '@/database/utils/workspace';
-import { getServerDefaultFilesConfig } from '@/server/globalConfig';
+import { resolveFileEmbeddingModel } from '@/server/globalConfig/resolveFileEmbedding';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import { DocumentService } from '@/server/services/document';
 
@@ -132,8 +131,7 @@ export class KnowledgeBaseSearchService {
 
     // Path 1: vector search over file chunks
     const vectorPath = async (): Promise<ChatSemanticSearchChunk[]> => {
-      const { model, provider } =
-        getServerDefaultFilesConfig().embeddingModel || DEFAULT_FILE_EMBEDDING_MODEL_ITEM;
+      const { model, provider } = await resolveFileEmbeddingModel(this.serverDB, this.userId);
       const modelRuntime = await initModelRuntimeFromDB(
         this.serverDB,
         this.userId,

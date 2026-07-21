@@ -1,5 +1,6 @@
 export interface SystemAgentItem {
-  contextLimit?: number;
+  /** Token cap for dynamic context; null clears a previously saved limit. */
+  contextLimit?: number | null;
   customPrompt?: string;
   enabled?: boolean;
   model: string;
@@ -23,6 +24,11 @@ export interface UserSystemAgentConfig {
 }
 
 export interface UserMemoryServiceModelConfig {
+  /**
+   * Embedding model for resource / knowledge-base file vectorization
+   * (upload → chunks → embeddings). Distinct from userMemoryEmbedding.
+   */
+  fileEmbedding: SystemAgentItem;
   memoryAnalysisAgentConfig: SystemAgentItem;
   userMemoryEmbedding: SystemAgentItem;
   userMemoryPersonaWriter: SystemAgentItem;

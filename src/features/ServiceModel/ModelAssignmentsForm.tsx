@@ -26,7 +26,7 @@ interface SystemAgentModelItem {
 
 type LoadingKey = 'defaultAgent' | UserServiceModelConfigKey;
 
-type SavingGroup = 'assignments' | 'memory' | 'optional';
+type SavingGroup = 'assignments' | 'knowledge' | 'memory' | 'optional';
 
 const SYSTEM_AGENT_MODEL_ITEMS: SystemAgentModelItem[] = [
   { key: 'topic' },
@@ -40,6 +40,10 @@ const OPTIONAL_FEATURE_ITEMS: SystemAgentModelItem[] = [
   { key: 'followUpAction' },
   { key: 'inputCompletion' },
   { key: 'promptRewrite' },
+];
+
+const KNOWLEDGE_MODEL_ITEMS: SystemAgentModelItem[] = [
+  { key: 'fileEmbedding', modelType: 'embedding' },
 ];
 
 const MEMORY_MODEL_ITEMS: SystemAgentModelItem[] = [
@@ -79,6 +83,7 @@ const ModelAssignmentsForm = memo(() => {
   }, [defaultAgent.config.model, defaultAgent.config.provider, loadingKey]);
 
   const groupOfKey = (key: UserServiceModelConfigKey): SavingGroup => {
+    if (KNOWLEDGE_MODEL_ITEMS.some((item) => item.key === key)) return 'knowledge';
     if (MEMORY_MODEL_ITEMS.some((item) => item.key === key)) return 'memory';
     if (OPTIONAL_FEATURE_ITEMS.some((item) => item.key === key)) return 'optional';
     return 'assignments';
@@ -180,6 +185,34 @@ const ModelAssignmentsForm = memo(() => {
     } satisfies FormItemProps;
   });
 
+  const knowledgeModelItems: FormItemProps[] = KNOWLEDGE_MODEL_ITEMS.map(({ key, modelType }) => {
+    const value = systemAgentSettings[key];
+
+    return {
+      children: (
+        <Tooltip title={reason}>
+          <Flexbox
+            align="center"
+            direction="horizontal"
+            gap={12}
+            style={{ width: 'min(100%, 448px)' }}
+          >
+            <ModelSelect
+              disabled={!canManageServiceModel}
+              modelType={modelType}
+              showAbility={false}
+              style={{ minWidth: 0, width: '100%' }}
+              value={value}
+              onChange={(props) => updateSystemAgentModel(key, props)}
+            />
+          </Flexbox>
+        </Tooltip>
+      ),
+      desc: t(`systemAgent.${key}.modelDesc`),
+      label: t(`systemAgent.${key}.title`),
+    } satisfies FormItemProps;
+  });
+
   const memoryModelItems: FormItemProps[] = MEMORY_MODEL_ITEMS.map(
     ({ contextLimit, key, modelType }) => {
       const value = systemAgentSettings[key];
@@ -203,7 +236,8 @@ const ModelAssignmentsForm = memo(() => {
                   value={value.contextLimit}
                   onChange={(contextLimit) =>
                     updateSystemAgentModel(key, {
-                      contextLimit: typeof contextLimit === 'number' ? contextLimit : undefined,
+                      // null (not undefined): merge() skips undefined, so clear can't stick otherwise
+                      contextLimit: typeof contextLimit === 'number' ? contextLimit : null,
                     })
                   }
                 />
@@ -235,7 +269,13 @@ const ModelAssignmentsForm = memo(() => {
               showAbility={false}
               style={{ minWidth: 0, width: '100%' }}
               value={value}
-              onChange={(props) => updateSystemAgentModel(key, props)}
+              onChange={(props) =>
+                updateSystemAgentModel(key, {
+                  ...props,
+                  // Keep enabled when user only re-picks the model.
+                  enabled: value.enabled,
+                })
+              }
             />
             <Flexbox align="center" direction="horizontal" gap={8}>
               <Switch
@@ -243,7 +283,16 @@ const ModelAssignmentsForm = memo(() => {
                 checked={value.enabled}
                 disabled={!canManageServiceModel}
                 loading={loadingKey === key}
-                onChange={(enabled) => updateSystemAgentModel(key, { enabled })}
+                onChange={(enabled) =>
+                  // Persist model/provider with the toggle. Saving only
+                  // `{ enabled }` left provider without model and the feature
+                  // looked "on" but never ran.
+                  updateSystemAgentModel(key, {
+                    enabled,
+                    model: value.model,
+                    provider: value.provider,
+                  })
+                }
               />
             </Flexbox>
           </Flexbox>
@@ -279,6 +328,12 @@ const ModelAssignmentsForm = memo(() => {
     title: t('serviceModel.optionalFeatures.title'),
   };
 
+  const knowledgeModels: FormGroupItemType = {
+    children: knowledgeModelItems,
+    extra: renderSaveHint('knowledge'),
+    title: t('serviceModel.knowledgeModels.title'),
+  };
+
   const memoryModels: FormGroupItemType = {
     children: memoryModelItems,
     extra: renderSaveHint('memory'),
@@ -288,7 +343,7 @@ const ModelAssignmentsForm = memo(() => {
   return (
     <Form
       collapsible={false}
-      items={[modelAssignments, memoryModels, optionalFeatures]}
+      items={[modelAssignments, knowledgeModels, memoryModels, optionalFeatures]}
       itemsType={'group'}
       variant={'filled'}
       {...FORM_STYLE}

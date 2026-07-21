@@ -105,9 +105,11 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
     }
 
     let cancelled = false;
+    let stuckTimer = 0;
 
     const fail = (message: string) => {
       if (cancelled) return;
+      if (stuckTimer) window.clearTimeout(stuckTimer);
       // Inside DingTalk always surface the error. Silent skip in __DEV__ was why
       // "still asks for login" looked like free-login never ran.
       if (isDingTalkClient()) {
@@ -124,12 +126,19 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
       setState({ kind: 'login-failed', message });
     };
 
+    // Never sit on a blank "checking" forever (slow network / hung JSAPI).
+    stuckTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      fail('钉钉登录超时（超过 20 秒无响应）。请关闭后从工作台重开，或改用账号密码登录。');
+    }, 20_000);
+
     const run = async () => {
       const inDingTalk = isDingTalkClient();
       const browserAllowed = isBrowserAccessAllowed();
       dingtalkSsoLog('gate bootstrap', {
         path:
           typeof window !== 'undefined' ? window.location.pathname + window.location.search : '',
+        origin: typeof window !== 'undefined' ? window.location.origin : '',
         inDingTalk,
         browserAllowed,
         hasDd: typeof window !== 'undefined' && Boolean((window as any).dd),
@@ -138,6 +147,7 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
       // Browser override path already ready; only free-login inside DingTalk
       if (!inDingTalk) {
         dingtalkSsoLog('not in DingTalk client — skip free-login');
+        window.clearTimeout(stuckTimer);
         if (!cancelled) setState({ kind: 'ready' });
         return;
       }
@@ -148,6 +158,7 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
         if (hasSession) {
           clearFreeLoginAttempts();
           dingtalkSsoLog('gate: already signed in');
+          window.clearTimeout(stuckTimer);
           if (leaveAuthShell() === 'navigating') {
             setState({ kind: 'redirecting' });
           } else {
@@ -160,7 +171,7 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
         dingtalkSsoLog('gate: free-login attempt', attempt);
         if (!attempt.allowed) {
           fail(
-            `钉钉免登循环中断（${attempt.count} 次内未建立 session cookie）。请关闭后从工作台重开，或改用账号密码登录。`,
+            `钉钉免登循环中断（${attempt.count} 次内未建立 session cookie）。常见原因：工作台首页域名与当前打开域名不一致（如 localhost vs 局域网 IP）。请关闭后从工作台重开，或改用账号密码登录。`,
           );
           return;
         }
@@ -171,17 +182,18 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
         if (cancelled) return;
 
         // Cookie must be readable before we leave /signin — otherwise middleware
-        // redirects back and we loop until the page goes blank.
+        // redirects back and free-login loops into a blank page.
         const confirmed = await fetchExistingAuthSession();
         if (cancelled) return;
         if (!confirmed) {
           fail(
-            '钉钉登录接口已返回成功，但浏览器未拿到 session cookie（get-session 仍为空）。请检查域名/Cookie 设置。',
+            '钉钉登录接口已返回成功，但浏览器未拿到 session cookie（get-session 仍为空）。请检查：1) 工作台首页 URL 与打开域名一致 2) Cookie 未被拦截。',
           );
           return;
         }
 
         clearFreeLoginAttempts();
+        window.clearTimeout(stuckTimer);
         if (leaveAuthShell() === 'navigating') {
           setState({ kind: 'redirecting' });
         } else {
@@ -197,6 +209,7 @@ const DingTalkAccessGate = memo<{ children: ReactNode }>(({ children }) => {
     void run();
     return () => {
       cancelled = true;
+      window.clearTimeout(stuckTimer);
     };
     // only bootstrap once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps

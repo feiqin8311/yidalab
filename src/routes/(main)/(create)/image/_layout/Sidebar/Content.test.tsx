@@ -119,7 +119,7 @@ describe('ImageSidebarContent', () => {
     mocks.updateSystemStatus.mockClear();
   });
 
-  it('shows only the workspace generation topic root in workspace mode', () => {
+  it('shows the personal generation topic list in workspace mode (not company-shared)', () => {
     mocks.activeWorkspaceId = 'workspace-1';
     mocks.generationTopics = [
       { id: 'private-topic', title: 'Private', visibility: 'private' },
@@ -129,10 +129,10 @@ describe('ImageSidebarContent', () => {
 
     render(<ImageSidebarContent />);
 
-    expect(screen.getByText('topic.workspaceTitle 2')).toBeInTheDocument();
-    expect(screen.getByTestId('topic-list-public')).toBeInTheDocument();
-    expect(screen.queryByText(/topic.privateTitle/)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('topic-list-private')).not.toBeInTheDocument();
+    expect(screen.getByText('topic.title 3')).toBeInTheDocument();
+    expect(screen.getByTestId('topic-list-all')).toBeInTheDocument();
+    expect(screen.queryByText(/topic.workspaceTitle/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('topic-list-public')).not.toBeInTheDocument();
   });
 
   it('keeps a single generation topic root in personal mode', () => {

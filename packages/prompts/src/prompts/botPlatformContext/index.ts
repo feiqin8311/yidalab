@@ -52,6 +52,22 @@ export const formatBotPlatformContext = ({
     );
   }
 
+  // IM platforms (DingTalk, etc.) cannot render <lobeArtifact> HTML windows.
+  const isImLike =
+    !supportsMarkdown ||
+    /dingtalk|钉钉|wechat|weixin|qq|feishu|lark|telegram|discord|slack|line/i.test(platformName);
+  if (isImLike) {
+    lines.push(
+      '',
+      '<deliverable_surface>',
+      'This channel cannot render YidaLab Artifacts / interactive HTML inline.',
+      'For HTML reports, dashboards, or visual pages: default to lobe-dingpan → uploadHtmlToDingpan and reply with the returned preview_url (plain URL text).',
+      'Do NOT emit <lobeArtifact> tags or large HTML documents into the chat body on this platform.',
+      'Binary files (xlsx/csv/pdf/…) still use uploadToDingpan with a local filePath when available.',
+      '</deliverable_surface>',
+    );
+  }
+
   if (warnings && warnings.length > 0) {
     // Sanitize warning text to prevent prompt injection via user-controlled content
     // (e.g. filenames containing XML tags or special characters)

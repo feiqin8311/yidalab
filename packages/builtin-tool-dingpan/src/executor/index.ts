@@ -5,6 +5,7 @@ import {
   DingpanApiName,
   DingpanIdentifier,
   type DingpanStatusParams,
+  type UploadHtmlToDingpanParams,
   type UploadToDingpanParams,
 } from '../types';
 
@@ -32,6 +33,10 @@ class DingpanExecutor extends BaseExecutor<typeof DingpanApiName> implements IBu
 
   uploadToDingpan = async (params: UploadToDingpanParams): Promise<BuiltinToolResult> => {
     return this.toResult(await runtime.uploadToDingpan(params));
+  };
+
+  uploadHtmlToDingpan = async (params: UploadHtmlToDingpanParams): Promise<BuiltinToolResult> => {
+    return this.toResult(await runtime.uploadHtmlToDingpan(params));
   };
 
   dingpanStatus = async (params: DingpanStatusParams = {}): Promise<BuiltinToolResult> => {

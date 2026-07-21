@@ -737,9 +737,9 @@ export default {
   'settingChat.enableAutoScrollOnStreaming.title': 'Auto-scroll During AI Response',
   'settingChat.enableCompressHistory.title': 'Enable Automatic Summary of Chat History',
   'settingChat.enableFollowUpChips.desc':
-    'After each reply, show one-click follow-up reply chips below the message. Requires the global Follow-up model to be configured.',
+    'After each reply, show one-click follow-up reply chips below the message. Requires Settings → Service Model → Follow-up Suggestions to be enabled with a model.',
   'settingChat.enableFollowUpChips.notConfiguredHint':
-    'Configure the global Follow-up model first to enable this.',
+    'Turn on Follow-up Suggestions and pick a model under Settings → Service Model first.',
   'settingChat.enableFollowUpChips.title': 'Follow-up Suggestions',
   'settingChat.enableHistoryCount.alias': 'Unlimited',
   'settingChat.enableHistoryCount.limited': 'Include only {{number}} conversation messages',
@@ -947,6 +947,7 @@ export default {
   'settingSystem.title': 'System Settings',
   'serviceModel.modelAssignments.title': 'Model Assignments',
   'serviceModel.contextLimit.placeholder': 'Context limit',
+  'serviceModel.knowledgeModels.title': 'Knowledge Models',
   'serviceModel.memoryModels.title': 'Memory Models',
   'serviceModel.optionalFeatures.title': 'Optional Features',
   'settingSystemTools.appEnvironment.chromium.desc': 'Chromium browser engine version',
@@ -1197,6 +1198,10 @@ When I am ___, I need ___
   'systemAgent.inputCompletion.modelDesc':
     'Suggests text while you type. When enabled, this model generates the suggestions.',
   'systemAgent.inputCompletion.title': 'Input Suggestions',
+  'systemAgent.fileEmbedding.label': 'Model',
+  'systemAgent.fileEmbedding.modelDesc':
+    'Model used to embed resource / knowledge-base files after chunking. Must output 1024-dimensional vectors. Changing this model requires re-embedding existing files for consistent search.',
+  'systemAgent.fileEmbedding.title': 'File Embedding',
   'systemAgent.userMemoryEmbedding.label': 'Model',
   'systemAgent.userMemoryEmbedding.modelDesc':
     'Model used to embed memory content for retrieval. The context limit caps each embedding input.',

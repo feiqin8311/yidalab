@@ -541,8 +541,19 @@ describe('mcpStore actions', () => {
   });
 
   describe('useFetchMCPPluginList', () => {
-    it('should initialize an empty company MCP market without remote fetch', async () => {
-      const fetchSpy = vi.spyOn(discoverService, 'getMCPPluginList');
+    const emptyList = {
+      categories: [] as string[],
+      currentPage: 1,
+      items: [] as any[],
+      pageSize: 20,
+      totalCount: 0,
+      totalPages: 0,
+    };
+
+    it('should fetch company MCP list via discoverService', async () => {
+      const fetchSpy = vi
+        .spyOn(discoverService, 'getMCPPluginList')
+        .mockResolvedValue(emptyList as any);
       vi.spyOn(globalHelpers, 'getCurrentLanguage').mockReturnValue('en-US');
 
       const { result } = renderHook(() =>
@@ -550,17 +561,10 @@ describe('mcpStore actions', () => {
       );
 
       await waitFor(() => {
-        expect(result.current.data).toEqual({
-          categories: [],
-          currentPage: 1,
-          items: [],
-          pageSize: 20,
-          totalCount: 0,
-          totalPages: 0,
-        });
+        expect(result.current.data).toEqual(emptyList);
       });
 
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(fetchSpy).toHaveBeenCalled();
 
       const state = useToolStore.getState();
       expect(state.mcpPluginItems).toEqual([]);
@@ -570,8 +574,14 @@ describe('mcpStore actions', () => {
       expect(state.searchLoading).toBe(false);
     });
 
-    it('should clear active identifier on first init', async () => {
+    it('should set active identifier from first item on first init', async () => {
       vi.spyOn(globalHelpers, 'getCurrentLanguage').mockReturnValue('en-US');
+      vi.spyOn(discoverService, 'getMCPPluginList').mockResolvedValue({
+        ...emptyList,
+        items: [{ identifier: 'company.mcp.demo' } as any],
+        totalCount: 1,
+        totalPages: 1,
+      } as any);
 
       act(() => {
         useToolStore.setState({ activeMCPIdentifier: 'remote-plugin', isMcpListInit: false });
@@ -582,17 +592,21 @@ describe('mcpStore actions', () => {
       );
 
       await waitFor(() => {
-        expect(result.current.data?.items).toEqual([]);
+        expect(result.current.data?.items?.[0]?.identifier).toBe('company.mcp.demo');
       });
 
       const state = useToolStore.getState();
-      expect(state.activeMCPIdentifier).toBeUndefined();
+      expect(state.activeMCPIdentifier).toBe('company.mcp.demo');
       expect(state.isMcpListInit).toBe(true);
     });
 
-    it('should preserve paging params in the local empty response', async () => {
+    it('should pass paging params to discoverService', async () => {
       vi.spyOn(globalHelpers, 'getCurrentLanguage').mockReturnValue('en-US');
-      const fetchSpy = vi.spyOn(discoverService, 'getMCPPluginList');
+      const fetchSpy = vi.spyOn(discoverService, 'getMCPPluginList').mockResolvedValue({
+        ...emptyList,
+        currentPage: 2,
+        pageSize: 15,
+      } as any);
 
       const params = { page: 2, pageSize: 15 } as any;
       const { result } = renderHook(() => useToolStore.getState().useFetchMCPPluginList(params));
@@ -602,12 +616,16 @@ describe('mcpStore actions', () => {
       });
 
       expect(result.current.data?.pageSize).toBe(15);
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(fetchSpy).toHaveBeenCalled();
     });
 
     it('should keep the SWR key scoped by locale and query params', async () => {
       vi.spyOn(globalHelpers, 'getCurrentLanguage').mockReturnValue('zh-CN');
-      const fetchSpy = vi.spyOn(discoverService, 'getMCPPluginList');
+      const fetchSpy = vi.spyOn(discoverService, 'getMCPPluginList').mockResolvedValue({
+        ...emptyList,
+        currentPage: 3,
+        pageSize: 15,
+      } as any);
 
       const params = { page: 3, pageSize: 15, q: 'test' } as any;
       const { result } = renderHook(() => useToolStore.getState().useFetchMCPPluginList(params));
@@ -616,34 +634,7 @@ describe('mcpStore actions', () => {
         expect(result.current.data?.currentPage).toBe(3);
       });
 
-      expect(result.current.data?.items).toEqual([]);
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('should not fetch remote MCP list in desktop environment', async () => {
-      const {
-        useToolStore: desktopStore,
-        discoverService: desktopDiscoverService,
-        globalHelpers: desktopGlobalHelpers,
-        cleanup,
-      } = await bootstrapToolStoreWithDesktop(true);
-
-      try {
-        vi.spyOn(desktopGlobalHelpers, 'getCurrentLanguage').mockReturnValue('en-US');
-        const fetchSpy = vi.spyOn(desktopDiscoverService, 'getMCPPluginList');
-
-        const { result } = renderHook(() =>
-          desktopStore.getState().useFetchMCPPluginList({ page: 1, pageSize: 20 }),
-        );
-
-        await waitFor(() => {
-          expect(result.current.data?.items).toEqual([]);
-        });
-
-        expect(fetchSpy).not.toHaveBeenCalled();
-      } finally {
-        cleanup();
-      }
+      expect(fetchSpy).toHaveBeenCalled();
     });
   });
 

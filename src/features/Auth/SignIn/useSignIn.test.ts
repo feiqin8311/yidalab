@@ -234,6 +234,28 @@ describe('useSignIn', () => {
       expect(mockMessageError).toHaveBeenCalled();
       expect(mockFetch).not.toHaveBeenCalled();
     });
+
+    it('should accept Chinese display names as usernames', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          json: async () => ({ email: 'kerden8421@gmail.com', exists: true }),
+          ok: true,
+        })
+        .mockResolvedValueOnce({
+          json: async () => ({ exists: true, hasPassword: true }),
+          ok: true,
+        });
+
+      const { result } = renderHook(() => useSignIn());
+
+      await act(async () => {
+        await result.current.handleCheckUser({ email: '柯鹏翔' });
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith('/api/auth/resolve-username', expect.any(Object));
+      expect(result.current.email).toBe('kerden8421@gmail.com');
+      expect(result.current.step).toBe('password');
+    });
   });
 
   describe('handleSignIn', () => {

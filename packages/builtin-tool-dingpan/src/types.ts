@@ -16,6 +16,7 @@ export const DingpanPersonalCredEnvKeys = [
 
 export const DingpanApiName = {
   uploadToDingpan: 'uploadToDingpan',
+  uploadHtmlToDingpan: 'uploadHtmlToDingpan',
   dingpanStatus: 'dingpanStatus',
 } as const;
 
@@ -38,7 +39,33 @@ export interface UploadToDingpanParams {
   uploadName?: string;
 }
 
+export interface UploadHtmlToDingpanParams {
+  /**
+   * Optional persisted document id (must belong to the current user).
+   * When set, content is loaded from documents and dingpan metadata is written back.
+   */
+  documentId?: string;
+  /** With spaceId: override default folder for this upload. */
+  folderId?: string;
+  /** Optional folder link override for this upload. */
+  folderLink?: string;
+  /**
+   * Full HTML document string. Required when documentId is omitted;
+   * used as content when creating a new deliverable document.
+   */
+  html?: string;
+  /** With folderId: override default folder for this upload. */
+  spaceId?: string;
+  /** Title for the persisted document (defaults from uploadName). */
+  title?: string;
+  /** Topic to associate the deliverable document with (traceability). */
+  topicId?: string;
+  /** Remote file name. Defaults to report-YYYYMMDDHHmmss.html */
+  uploadName?: string;
+}
+
 export interface UploadToDingpanState {
+  documentId?: string;
   fileId?: string;
   filePath?: string;
   name?: string;

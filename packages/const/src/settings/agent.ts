@@ -27,7 +27,9 @@ export const DEFAULT_AGENT_CHAT_CONFIG: LobeAgentChatConfig = {
   enableAgentMode: true,
   enableCompressHistory: true,
   enableContextCompression: true,
-  enableFollowUpChips: false,
+  // On by default once the global Follow-up model is configured in Service Model.
+  // Agents can still turn chips off in chat params.
+  enableFollowUpChips: true,
   enableHistoryCount: false,
   enableStreaming: true,
   historyCount: 20,

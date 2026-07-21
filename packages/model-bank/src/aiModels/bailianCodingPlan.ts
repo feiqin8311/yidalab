@@ -6,6 +6,30 @@ import { type AIChatModelCard, type AIImageModelCard } from '../types/aiModel';
 
 const bailianCodingPlanChatModels: AIChatModelCard[] = [
   // ---- Qwen ----
+  // Token Plan exclusive preview:
+  // https://help.aliyun.com/zh/model-studio/token-plan-overview
+  // https://help.aliyun.com/zh/model-studio/models (qwen3.8-max-preview 仅 Token Plan 可用)
+  {
+    abilities: {
+      functionCall: true,
+      reasoning: true,
+    },
+    contextWindowTokens: 1_000_000,
+    description:
+      'Qwen3.8 Max Preview: Token Plan exclusive flagship preview (~2.4T). Strong coding, agent, and professional-office performance; capabilities iterate during preview and may be replaced by a GA model.',
+    displayName: 'Qwen3.8 Max Preview',
+    enabled: true,
+    family: 'qwen',
+    generation: 'qwen3.8',
+    id: 'qwen3.8-max-preview',
+    maxOutput: 65_536,
+    organization: 'Qwen',
+    releasedAt: '2026-07-19',
+    settings: {
+      extendParams: ['enableReasoning', 'reasoningBudgetToken80k', 'preserveThinking'],
+    },
+    type: 'chat',
+  },
   {
     abilities: {
       functionCall: true,

@@ -20,7 +20,12 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
 }));
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/;
-export const USERNAME_REGEX = /^\w+$/;
+/**
+ * Login/signup username. YidaLab stores Chinese display names as `users.username`
+ * (e.g. 柯鹏翔 from DingTalk / staff seed), so this must accept Unicode letters —
+ * not only ASCII `\w` ([A-Za-z0-9_]).
+ */
+export const USERNAME_REGEX = /^[\p{L}\p{N}_.-]+$/u;
 
 // Pin both the provider logo and the loading spinner to the same spot so the
 // spinner doesn't jump when a social button enters its loading state.

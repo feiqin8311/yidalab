@@ -22,8 +22,7 @@ const getPluginMetaById = (id: string) => (s: ToolStoreState) => {
 
 const getCustomPluginById = (id: string) => (s: ToolStoreState) =>
   installedPlugins(s).find((i) => i.identifier === id && i.type === 'customPlugin') as
-    | LobeToolCustomPlugin
-    | undefined;
+    LobeToolCustomPlugin | undefined;
 
 const getToolManifestById = (id: string) => (s: ToolStoreState) =>
   getInstalledPluginById(id)(s)?.manifest;
@@ -39,24 +38,38 @@ const installedPluginManifestList = (s: ToolStoreState) =>
     .map((i) => i.manifest as ToolManifest)
     .filter((i) => !!i);
 
-const installedPluginMetaList = (s: ToolStoreState) =>
-  installedPlugins(s)
-    // Filter out Composio plugins (they have their own display location)
-    .filter((p) => !p.customParams?.composio)
-    .filter((plugin) => isInstalledPluginAvailableInCurrentEnv(plugin))
-    .map<InstallPluginMeta>((p) => ({
-      author: p.manifest?.author,
-      createdAt: p.manifest?.createdAt || (p.manifest as any)?.createAt,
-      homepage: p.manifest?.homepage,
-      identifier: p.identifier,
-      /*
-       * should remove meta
-       */
-      meta: getPluginMetaById(p.identifier)(s),
-      runtimeType: p.runtimeType,
-      type: p.source || p.type,
-      ...getPluginMetaById(p.identifier)(s),
-    }));
+const installedPluginMetaList = (s: ToolStoreState) => {
+  const seen = new Set<string>();
+  return (
+    installedPlugins(s)
+      // Filter out Composio plugins (they have their own display location)
+      .filter((p) => !p.customParams?.composio)
+      .filter((plugin) => isInstalledPluginAvailableInCurrentEnv(plugin))
+      // Dedupe by identifier — personal/workspace bootstrap or refresh races can
+      // leave the same MCP listed twice in client state.
+      .filter((p) => {
+        if (seen.has(p.identifier)) return false;
+        seen.add(p.identifier);
+        return true;
+      })
+      .map<InstallPluginMeta>((p) => {
+        const meta = getPluginMetaById(p.identifier)(s) ?? {};
+        // Prefer install type (plugin / customPlugin). Do not use `source` as type
+        // (market would drop out of community tools: type === 'plugin').
+        // Spread meta first so explicit fields (including type) always win.
+        return {
+          ...meta,
+          author: p.manifest?.author,
+          createdAt: p.manifest?.createdAt || (p.manifest as any)?.createAt,
+          homepage: p.manifest?.homepage,
+          identifier: p.identifier,
+          meta,
+          runtimeType: p.runtimeType,
+          type: p.type,
+        } as InstallPluginMeta;
+      })
+  );
+};
 const installedCustomPluginMetaList = (s: ToolStoreState) =>
   installedPluginMetaList(s).filter((p) => p.type === 'customPlugin');
 

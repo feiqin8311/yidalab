@@ -262,8 +262,13 @@ export function defineConfig() {
       if (isProtected) {
         logBetterAuth('Request a protected route, redirecting to sign-in page');
 
-        const callbackUrl = `${appEnv.APP_URL}${req.nextUrl.pathname}${req.nextUrl.search}`;
-        const signInUrl = new URL('/signin', appEnv.APP_URL);
+        // Prefer the browser-facing origin over APP_URL. Workbench / LAN /
+        // tunnel hosts often open as http://192.168.x.x:3010 while APP_URL is
+        // http://localhost:3010 — redirecting to APP_URL makes DingTalk open a
+        // dead host and shows a blank page after free-login.
+        const publicOrigin = req.nextUrl.origin || appEnv.APP_URL || 'http://localhost:3010';
+        const callbackUrl = `${publicOrigin}${req.nextUrl.pathname}${req.nextUrl.search}`;
+        const signInUrl = new URL('/signin', publicOrigin);
         signInUrl.searchParams.set('callbackUrl', callbackUrl);
         const hl = req.nextUrl.searchParams.get('hl');
         if (hl) {

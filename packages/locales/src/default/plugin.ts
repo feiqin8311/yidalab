@@ -261,6 +261,7 @@ export default {
   'builtins.lobe-local-system.apiName.runCommand': 'Run command',
 
   'builtins.lobe-dingpan.apiName.uploadToDingpan': 'Upload to Dingpan',
+  'builtins.lobe-dingpan.apiName.uploadHtmlToDingpan': 'Upload HTML to Dingpan',
   'builtins.lobe-dingpan.apiName.dingpanStatus': 'Dingpan status',
   'builtins.lobe-local-system.apiName.searchFiles': 'Search files',
   'builtins.lobe-local-system.apiName.writeFile': 'Write file',

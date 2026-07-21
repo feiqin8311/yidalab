@@ -14,7 +14,8 @@ import { trackLoginOrSignupClicked } from '@/features/User/UserLoginOrSignup/tra
 
 import { useSignUp } from './useSignUp';
 
-const USERNAME_REGEX = /^\w+$/;
+// Keep in sync with SignInEmailStep — Chinese display names are valid usernames.
+const USERNAME_REGEX = /^[\p{L}\p{N}_.-]+$/u;
 
 const BetterAuthSignUpForm = () => {
   const { form, loading, onSubmit, businessElement } = useSignUp();

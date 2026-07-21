@@ -135,7 +135,21 @@ export const getServerGlobalConfig = async () => {
       userMemory: cleanObject(getPublicMemoryExtractionConfig()),
     },
     oAuthSSOProviders: getBetterAuthSSOProviders(),
-    systemAgent: parseSystemAgent(appEnv.SYSTEM_AGENT),
+    systemAgent: (() => {
+      const parsed = parseSystemAgent(appEnv.SYSTEM_AGENT);
+      // Surface DEFAULT_FILES_CONFIG so the Service Model selector matches
+      // the embedding model used when the user has not saved an override.
+      if (!parsed.fileEmbedding) {
+        const filesEmbedding = parseFilesConfig(knowledgeEnv.DEFAULT_FILES_CONFIG).embeddingModel;
+        if (filesEmbedding?.model && filesEmbedding?.provider) {
+          parsed.fileEmbedding = {
+            model: filesEmbedding.model,
+            provider: filesEmbedding.provider,
+          };
+        }
+      }
+      return parsed;
+    })(),
     telemetry: {
       langfuse: langfuseEnv.ENABLE_LANGFUSE,
     },
