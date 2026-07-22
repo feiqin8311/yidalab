@@ -41,6 +41,12 @@ describe('INBOX runtime plugins', () => {
     expect(role).toMatch(/skill \/ MCP descriptions|available skill/i);
   });
 
+  it('systemRole points Amazon ops intents at company skills, not Artifacts/Memory examples', () => {
+    const role = createSystemRole('zh-CN', 'TestAgent');
+    expect(role).toMatch(/ASIN 流量诊断|Amazon ops/i);
+    expect(role).toMatch(/Artifacts or Memory|Artifacts\/Memory/i);
+  });
+
   it('merges non-company user plugins after builtin defaults', () => {
     expect(resolvePlugins(['lobe-user-memory', 'some-mcp'])).toEqual([
       AgentDocumentsIdentifier,

@@ -1,44 +1,38 @@
-# LIBRATON 库存预警（YidaLab）
+# 库存预警（YidaLab → dingtalk-fba-bot）
 
-识别固定口令并执行库存预警流程。业务实现可在执行设备上的项目仓库；**交付 / 文件分享**优先用 YidaLab 内置能力，不要写 OpenClaw 记忆路由。
+用户只需发**品牌口令**。按**当前人的钉钉 userId** 只给本人跑 / 发，不要站点菜单，不要设备脚本。
 
-## 触发口令（精确匹配，勿乱扩别名）
+## 触发口令（精确匹配即可执行）
 
-| 用户消息                  | 行为                                                                     |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `LIBRATON库存预警`        | **先不要执行**。回复站点菜单：全部 / 美国 / 加拿大 / 欧洲 / 日本（见下） |
-| `LIBRATON库存预警-全部`   | scope=`all` 执行一次                                                     |
-| `LIBRATON库存预警-美国`   | scope=`us`                                                               |
-| `LIBRATON库存预警-加拿大` | scope=`ca`                                                               |
-| `LIBRATON库存预警-欧洲`   | scope=`eu`                                                               |
-| `LIBRATON库存预警-日本`   | scope=`jp`                                                               |
+| 用户消息           | 立即执行 | scope   |
+| ------------------ | -------- | ------- |
+| `LIBRATON库存预警` | 是       | `all`   |
+| `EZARC库存预警`    | 是       | `ezarc` |
+| `YPLUS库存预警`    | 是       | `yplus` |
 
-菜单文案（仅对裸口令 `LIBRATON库存预警`）：
+- **不要**再回「请选择站点」菜单；口令本身就是指令。
+- 用户说 dry-run / 不要发钉钉 → `mode=dry_run`，否则默认 `mode=self`。
 
-```text
-请选择站点：
-1. LIBRATON库存预警-全部
-2. LIBRATON库存预警-美国
-3. LIBRATON库存预警-加拿大
-4. LIBRATON库存预警-欧洲
-5. LIBRATON库存预警-日本
-```
+## 身份（服务端注入，模型不要传 userId）
 
-## 执行原则
+| 入口           | 用谁的 userId                                                 |
+| -------------- | ------------------------------------------------------------- |
+| **钉钉会话**   | 当前消息发送者 `senderId` → `botContext.senderExternalUserId` |
+| **本项目前端** | 该 Agent DingTalk 频道**高级设置** Owner `settings.userId`    |
 
-1. **仅**在用户明确选择带站点后缀的口令后执行；裸口令只回菜单。
-2. 用户说「测试 /dry-run/ 不要发钉钉」→ dry-run，不真发。
-3. 需要跑设备侧脚本时：用执行设备 / `runCommand`（设备在线），工作目录为公司配置的 `dingtalk-fba-bot` 检出路径（由环境或运维约定，**不要**写死 `/home/yida/.openclaw/...`）。
-4. 若项目支持 `--notify-user-id`：仅当会话元数据有可信 sender 时传入；没有则说明限制，勿默默用别人的默认 userId。
-5. **不要**用 scheduler 常驻，除非用户明确要求定时任务。
+- 只通知 / 只面向这个人（`mode=self`），不按店铺矩阵群发。
+- 禁止模型编造 userId；禁止回落 fba-bot 默认广播名单。
 
-## 交付
+## 执行（必须）
 
-- 项目自带钉钉推送：成功 / 失败如实汇报。
-- 若只生成了本地 Excel / 报告文件、需要给用户链接：用内置 **`lobe-dingpan` → `uploadToDingpan`**，回 `preview_url`。
-- 禁止 OpenClaw 的 `DINGTALK_FILE` marker、`upload_to_ops_dingpan.sh`。
+1. 认到上表口令后，立刻调内置 tool：\
+   **`lobe-fba-alert` → `runFbaAlert({ scope })`**\
+   （可选 `mode`: `self` 默认 / `dry_run` / `upload_only`）
+2. **禁止** `runCommand`、本地 python、设备侧脚本、OpenClaw、自拼 HTTP。
+3. **禁止** `mode=broadcast`（矩阵群发只给服务器定时任务）。
+4. 服务端配置：`FBA_ALERT_API_URL` + `FBA_ALERT_API_TOKEN`。
 
-## 失败处理
+## 汇报
 
-- 缺 env / 依赖 / 设备离线：说清楚缺什么，不要假装已发送。
-- 不在 dry-run 与 live 之间静默切换。
+- 成功：如实报 `status` / `alert_count` / `identity_source` 等；文件由 fba-bot 按该 userId 投递。
+- 失败：说清原因（未配 API、无身份、job failed），不要假装已发送。

@@ -13,6 +13,7 @@ import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
+import { FbaAlertManifest } from '@lobechat/builtin-tool-fba-alert';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -55,6 +56,8 @@ export const defaultToolIds = [
   LobeAgentManifest.identifier,
   // Company DingTalk Drive upload — available on every agent by default
   DingpanManifest.identifier,
+  // Company FBA inventory alert → dingtalk-fba-bot HTTP
+  FbaAlertManifest.identifier,
 ];
 
 /**
@@ -74,6 +77,8 @@ export const defaultToolIds = [
  *
  * `lobe-dingpan` is always-on so every company member's agents can upload to DingTalk
  * Drive without each agent opting in — credentials come from company/personal vault.
+ *
+ * `lobe-fba-alert` is always-on for company inventory alerts (skill + fixed phrases).
  */
 export const alwaysOnToolIds = [
   LobeAgentManifest.identifier,
@@ -81,6 +86,7 @@ export const alwaysOnToolIds = [
   SkillsManifest.identifier,
   SkillStoreManifest.identifier,
   DingpanManifest.identifier,
+  FbaAlertManifest.identifier,
 ];
 
 /**
@@ -319,6 +325,11 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
   {
     identifier: DingpanManifest.identifier,
     manifest: DingpanManifest,
+    type: 'builtin',
+  },
+  {
+    identifier: FbaAlertManifest.identifier,
+    manifest: FbaAlertManifest,
     type: 'builtin',
   },
   {

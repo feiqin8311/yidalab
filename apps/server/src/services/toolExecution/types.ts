@@ -163,6 +163,12 @@ export interface ToolExecutionContext {
    */
   assistantMessageId?: string;
   /**
+   * Bot / IM session context when the run originated from a message channel.
+   * Used by tools that need the platform sender id (e.g. FBA alert notify).
+   * Injected from operation metadata — not from the model.
+   */
+  botContext?: unknown;
+  /**
    * Whether the run's execution plan is device-capable (`device` or
    * `device-unrouted`) — derived from `state.metadata.executionPlan` by the
    * runtime executors. Device-only skills gate listing/activation/loading on

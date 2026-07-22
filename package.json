@@ -229,6 +229,7 @@
     "@lobechat/builtin-tool-cloud-sandbox": "workspace:*",
     "@lobechat/builtin-tool-creds": "workspace:*",
     "@lobechat/builtin-tool-dingpan": "workspace:*",
+    "@lobechat/builtin-tool-fba-alert": "workspace:*",
     "@lobechat/builtin-tool-group-agent-builder": "workspace:*",
     "@lobechat/builtin-tool-group-management": "workspace:*",
     "@lobechat/builtin-tool-knowledge-base": "workspace:*",

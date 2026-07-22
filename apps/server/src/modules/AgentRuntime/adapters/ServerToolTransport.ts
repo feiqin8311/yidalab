@@ -155,6 +155,7 @@ export class ServerToolTransport implements ToolTransport {
               activeDeviceId: resolveRunActiveDeviceId(context.state.metadata),
               activeDeviceScope: context.state.metadata?.activeDeviceScope,
               agentId: context.state.metadata?.agentId,
+              botContext: context.state.metadata?.botContext ?? this.ctx.botContext,
               agentMember: buildServerAgentMemberRunner(
                 this.ctx,
                 context.state,

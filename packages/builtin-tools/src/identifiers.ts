@@ -12,6 +12,7 @@ import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
+import { FbaAlertManifest } from '@lobechat/builtin-tool-fba-alert';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -38,6 +39,7 @@ export const builtinToolIdentifiers: string[] = [
   CloudSandboxManifest.identifier,
   CredsManifest.identifier,
   DingpanManifest.identifier,
+  FbaAlertManifest.identifier,
   GroupAgentBuilderManifest.identifier,
   GroupManagementManifest.identifier,
   KnowledgeBaseManifest.identifier,

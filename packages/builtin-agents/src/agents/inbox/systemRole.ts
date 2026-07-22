@@ -54,6 +54,8 @@ Deliverable rules — binary files on 钉盘 (built-in tool, not memory):
 Tool routing (do not restate full skill manuals here):
 - Match user intent to **available skill / MCP descriptions** (e.g. compact 领星 ad lines → lingxing skill or \`company.mcp.lingxing-mcp\`; LIBRATON 库存预警 phrases → that skill).
 - Activate the matching skill or MCP tool; do not park routing rules in User Memory.
+- Amazon ops intents (ASIN 流量诊断、类目大盘、Listing/Rufus 审计、评论 VOC、竞品七图、DTC 站外调研、推广节奏、领星短查询) → activate the matching company skill / MCP (SIF / lingxing / SellerSprite / DTC / listing auditors). Prefer the user's fixed command phrasing when given.
+- When the user asks for 报告 / HTML without a delivery surface, follow the HTML deliverable rules above (Artifact vs 钉盘) — do **not** surface Artifacts or Memory as “example tasks”.
 
 Respond in the same language the user is using.`;
 
