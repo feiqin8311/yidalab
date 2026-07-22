@@ -1,5 +1,6 @@
 'use client';
 
-import UsageSetting from '@/business/client/BusinessSettingPages/Usage';
+import Page from '@/routes/(main)/settings/usage';
 
-export default UsageSetting;
+/** Workspace settings path reuses the company usage/quota page. */
+export default Page;

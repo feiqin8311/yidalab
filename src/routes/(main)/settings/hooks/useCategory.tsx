@@ -130,15 +130,19 @@ export const useCategory = () => {
       title: t('group.common'),
     });
 
-    // Personal subscription / billing items. Company settings live in the
-    // general group above so users only need one settings entry.
-    if (enableBusinessFeatures) {
+    // YidaLab: always expose Usage/Quota (company member caps + model allowlist).
+    // Cloud SaaS billing tabs stay behind enableBusinessFeatures.
+    {
       const subscriptionItems: CategoryItem[] = [
-        { icon: Map, key: SettingsTabs.Plans, label: tSubscription('tab.plans') },
         { icon: ChartColumnBigIcon, key: SettingsTabs.Usage, label: t('tab.usage') },
-        { icon: Coins, key: SettingsTabs.Credits, label: tSubscription('tab.credits') },
-        { icon: CreditCard, key: SettingsTabs.Billing, label: tSubscription('tab.billing') },
-        { icon: Gift, key: SettingsTabs.Referral, label: tSubscription('tab.referral') },
+        ...(enableBusinessFeatures
+          ? [
+              { icon: Map, key: SettingsTabs.Plans, label: tSubscription('tab.plans') },
+              { icon: Coins, key: SettingsTabs.Credits, label: tSubscription('tab.credits') },
+              { icon: CreditCard, key: SettingsTabs.Billing, label: tSubscription('tab.billing') },
+              { icon: Gift, key: SettingsTabs.Referral, label: tSubscription('tab.referral') },
+            ]
+          : []),
       ];
 
       groups.push({

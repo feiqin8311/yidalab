@@ -116,25 +116,34 @@ export const useWorkspaceSettingCategory = (): WorkspaceSettingCategoryGroup[] =
           title: t('group.common'),
         },
 
-        enableBusinessFeatures && {
+        // YidaLab: always expose Usage/Quota. SaaS billing tabs stay behind business flag.
+        {
           items: [
-            { icon: Map, key: WorkspaceSettingsTabs.Plans, label: tSubscription('tab.plans') },
             { icon: ChartColumnBigIcon, key: WorkspaceSettingsTabs.Usage, label: t('tab.usage') },
-            {
-              icon: Coins,
-              key: WorkspaceSettingsTabs.Credits,
-              label: tSubscription('tab.credits'),
-            },
-            {
-              icon: CreditCard,
-              key: WorkspaceSettingsTabs.Billing,
-              label: tSubscription('tab.billing'),
-            },
-            {
-              icon: Gift,
-              key: WorkspaceSettingsTabs.Referral,
-              label: tSubscription('tab.referral'),
-            },
+            ...(enableBusinessFeatures
+              ? [
+                  {
+                    icon: Map,
+                    key: WorkspaceSettingsTabs.Plans,
+                    label: tSubscription('tab.plans'),
+                  },
+                  {
+                    icon: Coins,
+                    key: WorkspaceSettingsTabs.Credits,
+                    label: tSubscription('tab.credits'),
+                  },
+                  {
+                    icon: CreditCard,
+                    key: WorkspaceSettingsTabs.Billing,
+                    label: tSubscription('tab.billing'),
+                  },
+                  {
+                    icon: Gift,
+                    key: WorkspaceSettingsTabs.Referral,
+                    label: tSubscription('tab.referral'),
+                  },
+                ]
+              : []),
           ],
           key: WorkspaceSettingsGroupKey.Subscription,
           title: t('group.subscription'),

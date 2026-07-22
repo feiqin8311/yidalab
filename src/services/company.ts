@@ -66,6 +66,21 @@ class CompanyService {
     userId: string;
     workspaceId: string;
   }) => (await lambdaClient.company.updateMember.mutate(params)).data;
+
+  getMyQuota = async () => (await lambdaClient.company.getMyQuota.query()).data;
+
+  listMemberQuotas = async (workspaceId: string) =>
+    (await lambdaClient.company.listMemberQuotas.query({ workspaceId })).data;
+
+  upsertMemberQuota = async (params: {
+    allowedModels: Array<{ model: string; provider: string }> | null;
+    monthlyLimitCost: number | null;
+    userId: string;
+    workspaceId: string;
+  }) => (await lambdaClient.company.upsertMemberQuota.mutate(params)).data;
+
+  clearMemberQuota = async (params: { userId: string; workspaceId: string }) =>
+    lambdaClient.company.clearMemberQuota.mutate(params);
 }
 
 export const companyService = new CompanyService();

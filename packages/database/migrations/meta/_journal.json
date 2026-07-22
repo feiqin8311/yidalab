@@ -861,6 +861,13 @@
       "when": 1784500000000,
       "tag": "0122_resource_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1784700000000,
+      "tag": "0123_company_member_quotas",
+      "breakpoints": true
     }
   ],
   "version": "6"

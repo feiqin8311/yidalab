@@ -13,6 +13,7 @@ export * from './betterAuth';
 export * from './chatGroup';
 export * from './companyMarketMcp';
 export * from './companyMarketSkill';
+export * from './companyMemberQuota';
 export * from './connector';
 export * from './device';
 export * from './documentHistory';

@@ -5,6 +5,8 @@ import { type ReactNode } from 'react';
 import { memo, useMemo } from 'react';
 
 import { ModelItemRender, ProviderItemRender, TAG_CLASSNAME } from '@/components/ModelSelect';
+import { filterProvidersByAllowlist } from '@/helpers/companyModelAllowlist';
+import { useCompanyModelAllowlist } from '@/hooks/useCompanyModelAllowlist';
 import { aiProviderSelectors, useAiInfraStore } from '@/store/aiInfra';
 import { type EnabledProviderWithModels } from '@/types/aiProvider';
 
@@ -64,11 +66,18 @@ const ModelSelect = memo<ModelSelectProps>(
     popupWidth,
     modelType = 'chat',
   }) => {
-    const enabledList = useAiInfraStore((s) =>
+    const rawEnabledList = useAiInfraStore((s) =>
       modelType === 'embedding'
         ? aiProviderSelectors.enabledEmbeddingModelList(s)
         : s.enabledChatModelList || [],
     );
+    // Embedding models are infra; only chat picks honor company allowlists.
+    const { allowedModels } = useCompanyModelAllowlist();
+    const enabledList = useMemo(() => {
+      if (modelType === 'embedding') return rawEnabledList;
+      if (allowedModels === undefined) return rawEnabledList;
+      return filterProvidersByAllowlist(rawEnabledList, allowedModels);
+    }, [allowedModels, modelType, rawEnabledList]);
 
     const options = useMemo<SelectProps['options']>(() => {
       const getChatModels = (provider: EnabledProviderWithModels) => {

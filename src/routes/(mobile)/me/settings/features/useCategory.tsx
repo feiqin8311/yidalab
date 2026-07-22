@@ -72,31 +72,34 @@ export const useCategory = (): CategoryGroup[] => {
       }),
     ];
 
-    const subscription: CategoryItem[] = enableBusinessFeatures
-      ? [
-          makeItem({ icon: Map, key: SettingsTabs.Plans, label: t('subscription:tab.plans') }),
-          makeItem({
-            icon: ChartColumnBigIcon,
-            key: SettingsTabs.Usage,
-            label: t('setting:tab.usage'),
-          }),
-          makeItem({
-            icon: Coins,
-            key: SettingsTabs.Credits,
-            label: t('subscription:tab.credits'),
-          }),
-          makeItem({
-            icon: CreditCard,
-            key: SettingsTabs.Billing,
-            label: t('subscription:tab.billing'),
-          }),
-          makeItem({
-            icon: Gift,
-            key: SettingsTabs.Referral,
-            label: t('subscription:tab.referral'),
-          }),
-        ]
-      : [];
+    // YidaLab: always expose Usage/Quota. SaaS billing tabs stay behind business flag.
+    const subscription: CategoryItem[] = [
+      makeItem({
+        icon: ChartColumnBigIcon,
+        key: SettingsTabs.Usage,
+        label: t('setting:tab.usage'),
+      }),
+      ...(enableBusinessFeatures
+        ? [
+            makeItem({ icon: Map, key: SettingsTabs.Plans, label: t('subscription:tab.plans') }),
+            makeItem({
+              icon: Coins,
+              key: SettingsTabs.Credits,
+              label: t('subscription:tab.credits'),
+            }),
+            makeItem({
+              icon: CreditCard,
+              key: SettingsTabs.Billing,
+              label: t('subscription:tab.billing'),
+            }),
+            makeItem({
+              icon: Gift,
+              key: SettingsTabs.Referral,
+              label: t('subscription:tab.referral'),
+            }),
+          ]
+        : []),
+    ];
 
     const agent: CategoryItem[] = [
       // Provider settings should not depend on Advanced tools: new users may need

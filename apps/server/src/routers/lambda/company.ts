@@ -4,16 +4,21 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { CompanyModel } from '@/database/models/company';
+import { resolveEffectiveMonthlyLimit } from '@/database/models/companyMemberQuota';
 import { appEnv } from '@/envs/app';
 import { authedProcedure, publicProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
+import { CompanyQuotaService } from '@/server/services/companyQuota';
 import { EmailService } from '@/server/services/email';
 
-const companyProcedure = authedProcedure
-  .use(serverDatabase)
-  .use(async ({ ctx, next }) =>
-    next({ ctx: { companyModel: new CompanyModel(ctx.serverDB, ctx.userId) } }),
-  );
+const companyProcedure = authedProcedure.use(serverDatabase).use(async ({ ctx, next }) =>
+  next({
+    ctx: {
+      companyModel: new CompanyModel(ctx.serverDB, ctx.userId),
+      companyQuotaService: new CompanyQuotaService(ctx.serverDB, ctx.userId),
+    },
+  }),
+);
 const publicCompanyProcedure = publicProcedure.use(serverDatabase);
 
 const workspaceIdSchema = z.object({ workspaceId: z.string().min(1) });
@@ -300,5 +305,90 @@ export const companyRouter = router({
       if (!departments.some((department) => department.id === input.departmentId))
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'INVALID_DEPARTMENT' });
       return { data: await ctx.companyModel.updateMember(input), success: true };
+    }),
+
+  /** Current user's company quota + month spend (null when not in a company). */
+  getMyQuota: companyProcedure.query(async ({ ctx }) => {
+    return { data: await ctx.companyQuotaService.getSnapshot(), success: true };
+  }),
+
+  /**
+   * Admin: all members with policy + spend for the workspace.
+   * Members without a policy row use the default monthly credit budget.
+   */
+  listMemberQuotas: companyProcedure.input(workspaceIdSchema).query(async ({ ctx, input }) => {
+    await ensureManager(ctx.companyModel, input.workspaceId);
+    const members = await ctx.companyModel.listMembers(input.workspaceId);
+    const policies = await ctx.companyQuotaService.listMemberSnapshots(input.workspaceId);
+    const policyByUser = new Map(policies.map((p) => [p.userId, p]));
+
+    const data = await Promise.all(
+      members.map(async (member) => {
+        const policy = policyByUser.get(member.userId);
+        const monthSpend =
+          policy?.monthSpend ?? (await ctx.companyQuotaService.getMonthSpend(member.userId));
+        // policy from listMemberSnapshots is already resolved when present;
+        // members with no row need the default applied here.
+        const effective = policy
+          ? {
+              isDefault: policy.isDefault ?? false,
+              monthlyLimitCost: policy.monthlyLimitCost,
+              unlimited: policy.unlimited,
+            }
+          : resolveEffectiveMonthlyLimit(null);
+        const monthlyLimitCost = effective.monthlyLimitCost;
+        const unlimited = effective.unlimited;
+        return {
+          allowedModels: policy?.allowedModels ?? null,
+          avatar: member.avatar,
+          email: member.email,
+          isDefault: effective.isDefault,
+          monthSpend,
+          monthlyLimitCost,
+          remainingCost:
+            unlimited || monthlyLimitCost === null
+              ? null
+              : Math.max(0, monthlyLimitCost - monthSpend),
+          role: member.role,
+          unlimited,
+          userId: member.userId,
+          username: member.username,
+          workspaceId: input.workspaceId,
+        };
+      }),
+    );
+
+    return { data, success: true };
+  }),
+
+  upsertMemberQuota: companyProcedure
+    .input(
+      workspaceIdSchema.extend({
+        allowedModels: z
+          .array(z.object({ model: z.string().min(1), provider: z.string().min(1) }))
+          .nullable(),
+        monthlyLimitCost: z.number().nonnegative().nullable(),
+        userId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureManager(ctx.companyModel, input.workspaceId);
+      const target = await ctx.companyModel.getMembership(input.workspaceId, input.userId);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'MEMBER_NOT_FOUND' });
+      const data = await ctx.companyQuotaService.upsertMemberQuota({
+        allowedModels: input.allowedModels,
+        monthlyLimitCost: input.monthlyLimitCost,
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+      });
+      return { data, success: true };
+    }),
+
+  clearMemberQuota: companyProcedure
+    .input(workspaceIdSchema.extend({ userId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureManager(ctx.companyModel, input.workspaceId);
+      await ctx.companyQuotaService.clearMemberQuota(input.workspaceId, input.userId);
+      return { success: true };
     }),
 });

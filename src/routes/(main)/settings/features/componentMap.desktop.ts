@@ -3,7 +3,6 @@ import Credits from '@/business/client/BusinessSettingPages/Credits';
 import Notification from '@/business/client/BusinessSettingPages/Notification';
 import Plans from '@/business/client/BusinessSettingPages/Plans';
 import Referral from '@/business/client/BusinessSettingPages/Referral';
-import Usage from '@/business/client/BusinessSettingPages/Usage';
 import { SettingsTabs } from '@/store/global/initialState';
 
 import Advanced from '../advanced';
@@ -23,6 +22,7 @@ import Skill from '../skill';
 import Stats from '../stats';
 import Storage from '../storage';
 import SystemTools from '../system-tools';
+import Usage from '../usage';
 
 export const componentMap = {
   [SettingsTabs.Advanced]: Advanced,

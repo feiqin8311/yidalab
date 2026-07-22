@@ -4,6 +4,7 @@ import { ChatErrorType } from '@lobechat/types';
 
 import { checkAuth } from '@/app/(backend)/middleware/auth';
 import { createTraceOptions, initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
+import { CompanyQuotaDeniedError, CompanyQuotaService } from '@/server/services/companyQuota';
 import { type ChatStreamPayload } from '@/types/openai/chat';
 import { createErrorResponse } from '@/utils/errorResponse';
 import { getTracePayload } from '@/utils/trace';
@@ -27,6 +28,12 @@ export const POST = checkAuth(async (req: Request, { params, userId, serverDB })
 
     const data = (await req.json()) as ChatStreamPayload;
 
+    // Company member quota + model allowlist (hard block).
+    await new CompanyQuotaService(serverDB, userId).assertCanUseModel({
+      model: data.model,
+      provider,
+    });
+
     const tracePayload = getTracePayload(req);
 
     let traceOptions = {};
@@ -41,6 +48,13 @@ export const POST = checkAuth(async (req: Request, { params, userId, serverDB })
       signal: req.signal,
     });
   } catch (e) {
+    if (e instanceof CompanyQuotaDeniedError) {
+      return createErrorResponse(e.errorType, {
+        error: { detail: e.detail, message: e.message, reason: e.reason },
+        provider,
+      });
+    }
+
     const {
       errorType = ChatErrorType.InternalServerError,
       error: errorContent,

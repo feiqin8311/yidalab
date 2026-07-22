@@ -15,6 +15,7 @@ import {
 } from '@lobechat/model-runtime';
 
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
+import { CompanyQuotaService } from '@/server/services/companyQuota';
 
 import type { RuntimeExecutorContext } from '../context';
 import { createServerCallLlmAttempt } from './serverCallLlmAttempt';
@@ -49,6 +50,7 @@ export class ServerLLMTransport implements LLMTransport {
       model: input.model,
       provider: input.provider,
       runAttempt: async (attemptInput) => {
+        await this.assertQuota(input.provider, input.model);
         modelRuntimePromise ??= this.createModelRuntime(input.provider);
         return this.runAttemptWithRuntime(attemptInput, await modelRuntimePromise);
       },
@@ -57,6 +59,7 @@ export class ServerLLMTransport implements LLMTransport {
   }
 
   async runAttempt(input: LLMAttemptInput): Promise<LLMAttemptExecution> {
+    await this.assertQuota(input.provider, input.model);
     const modelRuntime = await this.createModelRuntime(input.provider);
     return this.runAttemptWithRuntime(input, modelRuntime);
   }
@@ -65,6 +68,7 @@ export class ServerLLMTransport implements LLMTransport {
     payload: LLMStreamPayload,
     handlers?: Parameters<LLMTransport['stream']>[1],
   ): Promise<LLMStreamResult> {
+    await this.assertQuota(payload.provider, payload.model);
     const runtime = await this.createModelRuntime(payload.provider);
     const { provider: _provider, ...runtimePayload } = payload;
     let content = '';
@@ -106,6 +110,15 @@ export class ServerLLMTransport implements LLMTransport {
       provider,
       this.ctx.workspaceId,
     );
+  }
+
+  private assertQuota(provider: string, model: string) {
+    if (!this.ctx.userId) return Promise.resolve();
+    return new CompanyQuotaService(this.ctx.serverDB, this.ctx.userId).assertCanUseModel({
+      model,
+      provider,
+      userId: this.ctx.userId,
+    });
   }
 
   private async runAttemptWithRuntime(
