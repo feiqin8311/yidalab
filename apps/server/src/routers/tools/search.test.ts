@@ -17,6 +17,11 @@ vi.mock('@lobechat/web-crawler', () => ({
 
 vi.mock('@/server/services/search/impls/searxng/client');
 
+// Pass-through: tests do not exercise vault inject.
+vi.mock('@/server/utils/withVaultCredEnv', () => ({
+  withVaultCredEnv: async (_userId: unknown, _db: unknown, fn: () => unknown) => fn(),
+}));
+
 describe('searchRouter', () => {
   const mockContext = {
     userId: 'test-user-id',
@@ -24,8 +29,13 @@ describe('searchRouter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Host .env may force tavily; these router tests target default SearXNG.
+    delete process.env.SEARCH_PROVIDERS;
+    delete process.env.TAVILY_API_KEY;
     // @ts-ignore
     toolsEnv.SEARXNG_URL = 'http://test-searxng.com';
+    // @ts-ignore
+    toolsEnv.SEARCH_PROVIDERS = '';
   });
 
   describe('crawlPages', () => {

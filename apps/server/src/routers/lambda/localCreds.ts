@@ -31,6 +31,50 @@ const ensurePersonalDingpanCredential = async (model: UserCredentialModel) => {
   });
 };
 
+/** Company-shared Tavily key for web search / crawl (Settings → Credentials). */
+export const TavilyCompanyCredKey = 'tavily';
+
+/**
+ * Ensure company vault has a `tavily` kv-env credential.
+ * Seeds `TAVILY_API_KEY` from process.env when creating, or when the row exists
+ * but the env key is still empty (first deploy after setting .env).
+ */
+const ensureCompanyTavilyCredential = async (
+  model: UserCredentialModel,
+  companyWorkspaceId: string | null,
+  canManageCompany: boolean,
+) => {
+  if (!companyWorkspaceId || !canManageCompany) return;
+
+  const apiKey = process.env.TAVILY_API_KEY?.trim() || '';
+  const existing = await model.findCompanyByKey(companyWorkspaceId, TavilyCompanyCredKey);
+
+  if (!existing) {
+    await model.createCompanyKV(companyWorkspaceId, {
+      description:
+        'Company Tavily API key for web search and page extract (shared). Env: TAVILY_API_KEY.',
+      key: TavilyCompanyCredKey,
+      name: 'Tavily API',
+      type: 'kv-env',
+      values: { TAVILY_API_KEY: apiKey },
+    });
+    return;
+  }
+
+  // Fill empty secret from deploy env once (do not overwrite a user-edited value).
+  if (!apiKey) return;
+  try {
+    const decrypted = await model.getCompany(companyWorkspaceId, existing.id, { decrypt: true });
+    const current = decrypted?.plaintext?.TAVILY_API_KEY?.trim();
+    if (current) return;
+    await model.updateCompany(companyWorkspaceId, existing.id, {
+      values: { TAVILY_API_KEY: apiKey },
+    });
+  } catch {
+    // Decrypt/update failures must not break the credentials list.
+  }
+};
+
 const SECRET_QUERY_KEYS = new Set([
   'key',
   'api_key',
@@ -357,6 +401,7 @@ export const localCredsRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       // All company members can *use* company secrets at runtime; only managers view them in UI.
+      // listDecryptedKv* already merges personal-over-company (non-empty personal wins).
       const [envItems, headerItems] = await Promise.all([
         ctx.userCredentialModel.listDecryptedKvEnv(ctx.companyWorkspaceId),
         ctx.userCredentialModel.listDecryptedKvHeader(ctx.companyWorkspaceId),
@@ -368,12 +413,16 @@ export const localCredsRouter = router({
       for (const item of envItems) {
         if (!keySet.has(item.key)) continue;
         found.add(item.key);
-        Object.assign(env, item.values);
+        for (const [k, v] of Object.entries(item.values)) {
+          if (typeof v === 'string' && v.trim()) env[k] = v;
+        }
       }
       for (const item of headerItems) {
         if (!keySet.has(item.key)) continue;
         found.add(item.key);
-        Object.assign(headers, item.values);
+        for (const [k, v] of Object.entries(item.values)) {
+          if (typeof v === 'string' && v.trim()) headers[k] = v;
+        }
       }
       const notFound = input.keys.filter((k) => !found.has(k));
       return {
@@ -403,6 +452,12 @@ export const localCredsRouter = router({
   list: localCredsProcedure.query(async ({ ctx }) => {
     // Every member gets a personal dingpan template (folder path differs per user).
     await ensurePersonalDingpanCredential(ctx.userCredentialModel);
+    // Company-shared Tavily key for web search / crawl.
+    await ensureCompanyTavilyCredential(
+      ctx.userCredentialModel,
+      ctx.companyWorkspaceId,
+      ctx.canManageCompany,
+    );
 
     const personal = await ctx.userCredentialModel.listPersonal();
     const company = ctx.companyWorkspaceId
@@ -424,6 +479,11 @@ export const localCredsRouter = router({
    */
   syncFromMcps: localCredsProcedure.mutation(async ({ ctx }) => {
     await ensurePersonalDingpanCredential(ctx.userCredentialModel);
+    await ensureCompanyTavilyCredential(
+      ctx.userCredentialModel,
+      ctx.companyWorkspaceId,
+      ctx.canManageCompany,
+    );
 
     let created = 0;
     let updated = 0;

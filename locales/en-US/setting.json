@@ -270,6 +270,8 @@
   "creds.table.neverUsed": "Never",
   "creds.table.preview": "Preview",
   "creds.table.type": "Type",
+  "creds.tavily.defaultDesc": "Company Tavily API key for web search and page extract (shared). Env: TAVILY_API_KEY.",
+  "creds.tavily.defaultName": "Tavily API",
   "creds.typeDesc.file": "Upload credential files like service accounts or certificates",
   "creds.typeDesc.kv-env": "Store API keys and tokens as environment variables",
   "creds.typeDesc.kv-header": "Store authorization values as HTTP headers",

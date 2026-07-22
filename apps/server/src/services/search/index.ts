@@ -15,7 +15,10 @@ const log = debug('lobe-oom:web-browsing:search-service');
 const parseImplEnv = (envString: string = '') => {
   // Handle full-width commas and extra whitespace
   const envValue = envString.replaceAll('，', ',').trim();
-  return envValue.split(',').filter(Boolean);
+  return envValue
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 };
 
 const buildSearchParams = ({
@@ -55,10 +58,9 @@ const getMemorySnapshot = () => {
  * Uses different implementations for different search operations
  */
 export class SearchService {
-  private searchImpList: SearchServiceImpl[];
-
   private get crawlerImpls() {
-    return parseImplEnv(toolsEnv.CRAWLER_IMPLS);
+    // Re-read each call so vault-injected env / runtime env changes apply without restart.
+    return parseImplEnv(process.env.CRAWLER_IMPLS || toolsEnv.CRAWLER_IMPLS);
   }
 
   private get crawlConcurrency() {
@@ -69,12 +71,12 @@ export class SearchService {
     return toolsEnv.CRAWLER_RETRY ?? DEFAULT_CRAWLER_RETRY;
   }
 
-  constructor() {
+  /** Build provider list per request (after withVaultCredEnv may have filled API keys). */
+  private get searchImpList(): SearchServiceImpl[] {
     const impls = this.searchImpls;
-    this.searchImpList =
-      impls.length > 0
-        ? impls.map((impl) => createSearchServiceImpl(impl))
-        : [createSearchServiceImpl()];
+    return impls.length > 0
+      ? impls.map((impl) => createSearchServiceImpl(impl))
+      : [createSearchServiceImpl()];
   }
 
   async crawlPages(input: { impls?: CrawlImplType[]; urls: string[] }) {
@@ -154,7 +156,9 @@ export class SearchService {
   }
 
   private get searchImpls() {
-    return parseImplEnv(toolsEnv.SEARCH_PROVIDERS) as SearchImplType[];
+    // Prefer live process.env so vault inject + SEARCH_PROVIDERS edits work without restart.
+    const raw = process.env.SEARCH_PROVIDERS ?? toolsEnv.SEARCH_PROVIDERS;
+    return parseImplEnv(raw) as SearchImplType[];
   }
 
   /**

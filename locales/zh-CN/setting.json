@@ -270,6 +270,8 @@
   "creds.table.neverUsed": "从未使用",
   "creds.table.preview": "预览",
   "creds.table.type": "类型",
+  "creds.tavily.defaultDesc": "公司共享的 Tavily API 密钥，用于网页搜索与内容抓取。环境变量：TAVILY_API_KEY。",
+  "creds.tavily.defaultName": "Tavily API",
   "creds.typeDesc.file": "上传服务账户或证书等凭证文件",
   "creds.typeDesc.kv-env": "将 API 密钥和令牌存储为环境变量",
   "creds.typeDesc.kv-header": "将授权值存储为 HTTP 请求头",

@@ -317,6 +317,9 @@ export default {
   'creds.dingpan.defaultName': 'DingTalk Drive (钉盘)',
   'creds.dingpan.defaultDesc':
     'Personal DingTalk Drive. Set APP_KEY/SECRET, your UNION_ID, and your folder link (each person has a different path).',
+  'creds.tavily.defaultName': 'Tavily API',
+  'creds.tavily.defaultDesc':
+    'Company Tavily API key for web search and page extract (shared). Env: TAVILY_API_KEY.',
   'creds.scope.company': 'Company',
   'creds.scope.companyReadOnly': 'Admin only',
   'creds.scope.personal': 'Personal',

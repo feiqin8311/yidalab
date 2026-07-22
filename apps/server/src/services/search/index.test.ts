@@ -22,6 +22,7 @@ describe('SearchService', () => {
   let searchService: SearchService;
   let mockSearchImpl: ReturnType<typeof createMockSearchImpl>;
 
+  // createSearchServiceImpl is called per request now (lazy provider list).
   function createMockSearchImpl() {
     return {
       query: vi.fn(),
@@ -31,35 +32,69 @@ describe('SearchService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Host .env may set SEARCH_PROVIDERS; isolate unit tests.
+    delete process.env.SEARCH_PROVIDERS;
+    delete process.env.CRAWLER_IMPLS;
+    vi.mocked(toolsEnv).SEARCH_PROVIDERS = '';
     mockSearchImpl = createMockSearchImpl();
     vi.mocked(createSearchServiceImpl).mockReturnValue(mockSearchImpl as any);
     searchService = new SearchService();
   });
 
-  describe('constructor', () => {
-    it('should create instance with default search implementation when no providers configured', () => {
+  describe('provider list (lazy, per request)', () => {
+    it('should create default search implementation when no providers configured', async () => {
+      mockSearchImpl.query.mockResolvedValue({
+        costTime: 0,
+        query: 'q',
+        resultNumbers: 0,
+        results: [],
+      });
+      await searchService.query('q');
       expect(createSearchServiceImpl).toHaveBeenCalledWith();
     });
 
-    it('should create instances for all providers from SEARCH_PROVIDERS', () => {
+    it('should create instances for all providers from SEARCH_PROVIDERS', async () => {
       vi.mocked(toolsEnv).SEARCH_PROVIDERS = 'tavily,brave';
-      searchService = new SearchService();
+      process.env.SEARCH_PROVIDERS = 'tavily,brave';
+      mockSearchImpl.query.mockResolvedValue({
+        costTime: 0,
+        query: 'q',
+        resultNumbers: 1,
+        results: [{ title: 'x' }],
+      });
+      await searchService.webSearch({ query: 'q' });
       expect(createSearchServiceImpl).toHaveBeenCalledWith(SearchImplType.Tavily);
       expect(createSearchServiceImpl).toHaveBeenCalledWith(SearchImplType.Brave);
+      delete process.env.SEARCH_PROVIDERS;
+      vi.mocked(toolsEnv).SEARCH_PROVIDERS = '';
     });
 
-    it('should handle full-width comma in SEARCH_PROVIDERS', () => {
-      vi.mocked(toolsEnv).SEARCH_PROVIDERS = 'tavily，brave';
-      searchService = new SearchService();
+    it('should handle full-width comma in SEARCH_PROVIDERS', async () => {
+      process.env.SEARCH_PROVIDERS = 'tavily，brave';
+      mockSearchImpl.query.mockResolvedValue({
+        costTime: 0,
+        query: 'q',
+        resultNumbers: 1,
+        results: [{ title: 'x' }],
+      });
+      await searchService.webSearch({ query: 'q' });
       expect(createSearchServiceImpl).toHaveBeenCalledWith(SearchImplType.Tavily);
       expect(createSearchServiceImpl).toHaveBeenCalledWith(SearchImplType.Brave);
+      delete process.env.SEARCH_PROVIDERS;
     });
 
-    it('should trim whitespace in SEARCH_PROVIDERS', () => {
-      vi.mocked(toolsEnv).SEARCH_PROVIDERS = '  tavily  ,  brave  ';
-      searchService = new SearchService();
+    it('should trim whitespace in SEARCH_PROVIDERS', async () => {
+      process.env.SEARCH_PROVIDERS = '  tavily  ,  brave  ';
+      mockSearchImpl.query.mockResolvedValue({
+        costTime: 0,
+        query: 'q',
+        resultNumbers: 1,
+        results: [{ title: 'x' }],
+      });
+      await searchService.webSearch({ query: 'q' });
       expect(createSearchServiceImpl).toHaveBeenCalledWith(SearchImplType.Tavily);
       expect(createSearchServiceImpl).toHaveBeenCalledWith(SearchImplType.Brave);
+      delete process.env.SEARCH_PROVIDERS;
     });
   });
 

@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
 import { authedProcedure, router } from '@/libs/trpc/lambda';
+import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { searchService } from '@/server/services/search';
+import { withVaultCredEnv } from '@/server/utils/withVaultCredEnv';
 
-const searchProcedure = authedProcedure;
+/** Authed + DB so search/crawl can load Settings → Credentials without process restart. */
+const searchProcedure = authedProcedure.use(serverDatabase);
 
 export const searchRouter = router({
   crawlPages: searchProcedure
@@ -16,8 +19,8 @@ export const searchRouter = router({
         urls: z.string().array(),
       }),
     )
-    .mutation(async ({ input }) => {
-      return searchService.crawlPages(input);
+    .mutation(async ({ ctx, input }) => {
+      return withVaultCredEnv(ctx.userId, ctx.serverDB, () => searchService.crawlPages(input));
     }),
 
   query: searchProcedure
@@ -33,8 +36,10 @@ export const searchRouter = router({
         query: z.string(),
       }),
     )
-    .query(async ({ input }) => {
-      return await searchService.query(input.query, input.optionalParams);
+    .query(async ({ ctx, input }) => {
+      return withVaultCredEnv(ctx.userId, ctx.serverDB, () =>
+        searchService.query(input.query, input.optionalParams),
+      );
     }),
 
   webSearch: searchProcedure
@@ -46,7 +51,7 @@ export const searchRouter = router({
         searchTimeRange: z.string().optional(),
       }),
     )
-    .query(async ({ input }) => {
-      return await searchService.webSearch(input);
+    .query(async ({ ctx, input }) => {
+      return withVaultCredEnv(ctx.userId, ctx.serverDB, () => searchService.webSearch(input));
     }),
 });

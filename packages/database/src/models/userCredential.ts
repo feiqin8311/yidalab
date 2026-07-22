@@ -1,5 +1,5 @@
 import type { CredScope, CredType, CredWithPlaintext, UserCredSummary } from '@lobechat/types';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
 
@@ -379,75 +379,102 @@ export class UserCredentialModel {
     return null;
   };
 
+  /**
+   * Decrypt personal + company KV for runtime injection.
+   *
+   * Priority (same credential `key`, and same env/header name across keys):
+   * company provides the baseline; personal **non-empty** values win.
+   * Empty personal fields do not wipe company secrets.
+   */
+  private listDecryptedKv = async (
+    type: 'kv-env' | 'kv-header',
+    companyWorkspaceId?: string | null,
+  ): Promise<Array<{ key: string; values: Record<string, string> }>> => {
+    const personalRows = await this.db
+      .select()
+      .from(userCredentials)
+      .where(
+        and(
+          eq(userCredentials.userId, this.userId),
+          isNull(userCredentials.workspaceId),
+          eq(userCredentials.type, type),
+        ),
+      );
+
+    const companyRows = companyWorkspaceId
+      ? await this.db
+          .select()
+          .from(userCredentials)
+          .where(
+            and(
+              eq(userCredentials.workspaceId, companyWorkspaceId),
+              eq(userCredentials.type, type),
+            ),
+          )
+      : [];
+
+    const decryptRow = async (row: UserCredentialItem) => {
+      try {
+        return { key: row.key, values: await this.decryptValues(row.valuesEncrypted) };
+      } catch {
+        return null;
+      }
+    };
+
+    const company = (await Promise.all(companyRows.map(decryptRow))).filter(
+      (x): x is { key: string; values: Record<string, string> } => !!x,
+    );
+    const personal = (await Promise.all(personalRows.map(decryptRow))).filter(
+      (x): x is { key: string; values: Record<string, string> } => !!x,
+    );
+
+    // 1) Same credential key: company base + personal non-empty overrides.
+    const byKey = new Map<string, Record<string, string>>();
+    for (const item of company) {
+      byKey.set(item.key, { ...item.values });
+    }
+    for (const item of personal) {
+      const base = byKey.get(item.key) ?? {};
+      const merged = { ...base };
+      for (const [k, v] of Object.entries(item.values)) {
+        if (typeof v === 'string' && v.trim()) merged[k] = v;
+      }
+      byKey.set(item.key, merged);
+    }
+
+    // 2) Same env/header name across different keys: personal non-empty wins.
+    const nameLayer: Record<string, string> = {};
+    for (const item of company) {
+      for (const [k, v] of Object.entries(item.values)) {
+        if (typeof v === 'string' && v.trim()) nameLayer[k] = v;
+      }
+    }
+    for (const item of personal) {
+      for (const [k, v] of Object.entries(item.values)) {
+        if (typeof v === 'string' && v.trim()) nameLayer[k] = v;
+      }
+    }
+
+    return [...byKey.entries()].map(([key, values]) => {
+      const next = { ...values };
+      for (const name of Object.keys(next)) {
+        if (nameLayer[name] !== undefined) next[name] = nameLayer[name];
+      }
+      return { key, values: next };
+    });
+  };
+
   /** Decrypt personal + company KV env for runtime injection. */
   listDecryptedKvEnv = async (
     companyWorkspaceId?: string | null,
   ): Promise<Array<{ key: string; values: Record<string, string> }>> => {
-    const conditions = [
-      and(
-        eq(userCredentials.userId, this.userId),
-        isNull(userCredentials.workspaceId),
-        eq(userCredentials.type, 'kv-env'),
-      ),
-    ];
-    if (companyWorkspaceId) {
-      conditions.push(
-        and(
-          eq(userCredentials.workspaceId, companyWorkspaceId),
-          eq(userCredentials.type, 'kv-env'),
-        ),
-      );
-    }
-
-    const rows = await this.db
-      .select()
-      .from(userCredentials)
-      .where(or(...conditions));
-
-    const out: Array<{ key: string; values: Record<string, string> }> = [];
-    for (const row of rows) {
-      try {
-        out.push({ key: row.key, values: await this.decryptValues(row.valuesEncrypted) });
-      } catch {
-        // skip undecryptable rows
-      }
-    }
-    return out;
+    return this.listDecryptedKv('kv-env', companyWorkspaceId);
   };
 
   /** Decrypt personal + company KV header for runtime injection. */
   listDecryptedKvHeader = async (
     companyWorkspaceId?: string | null,
   ): Promise<Array<{ key: string; values: Record<string, string> }>> => {
-    const conditions = [
-      and(
-        eq(userCredentials.userId, this.userId),
-        isNull(userCredentials.workspaceId),
-        eq(userCredentials.type, 'kv-header'),
-      ),
-    ];
-    if (companyWorkspaceId) {
-      conditions.push(
-        and(
-          eq(userCredentials.workspaceId, companyWorkspaceId),
-          eq(userCredentials.type, 'kv-header'),
-        ),
-      );
-    }
-
-    const rows = await this.db
-      .select()
-      .from(userCredentials)
-      .where(or(...conditions));
-
-    const out: Array<{ key: string; values: Record<string, string> }> = [];
-    for (const row of rows) {
-      try {
-        out.push({ key: row.key, values: await this.decryptValues(row.valuesEncrypted) });
-      } catch {
-        // skip
-      }
-    }
-    return out;
+    return this.listDecryptedKv('kv-header', companyWorkspaceId);
   };
 }
