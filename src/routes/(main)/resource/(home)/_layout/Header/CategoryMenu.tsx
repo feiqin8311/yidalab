@@ -1,7 +1,16 @@
 'use client';
 
 import { Flexbox } from '@lobehub/ui';
-import { FileText, ImageIcon, LayoutPanelTopIcon, Mic2, SquarePlay } from 'lucide-react';
+import {
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  ImageIcon,
+  LayoutPanelTopIcon,
+  Mic2,
+  SquarePlay,
+  TextIcon,
+} from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
@@ -30,6 +39,30 @@ const CategoryMenu = memo(() => {
         key: FilesTabs.Documents,
         title: t('tab.documents'),
         url: '/resource?category=documents',
+      },
+      {
+        icon: FileType,
+        key: FilesTabs.Pdf,
+        title: t('tab.pdf'),
+        url: '/resource?category=pdf',
+      },
+      {
+        icon: FileSpreadsheet,
+        key: FilesTabs.Excel,
+        title: t('tab.excel'),
+        url: '/resource?category=excel',
+      },
+      {
+        icon: FileText,
+        key: FilesTabs.Docs,
+        title: t('tab.docs'),
+        url: '/resource?category=docs',
+      },
+      {
+        icon: TextIcon,
+        key: FilesTabs.Markdown,
+        title: t('tab.markdown'),
+        url: '/resource?category=markdown',
       },
       {
         icon: ImageIcon,

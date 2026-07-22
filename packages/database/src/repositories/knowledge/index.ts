@@ -853,7 +853,49 @@ export class KnowledgeRepo {
         return 'audio';
       }
       case FilesTabs.Documents: {
-        return ['application', 'custom'];
+        // Non-PDF docs: Office / text / custom (PDF has its own tab)
+        return [
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml',
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml',
+          'application/rtf',
+          'application/json',
+          'application/x-yaml',
+          'application/yaml',
+          'text/plain',
+          'text/markdown',
+          'text/x-markdown',
+          'text/csv',
+          'text/tab-separated-values',
+          'text/rtf',
+          'custom',
+        ];
+      }
+      case FilesTabs.Pdf: {
+        return 'application/pdf';
+      }
+      case FilesTabs.Excel: {
+        return [
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml',
+          'text/csv',
+          'text/tab-separated-values',
+          'application/csv',
+        ];
+      }
+      case FilesTabs.Docs: {
+        return [
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml',
+          'application/rtf',
+          'text/rtf',
+        ];
+      }
+      case FilesTabs.Markdown: {
+        return ['text/markdown', 'text/x-markdown'];
       }
       case FilesTabs.Images: {
         return 'image';

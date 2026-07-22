@@ -459,8 +459,8 @@ describe('FileManagerActions', () => {
         parentId: undefined,
         uploadId: expect.any(String),
       });
-      // Should auto-parse text files
-      expect(parseSpy).toHaveBeenCalledWith(['file-1'], { skipExist: false });
+      // Upload should not auto-chunk
+      expect(parseSpy).not.toHaveBeenCalled();
     });
 
     it('should upload files with knowledgeBaseId', async () => {
@@ -527,7 +527,7 @@ describe('FileManagerActions', () => {
       expect(parseSpy).not.toHaveBeenCalled();
     });
 
-    it('should auto-embed files that support chunking', async () => {
+    it('should not auto-chunk after upload', async () => {
       const { result } = renderHook(() => useStore());
 
       const textFile = new File(['text content'], 'doc.txt', { type: 'text/plain' });
@@ -542,53 +542,10 @@ describe('FileManagerActions', () => {
         await result.current.pushDockFileList([textFile, pdfFile]);
       });
 
-      // Should auto-parse both files that support chunking
-      expect(parseSpy).toHaveBeenCalledWith(['file-1', 'file-2'], { skipExist: false });
-    });
-
-    it('should skip auto-embed for unsupported file types (images/videos/audio)', async () => {
-      const { result } = renderHook(() => useStore());
-
-      const imageFile = new File(['image content'], 'image.png', { type: 'image/png' });
-      const videoFile = new File(['video content'], 'video.mp4', { type: 'video/mp4' });
-      const audioFile = new File(['audio content'], 'audio.mp3', { type: 'audio/mpeg' });
-
-      vi.spyOn(result.current, 'uploadWithProgress')
-        .mockResolvedValueOnce({ id: 'file-1', url: 'http://example.com/file-1' })
-        .mockResolvedValueOnce({ id: 'file-2', url: 'http://example.com/file-2' })
-        .mockResolvedValueOnce({ id: 'file-3', url: 'http://example.com/file-3' });
-      const parseSpy = vi.spyOn(result.current, 'parseFilesToChunks').mockResolvedValue();
-
-      await act(async () => {
-        await result.current.pushDockFileList([imageFile, videoFile, audioFile]);
-      });
-
-      // Should not auto-parse unsupported files
       expect(parseSpy).not.toHaveBeenCalled();
     });
 
-    it('should auto-embed only supported files in mixed upload', async () => {
-      const { result } = renderHook(() => useStore());
-
-      const textFile = new File(['text content'], 'doc.txt', { type: 'text/plain' });
-      const imageFile = new File(['image content'], 'image.png', { type: 'image/png' });
-      const pdfFile = new File(['pdf content'], 'doc.pdf', { type: 'application/pdf' });
-
-      vi.spyOn(result.current, 'uploadWithProgress')
-        .mockResolvedValueOnce({ id: 'file-1', url: 'http://example.com/file-1' })
-        .mockResolvedValueOnce({ id: 'file-2', url: 'http://example.com/file-2' })
-        .mockResolvedValueOnce({ id: 'file-3', url: 'http://example.com/file-3' });
-      const parseSpy = vi.spyOn(result.current, 'parseFilesToChunks').mockResolvedValue();
-
-      await act(async () => {
-        await result.current.pushDockFileList([textFile, imageFile, pdfFile]);
-      });
-
-      // Should only auto-parse text and pdf files, skip image
-      expect(parseSpy).toHaveBeenCalledWith(['file-1', 'file-3'], { skipExist: false });
-    });
-
-    it('should skip auto-embed when upload fails', async () => {
+    it('should not auto-chunk when upload fails', async () => {
       const { result } = renderHook(() => useStore());
 
       const textFile = new File(['text content'], 'doc.txt', { type: 'text/plain' });
@@ -600,7 +557,6 @@ describe('FileManagerActions', () => {
         await result.current.pushDockFileList([textFile]);
       });
 
-      // Should not auto-parse when upload returns undefined
       expect(parseSpy).not.toHaveBeenCalled();
     });
 

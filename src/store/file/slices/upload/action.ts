@@ -1,5 +1,5 @@
 import { LOBE_CHAT_CLOUD } from '@lobechat/business-const';
-import { inferImageMimeTypeFromBytes } from '@lobechat/utils';
+import { getMimeType, inferImageMimeTypeFromBytes } from '@lobechat/utils';
 import { t } from 'i18next';
 import { sha256 } from 'js-sha256';
 
@@ -203,6 +203,21 @@ export class FileUploadActionImpl {
       // classified (and rendered) as audio.
       const audioMime = audioMimeFromExtension(normalizedFile.name);
       if (audioMime && !fileType.startsWith('audio/')) fileType = audioMime;
+
+      // Office / markdown often arrive as empty or octet-stream; extension mime keeps them
+      // filterable under resource categories (PDF / Excel / Word / Markdown).
+      if (!fileType || fileType === 'application/octet-stream') {
+        const fromExt = getMimeType(normalizedFile.name);
+        if (fromExt && fromExt !== 'application/octet-stream') fileType = fromExt;
+      } else {
+        const lowerName = normalizedFile.name.toLowerCase();
+        if (
+          (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) &&
+          (fileType === 'text/plain' || fileType === 'application/octet-stream')
+        ) {
+          fileType = 'text/markdown';
+        }
+      }
 
       // 5. create file to db
       // Fall back to the global file URL when legacy/generated metadata has no `path`.

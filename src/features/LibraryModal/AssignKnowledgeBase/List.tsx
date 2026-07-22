@@ -5,6 +5,7 @@ import React, { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso } from 'react-virtuoso';
 
+import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { useAgentStore } from '@/store/agent';
 import { useGlobalStore } from '@/store/global';
 
@@ -18,6 +19,7 @@ import VisibilityTabs, { type PickerVisibility } from './VisibilityTabs';
 
 export const List = memo(() => {
   const { t } = useTranslation(['file', 'chat']);
+  const activeWorkspaceId = useActiveWorkspaceId();
 
   const [useFetchFilesAndKnowledgeBases, activeAgentId, agentVisibility] = useAgentStore((s) => [
     s.useFetchFilesAndKnowledgeBases,
@@ -31,7 +33,9 @@ export const List = memo(() => {
   // fetch to workspace scope so the client can't ask for private items.
   const isPublicAgent = agentVisibility === 'public';
 
-  const [mode, setMode] = useState<PickerVisibility>('public');
+  // Match resource page: workspace lands on "mine/private"; personal mode
+  // files default to visibility=public so public is the filled tab.
+  const [mode, setMode] = useState<PickerVisibility>(activeWorkspaceId ? 'private' : 'public');
   const effectiveMode: PickerVisibility = isPublicAgent ? 'public' : mode;
 
   const { isLoading, error, data } = useFetchFilesAndKnowledgeBases(activeAgentId, effectiveMode);

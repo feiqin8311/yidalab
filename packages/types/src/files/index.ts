@@ -1,10 +1,15 @@
 export enum FilesTabs {
   All = 'all',
   Audios = 'audios',
+  /** Word / RTF office documents */
+  Docs = 'docs',
   Documents = 'documents',
+  Excel = 'excel',
   Home = 'home',
   Images = 'images',
+  Markdown = 'markdown',
   Pages = 'pages',
+  Pdf = 'pdf',
   Videos = 'videos',
   Websites = 'websites',
 }

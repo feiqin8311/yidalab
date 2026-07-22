@@ -26,6 +26,9 @@ import useNotionImport from './hooks/useNotionImport';
 import useObsidianImport from './hooks/useObsidianImport';
 import useUploadFolder from './hooks/useUploadFolder';
 
+const DOCUMENT_ACCEPT =
+  '.doc,.docx,.rtf,.md,.markdown,.txt,.csv,.xls,.xlsx,.ppt,.pptx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/markdown,text/plain,text/csv';
+
 const getAcceptedFileTypes = (category: FilesTabs): string | undefined => {
   switch (category) {
     case FilesTabs.Videos: {
@@ -35,12 +38,25 @@ const getAcceptedFileTypes = (category: FilesTabs): string | undefined => {
       return 'audio/*';
     }
     case FilesTabs.Documents: {
-      return '.pdf,.doc,.docx,.md,.markdown,.xls,.xlsx';
+      return DOCUMENT_ACCEPT;
+    }
+    case FilesTabs.Pdf: {
+      return '.pdf,application/pdf';
+    }
+    case FilesTabs.Excel: {
+      return '.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv';
+    }
+    case FilesTabs.Docs: {
+      return '.doc,.docx,.rtf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/rtf,text/rtf';
+    }
+    case FilesTabs.Markdown: {
+      return '.md,.markdown,text/markdown,text/x-markdown';
     }
     case FilesTabs.Images: {
       return 'image/*';
     }
     default: {
+      // All / Home: allow media + common office docs
       return undefined;
     }
   }

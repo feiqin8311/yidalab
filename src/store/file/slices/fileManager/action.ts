@@ -20,7 +20,6 @@ import { uploadFileListReducer } from '@/store/file/reducers/uploadFileList';
 import { type StoreSetter } from '@/store/types';
 import { type FileListItem, type QueryFileListParams } from '@/types/files';
 import { type ResourceItem } from '@/types/resource';
-import { isChunkingUnsupported } from '@/utils/isChunkingUnsupported';
 import { unzipFile } from '@/utils/unzipFile';
 
 import { type FileStore } from '../../store';
@@ -321,7 +320,8 @@ export class FileManageActionImpl {
     });
 
     // 4. Upload files with concurrency limit using p-map
-    const uploadResults = await pMap(
+    // Chunking is manual (batch action / per-file), not on upload.
+    await pMap(
       uploadFiles,
       async (uploadFileItem) => {
         const result = await this.#get().uploadWithProgress({
@@ -348,12 +348,6 @@ export class FileManageActionImpl {
             ),
           );
         }
-
-        return {
-          file: uploadFileItem.file,
-          fileId: result?.id,
-          fileType: uploadFileItem.file.type,
-        };
       },
       { concurrency: MAX_UPLOAD_FILE_COUNT },
     ).catch((error) => {
@@ -363,15 +357,6 @@ export class FileManageActionImpl {
 
       throw error;
     });
-
-    // 5. auto-embed files that support chunking
-    const fileIdsToEmbed = uploadResults
-      .filter(({ fileType, fileId }) => fileId && !isChunkingUnsupported(fileType))
-      .map(({ fileId }) => fileId!);
-
-    if (fileIdsToEmbed.length > 0) {
-      await this.#get().parseFilesToChunks(fileIdsToEmbed, { skipExist: false });
-    }
   };
 
   reEmbeddingChunks = async (id: string): Promise<void> => {
@@ -652,7 +637,8 @@ export class FileManageActionImpl {
       }
 
       // 8. Upload files with concurrency limit
-      const uploadResults = await pMap(
+      // Chunking is manual (batch action / per-file), not on upload.
+      await pMap(
         uploadItems,
         async ({ abortController, file, id, parentId, shouldShowInCurrentList }) => {
           const result = await this.#get().uploadWithProgress({
@@ -674,8 +660,6 @@ export class FileManageActionImpl {
               );
             }
           }
-
-          return { file, fileId: result?.id, fileType: file.type };
         },
         { concurrency: MAX_UPLOAD_FILE_COUNT },
       ).catch((error) => {
@@ -686,15 +670,6 @@ export class FileManageActionImpl {
 
         throw error;
       });
-
-      // 9. Auto-embed files that support chunking
-      const fileIdsToEmbed = uploadResults
-        .filter(({ fileType, fileId }) => fileId && !isChunkingUnsupported(fileType))
-        .map(({ fileId }) => fileId!);
-
-      if (fileIdsToEmbed.length > 0) {
-        await this.#get().parseFilesToChunks(fileIdsToEmbed, { skipExist: false });
-      }
     } catch (error) {
       // Dismiss toast on error
       if (sortedFolderPaths.length > 0) {

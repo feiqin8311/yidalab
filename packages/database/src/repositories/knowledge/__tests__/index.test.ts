@@ -273,8 +273,15 @@ describe('KnowledgeRepo', () => {
       expect(
         result.every(
           (item) =>
-            item.fileType.startsWith('application') ||
-            (item.fileType.startsWith('custom') && item.fileType !== 'custom/document'),
+            !item.fileType.startsWith('application/pdf') &&
+            (item.fileType.startsWith('application/msword') ||
+              item.fileType.startsWith('application/vnd.') ||
+              item.fileType.startsWith('application/rtf') ||
+              item.fileType.startsWith('application/json') ||
+              item.fileType.startsWith('application/yaml') ||
+              item.fileType.startsWith('application/x-yaml') ||
+              item.fileType.startsWith('text/') ||
+              (item.fileType.startsWith('custom') && item.fileType !== 'custom/document')),
         ),
       ).toBe(true);
     });
@@ -1042,14 +1049,24 @@ describe('KnowledgeRepo', () => {
         category: FilesTabs.Documents,
       });
 
-      // Should include application/* files and custom/* docs
+      // Documents tab excludes PDF (has its own tab); includes text/custom office docs
       expect(
         result.every(
           (item) =>
-            item.fileType.startsWith('application') ||
-            (item.fileType.startsWith('custom') && item.fileType !== 'custom/document'),
+            !item.fileType.startsWith('application/pdf') &&
+            (item.fileType.startsWith('application/msword') ||
+              item.fileType.startsWith('application/vnd.') ||
+              item.fileType.startsWith('application/rtf') ||
+              item.fileType.startsWith('application/json') ||
+              item.fileType.startsWith('application/yaml') ||
+              item.fileType.startsWith('application/x-yaml') ||
+              item.fileType.startsWith('text/') ||
+              (item.fileType.startsWith('custom') && item.fileType !== 'custom/document')),
         ),
       ).toBe(true);
+      expect(result.every((item) => item.id !== 'kb-f-pdf')).toBe(true);
+      expect(result.some((item) => item.id === 'kb-f-searchable')).toBe(true);
+      expect(result.every((item) => item.id !== 'kb-f-image')).toBe(true);
     });
 
     it('should return KB standalone documents (no fileId) with search', async () => {
