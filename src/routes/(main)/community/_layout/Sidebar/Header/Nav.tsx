@@ -2,7 +2,7 @@
 
 import { Flexbox } from '@lobehub/ui';
 import { McpIcon, SkillsIcon } from '@lobehub/ui/icons';
-import { Bot } from 'lucide-react';
+import { Bot, House } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +15,7 @@ const Nav = memo(() => {
   const pathname = usePathname();
   const { t } = useTranslation('discover');
   const items = [
+    { icon: House, key: DiscoverTab.Home, title: t('tab.home'), url: '/community/home' },
     { icon: Bot, key: DiscoverTab.Assistants, title: t('tab.assistant'), url: '/community/agent' },
     { icon: SkillsIcon, key: DiscoverTab.Skills, title: t('tab.skill'), url: '/community/skill' },
     { icon: McpIcon, key: DiscoverTab.Mcp, title: 'MCP', url: '/community/mcp' },
@@ -22,15 +23,17 @@ const Nav = memo(() => {
 
   return (
     <Flexbox gap={1} paddingInline={4}>
-      {items.map((item) => (
-        <WorkspaceLink key={item.key} to={item.url}>
-          <NavItem
-            active={pathname.includes(`/community/${item.key}`)}
-            icon={item.icon}
-            title={item.title}
-          />
-        </WorkspaceLink>
-      ))}
+      {items.map((item) => {
+        const active =
+          item.key === DiscoverTab.Home
+            ? pathname.includes('/community/home') || pathname.endsWith('/community')
+            : pathname.includes(`/community/${item.key}`);
+        return (
+          <WorkspaceLink key={item.key} to={item.url}>
+            <NavItem active={active} icon={item.icon} title={item.title} />
+          </WorkspaceLink>
+        );
+      })}
     </Flexbox>
   );
 });

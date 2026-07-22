@@ -5,6 +5,7 @@ import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceA
 import { CompanyMarketSkillModel } from '@/database/models/companyMarketSkill';
 import { router } from '@/libs/trpc/lambda';
 import { CompanyMarketSkillService } from '@/server/services/companyMarketSkill';
+import { SkillImportError } from '@/server/services/skill/errors';
 import type { DiscoverSkillDetail, DiscoverSkillItem } from '@/types/discover';
 import { SkillSorts } from '@/types/discover';
 
@@ -93,9 +94,15 @@ export const skillRouter = router({
     .input(z.object({ identifier: z.string() }))
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx.company.role);
-      const skill = await ctx.companyMarketSkillModel.findByIdentifier(input.identifier);
-      if (!skill) throw new TRPCError({ code: 'NOT_FOUND', message: 'MARKET_SKILL_NOT_FOUND' });
-      return ctx.companyMarketSkillModel.delete(skill.id);
+      try {
+        // Unpublish market entry + cascade-uninstall all workspace installs.
+        return await ctx.companyMarketSkillService.unpublish(input.identifier);
+      } catch (error) {
+        if (error instanceof SkillImportError && error.code === 'NOT_FOUND') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'MARKET_SKILL_NOT_FOUND' });
+        }
+        throw error;
+      }
     }),
 
   getSkillCategories: companyMarketProcedure

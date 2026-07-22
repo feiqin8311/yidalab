@@ -160,4 +160,26 @@ export class AgentSkillModel {
 
     return { success: (result.rowCount ?? 0) > 0 };
   };
+
+  /**
+   * Workspace-wide uninstall of a company market skill.
+   * Removes every member's installed copy (`source = market`) for this identifier.
+   * Not scoped to the current user — used when the market skill is unpublished.
+   */
+  deleteMarketInstallsInWorkspace = async (identifier: string): Promise<number> => {
+    if (!this.workspaceId) return 0;
+
+    const deleted = await this.db
+      .delete(agentSkills)
+      .where(
+        and(
+          eq(agentSkills.workspaceId, this.workspaceId),
+          eq(agentSkills.identifier, identifier),
+          eq(agentSkills.source, 'market'),
+        ),
+      )
+      .returning({ id: agentSkills.id });
+
+    return deleted.length;
+  };
 }

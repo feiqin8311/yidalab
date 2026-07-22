@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useToolStore } from '@/store/tool';
 
+import SkillStoreHome from './Home';
 import Search from './Search';
 import AddSkillButton from './SkillList/AddSkillButton';
 import LobeHubList from './SkillList/LobeHub';
@@ -14,6 +15,7 @@ import MarketSkillList from './SkillList/MarketSkills';
 import MCPList from './SkillList/MCP';
 
 export enum SkillStoreTab {
+  Home = 'home',
   LobeHub = 'lobehub',
   MCP = 'mcp',
   Skills = 'skills',
@@ -21,7 +23,7 @@ export enum SkillStoreTab {
 
 export const SkillStoreContent = () => {
   const { t } = useTranslation('setting');
-  const [activeTab, setActiveTab] = useState<SkillStoreTab>(SkillStoreTab.LobeHub);
+  const [activeTab, setActiveTab] = useState<SkillStoreTab>(SkillStoreTab.Home);
   const [lobehubKeywords, setLobehubKeywords] = useState('');
   const [skillKeywords, setSkillKeywords] = useState('');
 
@@ -32,11 +34,13 @@ export const SkillStoreContent = () => {
   useFetchUninstalledBuiltinTools(true);
 
   const options: TabsItem[] = [
+    { key: SkillStoreTab.Home, label: t('skillStore.tabs.home') },
     { key: SkillStoreTab.LobeHub, label: t('skillStore.tabs.lobehub') },
     { key: SkillStoreTab.Skills, label: t('skillStore.tabs.skills') },
     { key: SkillStoreTab.MCP, label: t('skillStore.tabs.mcp') },
   ];
 
+  const isHome = activeTab === SkillStoreTab.Home;
   const isLobeHub = activeTab === SkillStoreTab.LobeHub;
   const isSkills = activeTab === SkillStoreTab.Skills;
   const isMCP = activeTab === SkillStoreTab.MCP;
@@ -57,13 +61,18 @@ export const SkillStoreContent = () => {
           />
           <AddSkillButton />
         </Flexbox>
-        <Search
-          activeTab={activeTab}
-          onLobeHubSearch={setLobehubKeywords}
-          onSkillSearch={setSkillKeywords}
-        />
+        {!isHome && (
+          <Search
+            activeTab={activeTab}
+            onLobeHubSearch={setLobehubKeywords}
+            onSkillSearch={setSkillKeywords}
+          />
+        )}
       </Flexbox>
       <Flexbox height={496} style={{ marginBlockEnd: -12, marginInline: -16 }}>
+        <Flexbox flex={1} style={{ display: isHome ? 'flex' : 'none', overflow: 'hidden' }}>
+          <SkillStoreHome />
+        </Flexbox>
         <Flexbox flex={1} style={{ display: isLobeHub ? 'flex' : 'none', overflow: 'auto' }}>
           <LobeHubList keywords={lobehubKeywords} />
         </Flexbox>

@@ -66,6 +66,20 @@ export class CompanyMarketSkillService {
     return { skill, status: 'created' as const };
   };
 
+  /**
+   * Unpublish (delete) a company market skill and uninstall every workspace
+   * member's installed copy of it.
+   */
+  unpublish = async (identifier: string) => {
+    const marketSkill = await this.marketSkillModel.findByIdentifier(identifier);
+    if (!marketSkill) throw new SkillImportError('Market skill not found', 'NOT_FOUND');
+
+    const uninstalledCount = await this.agentSkillModel.deleteMarketInstallsInWorkspace(identifier);
+    await this.marketSkillModel.delete(marketSkill.id);
+
+    return { success: true as const, uninstalledCount };
+  };
+
   publish = async (params: { identifier?: string; zipFileId: string }) => {
     const { cleanup, file, filePath } = await this.fileService.downloadFileToLocal(
       params.zipFileId,

@@ -85,6 +85,7 @@ import CommunityDetailWorkspaceSettingsPage from '@/routes/(main)/community/(det
 import CommunityListLayout from '@/routes/(main)/community/(list)/_layout';
 import CommunityListAgentPage from '@/routes/(main)/community/(list)/agent';
 import CommunityListAgentLayout from '@/routes/(main)/community/(list)/agent/_layout';
+import CommunityListHomePage from '@/routes/(main)/community/(list)/home';
 import CommunityListMcpPage from '@/routes/(main)/community/(list)/mcp';
 import CommunityListMcpLayout from '@/routes/(main)/community/(list)/mcp/_layout';
 import CommunityListSkillPage from '@/routes/(main)/community/(list)/skill';
@@ -268,6 +269,13 @@ export const sharedMainAreaChildren: RouteObject[] = [
       {
         children: [
           {
+            element: <CommunityListHomePage />,
+            handle: {
+              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
+            },
+            path: 'home',
+          },
+          {
             children: [
               {
                 element: <CommunityListAgentPage />,
@@ -313,7 +321,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
             element: <CommunityDetailWorkspacePage />,
             path: 'workspace',
           },
-          { element: redirectElement('agent'), index: true },
+          { element: redirectElement('home'), index: true },
         ],
         element: <CommunityListLayout />,
       },

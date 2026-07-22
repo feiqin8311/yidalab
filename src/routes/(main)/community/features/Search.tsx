@@ -13,6 +13,9 @@ import { usePathname, useQuery } from '@/libs/router/navigation';
 
 const prefixCls = 'ant';
 
+/** List tabs that have a `/community/<tab>` search destination. */
+const COMMUNITY_SEARCH_TABS = new Set(['agent', 'skill', 'mcp']);
+
 export const styles = createStaticStyles(({ css, cssVar }) => ({
   active: css`
     box-shadow: ${cssVar.boxShadow};
@@ -34,7 +37,11 @@ const Search = memo<StoreSearchBarProps>(() => {
   const { q } = useQuery() as { q?: string };
   const router = useQueryRoute();
   const [word, setWord] = useState<string>(q || '');
-  const activeTab = pathname.split('/')[2] || 'agent';
+  // Workspace URLs are `/:workspaceSlug/community/<tab>/...` — don't use fixed index.
+  const segments = pathname.split('/').filter(Boolean);
+  const communityIndex = segments.indexOf('community');
+  const tab = communityIndex >= 0 ? segments[communityIndex + 1] : undefined;
+  const activeTab = tab && COMMUNITY_SEARCH_TABS.has(tab) ? tab : 'agent';
   const handleSearch = (value: string) => {
     router.push(urlJoin('/community', activeTab), {
       query: value ? { q: value } : {},

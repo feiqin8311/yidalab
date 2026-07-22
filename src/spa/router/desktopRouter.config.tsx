@@ -213,6 +213,16 @@ export const sharedMainAreaChildren: RouteObject[] = [
       {
         children: [
           {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(list)/home'),
+              'Desktop > Discover > List > Home',
+            ),
+            handle: {
+              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
+            },
+            path: 'home',
+          },
+          {
             children: [
               {
                 element: dynamicElement(
@@ -279,7 +289,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
             ),
             path: 'workspace',
           },
-          { element: redirectElement('agent'), index: true },
+          { element: redirectElement('home'), index: true },
         ],
         element: dynamicElement(
           () => import('@/routes/(main)/community/(list)/_layout'),

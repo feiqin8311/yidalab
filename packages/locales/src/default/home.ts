@@ -52,6 +52,17 @@ export default {
   'recommendations.heteroAgent.tag': 'Coding Agent',
   'recommendations.heteroAgent.title': 'Add {{name}} agent',
   'recommendations.subtitle': 'Some recommendations for your setup',
+  'suggest.hint': 'Ops scenarios plus installed company MCP/skills (not Artifacts / Memory)',
+  'suggest.empty': 'No recommendations yet.',
+  'suggest.emptyAction': 'Install company tools',
+  'suggest.toolTitle': '{{name}}',
+  'suggest.toolPrompt':
+    'Use "{{name}}" to help me complete a real task. Explain your plan first, then run it.',
+  'suggest.toolPromptWithDesc':
+    'Use "{{name}}" for a real task. Capability: {{description}}. Confirm the goal, then call the tool.',
+  'suggest.apiTitle': '{{name}} · {{api}}',
+  'suggest.apiPrompt':
+    'Use "{{name}}" capability "{{api}}" ({{apiDesc}}) to complete a real task. Ask if you need details, then execute.',
   'starter.createAgent': 'Create Agent',
   'starter.createGroup': 'Create Group',
   'starter.deepResearch': 'Deep Research',

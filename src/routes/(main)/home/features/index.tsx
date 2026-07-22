@@ -6,6 +6,7 @@ import { memo } from 'react';
 import HomePromoBanner from '@/business/client/features/HomePromoBanner';
 
 import AgentSelect from './AgentSelect';
+import HomeSuggest from './HomeSuggest';
 import InputArea from './InputArea';
 import WelcomeText from './WelcomeText';
 
@@ -19,6 +20,7 @@ const Home = memo(() => {
           <WelcomeText />
         </Flexbox>
         <InputArea />
+        <HomeSuggest />
       </Flexbox>
     </Flexbox>
   );

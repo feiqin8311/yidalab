@@ -22,7 +22,8 @@ const Header = memo(() => {
   const location = useLocation();
   const { t } = useTranslation('setting');
   const { data: company } = useMyCompany();
-  const isHome = location.pathname === '/';
+  const isCommunityHome =
+    location.pathname.endsWith('/community') || location.pathname.endsWith('/community/home');
   const isSkillMarket = location.pathname.endsWith('/community/skill');
   const isMcpMarket = location.pathname.endsWith('/community/mcp');
   const canPublish = company?.role === 'admin' || company?.role === 'owner';
@@ -49,7 +50,7 @@ const Header = memo(() => {
         left={<StoreSearchBar />}
         style={cssVariables}
         right={
-          !isHome && (
+          !isCommunityHome && (
             <>
               {isSkillMarket && canPublish && (
                 <Button

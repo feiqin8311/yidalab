@@ -353,4 +353,71 @@ describe('AgentSkillModel', () => {
       }
     });
   });
+
+  describe('deleteMarketInstallsInWorkspace', () => {
+    it('removes every member market install for the identifier and keeps user skills', async () => {
+      const { CompanyModel } = await import('../company');
+      const memberId = 'agent-skill-market-member';
+      await serverDB.insert(users).values({ id: memberId });
+
+      const company = await new CompanyModel(serverDB, userId).create({
+        departmentName: 'Ops',
+        name: 'Unpublish Co',
+        position: 'Owner',
+      });
+      const workspaceId = company.workspace.id;
+
+      // Names differ so older unique(workspace, name) fixtures still pass; production
+      // uses per-user unique indexes so same market name can install for many members.
+      await serverDB.insert(agentSkills).values([
+        {
+          description: 'market copy owner',
+          identifier: 'company.skill-unpublish',
+          manifest: createManifest(),
+          name: 'Unpublish Target Owner',
+          source: 'market',
+          userId,
+          workspaceId,
+        },
+        {
+          description: 'market copy member',
+          identifier: 'company.skill-unpublish',
+          manifest: createManifest(),
+          name: 'Unpublish Target Member',
+          source: 'market',
+          userId: memberId,
+          workspaceId,
+        },
+        {
+          description: 'user custom keep',
+          identifier: 'user.custom-keep',
+          manifest: createManifest(),
+          name: 'Custom Keep',
+          source: 'user',
+          userId,
+          workspaceId,
+        },
+      ]);
+
+      const model = new AgentSkillModel(serverDB, userId, workspaceId);
+      const removed = await model.deleteMarketInstallsInWorkspace('company.skill-unpublish');
+      expect(removed).toBe(2);
+
+      const remaining = await serverDB
+        .select({
+          identifier: agentSkills.identifier,
+          source: agentSkills.source,
+          userId: agentSkills.userId,
+        })
+        .from(agentSkills)
+        .where(eq(agentSkills.workspaceId, workspaceId));
+
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]).toMatchObject({
+        identifier: 'user.custom-keep',
+        source: 'user',
+        userId,
+      });
+    });
+  });
 });
