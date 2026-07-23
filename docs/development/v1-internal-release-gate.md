@@ -21,8 +21,8 @@
 
 ### 1A. 免登应用（`AUTH_DINGTALK_*`）
 
-- [ ] `AUTH_DINGTALK_APP_KEY` / `SECRET` / `CORP_ID` 已配（可选 `AGENT_ID`）
-- [ ] 钉钉工作台能打开并自动登录（至少 1 人非管理员）
+- [x] `AUTH_DINGTALK_APP_KEY` / `SECRET` / `CORP_ID` 已配（可选 `AGENT_ID`）— 人工确认 2026-07-23
+- [x] 钉钉工作台能打开并自动登录（至少 1 人非管理员）— 人工确认 2026-07-23
 
 ### 1B. 钉盘 OpenAPI 应用（公司凭证 key = `dingtalk`）
 
@@ -130,4 +130,5 @@
 
 预览：`https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=<fileId>&type=file`
 
-**结论**：钉盘主路径 **6/6 PASS**。放行表其余项（commit/tag、免登、反馈群）仍需人工勾。
+**结论**：钉盘主路径 **6/6 PASS**；免登 **已人工确认**；tag/release `v1.0.0-internal` 已发。\
+仍待：§3 对话→Agent→钉盘（产品路径）、§4 失败可读、§5 反馈群 / 值班、§0 生产部署与迁移确认。
