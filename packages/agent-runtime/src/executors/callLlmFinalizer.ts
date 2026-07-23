@@ -17,6 +17,7 @@ import type {
   GeneralAgentCallLLMResultPayload,
   InstructionExecutionResult,
 } from '../types';
+import { applyDingpanDeliveryClaimGuard } from '../utils/deliveryClaimGuard';
 import { applyMaxTotalTokensBrake } from '../utils/runBrakes';
 
 export const VISIBLE_OUTPUT_END_PUBLISHED_STEP_INDEX_METADATA_KEY =
@@ -113,14 +114,34 @@ const sanitizeStateToolCalls = (toolCalls: MessageToolCall[]) => {
   return sanitizedToolCalls.length > 0 ? sanitizedToolCalls : undefined;
 };
 
+/**
+ * Guard plain-text finals only (delivery claims must match dingpan tool results).
+ * Multimodal answers keep `output.content` for in-memory state; persistence may
+ * still serialize contentParts separately.
+ */
+const resolveGuardedPlainContent = ({
+  output,
+  state,
+}: {
+  output: LLMAttemptOutput;
+  state: AgentState;
+}): string => {
+  const raw = typeof output.content === 'string' ? output.content : '';
+  if (output.hasContentImages) return raw;
+  if (output.toolsCalling.length > 0 || output.toolCalls.length > 0) return raw;
+  return applyDingpanDeliveryClaimGuard(raw, state.messages as any[]);
+};
+
 const persistFinalMessage = async ({
   assistantMessageId,
   host,
   output,
-}: Pick<FinalizeCallLlmTurnInput, 'assistantMessageId' | 'host' | 'output'>) => {
-  const finalContent = output.hasContentImages
+  state,
+}: Pick<FinalizeCallLlmTurnInput, 'assistantMessageId' | 'host' | 'output' | 'state'>) => {
+  const guardedPlain = resolveGuardedPlainContent({ output, state });
+  const persistedContent = output.hasContentImages
     ? serializePartsForStorage(output.contentParts)
-    : output.content;
+    : guardedPlain;
   const finalReasoning = buildFinalReasoning(output);
   const metadata = buildMessageMetadata({
     answerSalvagedFromReasoning: output.answerSalvagedFromReasoning,
@@ -131,7 +152,7 @@ const persistFinalMessage = async ({
 
   try {
     await host.transports.messages.update(assistantMessageId, {
-      content: finalContent,
+      content: persistedContent,
       imageList: output.imageList.length > 0 ? output.imageList : undefined,
       metadata,
       reasoning: finalReasoning,
@@ -142,11 +163,13 @@ const persistFinalMessage = async ({
     console.error('[call_llm] Failed to update message:', error);
   }
 
-  return finalReasoning;
+  // In-memory state keeps plain text (same as pre-guard multimodal behavior).
+  return { finalContent: guardedPlain, finalReasoning };
 };
 
 const buildFinalState = ({
   assistantMessageId,
+  finalContent,
   model,
   output,
   provider,
@@ -156,12 +179,13 @@ const buildFinalState = ({
   visibleOutputEndPublishedStepIndex,
   finalReasoning,
 }: Omit<FinalizeCallLlmTurnInput, 'events' | 'host' | 'recordResult'> & {
+  finalContent: string;
   finalReasoning?: ModelReasoning;
   visibleOutputEndPublishedStepIndex?: number;
 }): AgentState => {
   const newState = structuredClone(state);
   newState.messages.push({
-    content: output.content,
+    content: finalContent,
     id: assistantMessageId,
     reasoning: shouldReplayAssistantReasoning ? finalReasoning : undefined,
     role: 'assistant',
@@ -208,10 +232,11 @@ export const finalizeCallLlmTurn = async ({
   stepLabel,
 }: FinalizeCallLlmTurnInput): Promise<InstructionExecutionResult> => {
   const { operation, transports } = host;
+  const guardedPlain = resolveGuardedPlainContent({ output, state });
 
   events.push({
     result: {
-      content: output.content,
+      content: guardedPlain,
       finishReason: output.finishReason,
       reasoning: output.thinkingContent,
       tool_calls: output.toolCalls,
@@ -222,7 +247,7 @@ export const finalizeCallLlmTurn = async ({
 
   await transports.stream.publishEvent({
     data: {
-      finalContent: output.content,
+      finalContent: guardedPlain,
       grounding: output.grounding,
       ...(stepLabel && { stepLabel }),
       imageList: output.imageList.length > 0 ? output.imageList : undefined,
@@ -254,9 +279,15 @@ export const finalizeCallLlmTurn = async ({
     }
   }
 
-  const finalReasoning = await persistFinalMessage({ assistantMessageId, host, output });
+  const { finalContent, finalReasoning } = await persistFinalMessage({
+    assistantMessageId,
+    host,
+    output: { ...output, content: guardedPlain },
+    state,
+  });
   const newState = buildFinalState({
     assistantMessageId,
+    finalContent,
     finalReasoning,
     model,
     output,
@@ -276,7 +307,7 @@ export const finalizeCallLlmTurn = async ({
       payload: {
         hasToolsCalling: output.toolsCalling.length > 0,
         parentMessageId: assistantMessageId,
-        result: { content: output.content, tool_calls: output.toolCalls },
+        result: { content: finalContent, tool_calls: output.toolCalls },
         toolsCalling: output.toolsCalling,
       } as GeneralAgentCallLLMResultPayload,
       phase: 'llm_result',

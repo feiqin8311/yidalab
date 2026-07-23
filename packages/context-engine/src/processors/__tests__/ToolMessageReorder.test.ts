@@ -181,7 +181,12 @@ describe('ToolMessageReorder', () => {
     expect(output[2]).toEqual(
       expect.objectContaining({
         role: 'tool',
-        content: '',
+        // Empty tool content is replaced so the model never sees a blank result.
+        content: JSON.stringify({
+          error: 'Tool call failed',
+          success: false,
+          synthetic: true,
+        }),
         tool_call_id: 'tool_call_1',
       }),
     );

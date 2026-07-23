@@ -113,7 +113,7 @@ export class ToolMessageReorder extends BaseProcessor {
     // 3. Reorder messages
     const reorderedMessages: any[] = [];
 
-    for (const [index, message] of messages.entries()) {
+    for (const message of messages) {
       if (message.role === 'tool') continue;
 
       if (message.role !== 'assistant' || !Array.isArray(message.tool_calls)) {
@@ -149,13 +149,14 @@ export class ToolMessageReorder extends BaseProcessor {
               ? matchedToolMessage.pluginError.message
               : undefined;
 
+          // Empty string is not a valid tool result — models invent fake URLs on blank tools.
+          const hasContent =
+            typeof matchedToolMessage.content === 'string' && matchedToolMessage.content.length > 0;
           reorderedMessages.push({
             ...matchedToolMessage,
-            content:
-              typeof matchedToolMessage.content === 'string' &&
-              (matchedToolMessage.content.length > 0 || !pluginErrorMessage)
-                ? matchedToolMessage.content
-                : pluginErrorMessage || DEFAULT_TOOL_FAILURE_CONTENT,
+            content: hasContent
+              ? matchedToolMessage.content
+              : pluginErrorMessage || DEFAULT_TOOL_FAILURE_CONTENT,
           });
           toolMessages.delete(toolCall.id);
           continue;

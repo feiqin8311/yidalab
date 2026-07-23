@@ -1,3 +1,4 @@
+export * from './deliveryClaimGuard';
 export * from './llmErrorClassifier';
 export * from './messageSelectors';
 export * from './replay';

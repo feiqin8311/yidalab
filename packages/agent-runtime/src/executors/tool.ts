@@ -7,6 +7,7 @@ import {
   applyToolFailStreakBrake,
   extractActivatedSkillsFromMessages,
   extractToolErrorMessage,
+  normalizeEmptyToolContent,
 } from '../utils';
 
 const TOOL_EXECUTION_PHASE = 'tool_execution';
@@ -227,7 +228,7 @@ const createToolMessage = async ({
   try {
     return await host.transports.messages.createToolMessage({
       agentId: state.metadata!.agentId!,
-      content: result.content,
+      content: normalizeEmptyToolContent(result.content, result.error),
       groupId: state.metadata?.groupId ?? undefined,
       metadata: { toolExecutionTimeMs: result.executionTime ?? 0 },
       parentId: parentMessageId,
@@ -256,7 +257,7 @@ const updateExistingToolMessage = async ({
 }) => {
   try {
     await host.transports.messages.updateToolMessage(toolMessageId, {
-      content: result.content,
+      content: normalizeEmptyToolContent(result.content, result.error),
       metadata: { toolExecutionTimeMs: result.executionTime ?? 0 },
       pluginError: result.error,
       pluginState: result.state,
@@ -380,7 +381,7 @@ export const callTool =
 
       const newState = structuredClone(state);
       newState.messages.push({
-        content: executionResult.content,
+        content: normalizeEmptyToolContent(executionResult.content, executionResult.error),
         plugin: tool,
         pluginState: executionResult.state,
         role: 'tool',
