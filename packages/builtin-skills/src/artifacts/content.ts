@@ -25,8 +25,8 @@ Do NOT generate artifacts for:
   - For **HTML reports, interactive dashboards, data visualizations, landing pages, multi-section visual pages**: prepare the **complete HTML** once data is ready. Do **not** default to plain inline text for these deliverables.
   - **Delivery surface:** Follow the agent profile preference in system context ("HTML deliverable surface"):
     - **artifact** (default): put HTML only inside \`<lobeArtifact type="text/html">\`. **No ask, no .html file, no disk, no dingpan.**
-    - **dingpan**: \`lobe-dingpan\` → \`uploadHtmlToDingpan\` + \`preview_url\` only. **No ask.**
-    - **ask**: use \`lobe-user-interaction\` → \`askUserQuestion\` once for 聊天内预览（Artifact） vs 钉盘链接.
+    - **dingpan**: \`lobe-dingpan\` → \`uploadHtmlToDingpan\` + \`preview_url\` (UI: workspace preview + shareable link). **No ask. No extra lobeArtifact for the same report.**
+    - **ask**: use \`lobe-user-interaction\` → \`askUserQuestion\` once for 聊天内预览（Artifact） vs 钉盘链接（可预览可分享）.
   - On DingTalk / IM channels that cannot render Artifacts, prefer 钉盘链接.
   - **Forbidden as the primary HTML path:** writing under \`/home/user/...\`, cloud sandbox (\`lobe-cloud-sandbox\` writeFile/runCommand/exportFile), or skills solely to produce a .html report on disk.
   - Short prose answers, math, and plain code stay inline. Artifacts are for distinct visual/interactive windows.

@@ -2,6 +2,7 @@ import {
   ClaudeCodeIdentifier,
   resolveClaudeCodeRenderDisplayControl,
 } from '@lobechat/builtin-tool-claude-code/client';
+import { DingpanApiName, DingpanIdentifier } from '@lobechat/builtin-tool-dingpan';
 import { type RenderDisplayControl } from '@lobechat/types';
 
 import { CodexRenderDisplayControls } from './codex/displayControls';
@@ -15,6 +16,10 @@ const getBuiltinRenderDisplayControls = (): Record<
 > => {
   return {
     codex: CodexRenderDisplayControls,
+    // Expand so the workspace-preview card is visible without an extra click.
+    [DingpanIdentifier]: {
+      [DingpanApiName.uploadHtmlToDingpan]: 'expand',
+    },
   };
 };
 

@@ -273,9 +273,26 @@ export class PluginTypesActionImpl {
     console.error(
       `[invokeBuiltinTool] No executor found for: ${payload.identifier}/${payload.apiName}`,
     );
+    const missingContent = `Tool ${payload.identifier}/${payload.apiName} is not available`;
+    const missingError = { message: 'No executor found', type: 'ToolNotFound' as const };
+    // Persist into the tool message — otherwise the model sees an empty tool result
+    // and invents success / fake delivery URLs.
+    try {
+      const operationId = this.#get().messageOperationMap[id];
+      await this.#get().optimisticUpdateToolMessage(
+        id,
+        {
+          content: missingContent,
+          pluginError: missingError,
+        },
+        operationId ? { operationId } : undefined,
+      );
+    } catch (error) {
+      console.error('[invokeBuiltinTool] failed to write ToolNotFound into message', error);
+    }
     return {
-      content: `Tool ${payload.identifier}/${payload.apiName} is not available`,
-      error: { type: 'ToolNotFound', message: 'No executor found' },
+      content: missingContent,
+      error: missingError,
       success: false,
     };
   };

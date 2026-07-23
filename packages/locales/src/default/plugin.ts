@@ -263,6 +263,21 @@ export default {
   'builtins.lobe-dingpan.apiName.uploadToDingpan': 'Upload to Dingpan',
   'builtins.lobe-dingpan.apiName.uploadHtmlToDingpan': 'Upload HTML to Dingpan',
   'builtins.lobe-dingpan.apiName.dingpanStatus': 'Dingpan status',
+  'builtins.lobe-dingpan.card.closePreview': 'Close preview',
+  'builtins.lobe-dingpan.card.copyLink': 'Copy Drive link',
+  'builtins.lobe-dingpan.card.copyLinkSuccess': 'DingTalk Drive link copied',
+  'builtins.lobe-dingpan.card.defaultTitle': 'HTML report',
+  'builtins.lobe-dingpan.card.noLocalDoc':
+    'No local copy for in-app preview — use the Drive link to open elsewhere.',
+  'builtins.lobe-dingpan.card.openDingpan': 'Open in DingTalk Drive',
+  'builtins.lobe-dingpan.card.partial': 'Upload incomplete',
+  'builtins.lobe-dingpan.card.uploaded': 'Uploaded · preview + shareable link',
+  'builtins.lobe-dingpan.card.workspacePreview': 'Preview in workspace',
+  'builtins.lobe-dingpan.portal.loadFailed': 'Could not load the local report copy.',
+  'builtins.lobe-dingpan.portal.loading': 'Loading report…',
+  'builtins.lobe-dingpan.portal.noDocument':
+    'No local document id — open the DingTalk Drive link instead.',
+  'builtins.lobe-dingpan.portal.title': 'Dingpan report',
   'builtins.lobe-local-system.apiName.searchFiles': 'Search files',
   'builtins.lobe-local-system.apiName.writeFile': 'Write file',
   // Legacy aliases — keep so historical tool calls still get a label

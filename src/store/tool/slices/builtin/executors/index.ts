@@ -23,6 +23,7 @@ import type { BuiltinToolContext, BuiltinToolResult, IBuiltinToolExecutor } from
 import { claudeCodeExecutor, codexExecutor } from './heteroCli';
 import { activatorExecutor } from './lobe-activator';
 import { agentDocumentsExecutor } from './lobe-agent-documents';
+import { dingpanExecutor } from './lobe-dingpan';
 import { messageExecutor } from './lobe-message';
 import { notebookExecutor } from './lobe-notebook';
 import { pageAgentExecutor } from './lobe-page-agent';
@@ -148,6 +149,7 @@ export const registerBuiltinToolExecutors = (): void => {
     calculatorExecutor,
     cloudSandboxExecutor,
     credsExecutor,
+    dingpanExecutor,
     groupAgentBuilderExecutor,
     groupManagementExecutor,
     knowledgeBaseExecutor,

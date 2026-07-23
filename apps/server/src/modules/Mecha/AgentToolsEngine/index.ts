@@ -61,6 +61,34 @@ export type {
 const log = debug('lobe-server:agent-tools-engine');
 
 /**
+ * Attach MCP connection params from `customParams.mcp` onto the installed
+ * plugin manifest so server tool execution (`type: 'mcp'`) can reach the
+ * remote endpoint. Without this, bot/IM runs (server agent runtime) can list
+ * the plugin API surface but `ToolExecutionService` fails with MCP_CONFIG_NOT_FOUND.
+ */
+export const toServerPluginManifest = (plugin: InstalledPlugin): LobeToolManifest | undefined => {
+  const base = plugin.manifest as (LobeToolManifest & { mcpParams?: unknown }) | null | undefined;
+  if (!base) return undefined;
+
+  const mcp = plugin.customParams?.mcp as Record<string, unknown> | undefined;
+  if (!mcp || typeof mcp !== 'object') return base;
+
+  // Already hydrated (e.g. connector manifests) — keep as-is.
+  if ((base as { mcpParams?: unknown }).mcpParams) return base;
+
+  return {
+    ...base,
+    // Wire tool names as `…____mcp` so ToolNameResolver payload.type is 'mcp'.
+    type: (base.type as string | undefined) || 'mcp',
+    // @ts-expect-error — mcpParams is a runtime-only field used by ToolExecutionService
+    mcpParams: {
+      name: plugin.identifier,
+      ...mcp,
+    },
+  } as LobeToolManifest;
+};
+
+/**
  * Initialize ToolsEngine with server-side context
  *
  * This is the server-side equivalent of frontend's `createToolsEngine`
@@ -82,10 +110,11 @@ export const createServerToolsEngine = (
     manifestContext,
   } = config;
 
-  // Get plugin manifests from installed plugins (from database)
+  // Get plugin manifests from installed plugins (from database), hydrating MCP
+  // connection params so bot/server execution can call them after activateTools.
   const pluginManifests = context.installedPlugins
-    .map((plugin) => plugin.manifest as LobeToolManifest)
-    .filter(Boolean);
+    .map((plugin) => toServerPluginManifest(plugin))
+    .filter((m): m is LobeToolManifest => !!m);
 
   // Get builtin tool manifests from the (possibly pre-filtered) list. The
   // filter is one half of the hard wall keeping device tools out of an

@@ -1,24 +1,24 @@
 export const systemPrompt = `You have a DingTalk Drive (钉盘) upload tool (\`lobe-dingpan\`).
 
 <purpose>
-Default delivery channel for user-facing **files** and for **HTML reports when the user chooses a shareable link**.
-Upload and return the shareable \`preview_url\` — do not stop at a local path unless the user explicitly wants local-only output.
+Default delivery channel for user-facing **files** and for **HTML reports when the user wants a shareable Drive link**.
+Upload and return the shareable \`preview_url\`. On web, the product also shows an Artifact-like **workspace preview** from the local document — dual surface: preview + link. Do not stop at a local path unless the user explicitly wants local-only output.
 </purpose>
 
 <when_to_use>
 - User asks for 钉盘 / DingDrive / 预览链接 / 分享报告 as a file
 - You produced a report file (xlsx/csv/pdf/md/zip/image) the user needs outside chat → \`uploadToDingpan\`
-- User chose **钉盘链接** (or is on DingTalk / IM) for an HTML / interactive report → \`uploadHtmlToDingpan\`
-- HTML **in-chat preview** uses \`<lobeArtifact type="text/html">\` instead — only when the user chose Artifact or is clearly on web preview
+- User chose **钉盘链接（可预览）** / profile mode \`dingpan\` / DingTalk IM for an HTML report → \`uploadHtmlToDingpan\`
+- Pure **Artifact-only** HTML (no Drive link) uses \`<lobeArtifact type="text/html">\` when profile mode is \`artifact\` or the user explicitly asks for 聊天内预览 only
 </when_to_use>
 
 <html_delivery>
 For HTML / dashboard / interactive reports:
 1. If the user has not specified the delivery surface, use \`lobe-user-interaction\` → \`askUserQuestion\` with options:
-   - 聊天内预览（Artifact）— in-app only, **no file**
-   - 钉盘链接（可转发分享）— this tool
+   - 聊天内预览（Artifact）— in-app only, **no Drive file**
+   - 钉盘链接（可预览可分享）— this tool: shareable link + in-app workspace preview card
 2. **Artifact** → emit \`<lobeArtifact type="text/html" …>\` only. Do **not** call dingpan and do **not** write a .html file.
-3. **钉盘** → call \`uploadHtmlToDingpan\` with the full HTML plus structured naming fields below. Reply with the link only (no raw HTML tags in IM).
+3. **钉盘** → call \`uploadHtmlToDingpan\` with the full HTML plus structured naming fields below. Reply with \`preview_url\` (no raw HTML body in IM). Do **not** also emit lobeArtifact for the same report — the UI card/portal handles preview.
 4. On DingTalk or other IM channels that cannot render Artifacts, default to 钉盘 without asking when appropriate.
 </html_delivery>
 

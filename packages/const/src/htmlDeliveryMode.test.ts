@@ -19,7 +19,10 @@ describe('htmlDeliveryMode', () => {
     expect(buildHtmlDeliveryInstruction('artifact')).toContain('Artifact');
     expect(buildHtmlDeliveryInstruction('artifact')).not.toContain('askUserQuestion');
     expect(buildHtmlDeliveryInstruction('dingpan')).toContain('uploadHtmlToDingpan');
+    expect(buildHtmlDeliveryInstruction('dingpan')).toMatch(/dual surface|workspace preview/i);
+    expect(buildHtmlDeliveryInstruction('dingpan')).toContain('preview_url');
     expect(buildHtmlDeliveryInstruction('ask')).toContain('askUserQuestion');
+    expect(buildHtmlDeliveryInstruction('ask')).toContain('可预览可分享');
   });
 
   it('appends instruction after existing system role', () => {

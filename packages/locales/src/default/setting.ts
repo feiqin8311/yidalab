@@ -910,10 +910,10 @@ export default {
     'How many possibilities to consider; a higher value accepts more potential answers, while a lower value tends to choose the most likely answer. It is not recommended to change this alongside the creativity level.',
   'settingModel.topP.title': 'Openness to Ideas',
   'settingOpening.htmlDeliveryMode.desc':
-    'How this agent delivers HTML / interactive reports. Default is in-chat Artifact preview.',
+    'How this agent delivers HTML / interactive reports. Artifact = in-chat only; DingTalk Drive = workspace preview + shareable link.',
   'settingOpening.htmlDeliveryMode.options.artifact': 'In-chat preview (Artifact)',
   'settingOpening.htmlDeliveryMode.options.ask': 'Ask each time',
-  'settingOpening.htmlDeliveryMode.options.dingpan': 'DingTalk Drive link',
+  'settingOpening.htmlDeliveryMode.options.dingpan': 'DingTalk Drive (preview + link)',
   'settingOpening.htmlDeliveryMode.title': 'Delivery method',
   'settingOpening.openingMessage.desc':
     "The opening message displayed when the conversation starts, used to introduce the agent's features",
@@ -2864,9 +2864,9 @@ When I am ___, I need ___
     'Advanced mathematical calculator supporting basic arithmetic, algebraic equations, calculus operations, and symbolic math. Includes base conversion, equation solving, differentiation, integration, and more.',
   'tools.builtins.lobe-dingpan.title': 'Dingpan',
   'tools.builtins.lobe-dingpan.description':
-    'Default file delivery to DingTalk Drive (钉盘): upload reports and return a preview URL',
+    'DingTalk Drive delivery: shareable link plus in-app workspace preview for HTML reports',
   'tools.builtins.lobe-dingpan.readme':
-    'Default channel for user-facing files (xlsx/csv/pdf/md/zip). Company dingtalk app credentials + personal dingtalk-dingpan folder; per-upload folder override supported. Prefer Artifacts for interactive HTML in chat. Returns a shareable preview link.',
+    'Default channel for user-facing files (xlsx/csv/pdf/md/zip) and HTML when profile delivery is 钉盘. Upload returns preview_url; web UI also opens an Artifact-like workspace preview from the local document. Company dingtalk app + personal dingtalk-dingpan folder.',
   'tools.builtins.lobe-cloud-sandbox.description':
     'Execute code, run commands, and manage files in a secure cloud environment',
   'tools.builtins.lobe-cloud-sandbox.readme':

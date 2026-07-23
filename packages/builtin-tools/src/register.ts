@@ -150,6 +150,12 @@ import type {
 } from '@lobechat/types';
 
 import { CodexInspectors, CodexRenders } from './codex';
+import {
+  DingpanIdentifier,
+  DingpanPortalTitleView,
+  DingpanPortalView,
+  DingpanRenders,
+} from './dingpan';
 import { GithubIdentifier, GithubInspectors, GithubRenders } from './github';
 import { registerBuiltinInspectors } from './inspectors';
 import { registerBuiltinInterventions } from './interventions';
@@ -172,6 +178,7 @@ export const registerBuiltinToolSurfaces = (): void => {
     [AgentManagementManifest.identifier]: AgentManagementRenders as Record<string, BuiltinRender>,
     [ClaudeCodeIdentifier]: ClaudeCodeRenders as Record<string, BuiltinRender>,
     [CloudSandboxManifest.identifier]: CloudSandboxRenders as Record<string, BuiltinRender>,
+    [DingpanIdentifier]: DingpanRenders,
     [GroupAgentBuilderManifest.identifier]: GroupAgentBuilderRenders as Record<
       string,
       BuiltinRender
@@ -322,10 +329,12 @@ export const registerBuiltinToolSurfaces = (): void => {
         LobeDeliveryCheckerPortalActions as BuiltinPortalTitle,
     },
     portals: {
+      [DingpanIdentifier]: DingpanPortalView,
       [LobeDeliveryCheckerManifest.identifier]: LobeDeliveryCheckerPortal as BuiltinPortal,
       [WebBrowsingManifest.identifier]: WebBrowsingPortal as BuiltinPortal,
     },
     titles: {
+      [DingpanIdentifier]: DingpanPortalTitleView,
       [LobeDeliveryCheckerManifest.identifier]:
         LobeDeliveryCheckerPortalTitle as BuiltinPortalTitle,
       [WebBrowsingManifest.identifier]: WebBrowsingPortalTitle as BuiltinPortalTitle,

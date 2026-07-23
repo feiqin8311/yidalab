@@ -2940,6 +2940,18 @@ export class AiAgentService {
         }
       }
 
+      // Installed plugins (company MCP, community MCP, etc.) live in ToolsEngine
+      // manifestSchemas but are NOT returned by getEnabledPluginManifests unless
+      // already pinned/enabled. Without this pass, bot/IM runs (server activator)
+      // report `Not found: company.mcp.sif-mcp` even when the plugin is installed
+      // — frontend SPA works because its tool discovery uses the full install list.
+      for (const [id, manifest] of toolsEngine.getAllPluginManifests()) {
+        if (!isManifestIngestAllowed(id)) continue;
+        if (!toolManifestMap[id]) {
+          toolManifestMap[id] = manifest;
+        }
+      }
+
       for (const manifest of activeLobehubSkillManifests) {
         if (!isManifestIngestAllowed(manifest.identifier)) continue;
         toolSourceMap[manifest.identifier] = 'lobehubSkill';
@@ -2947,6 +2959,14 @@ export class AiAgentService {
       for (const manifest of activeComposioManifests) {
         if (!isManifestIngestAllowed(manifest.identifier)) continue;
         toolSourceMap[manifest.identifier] = 'composio';
+      }
+      // Route MCP plugins to ToolExecutionService.executeMCPTool (not builtin).
+      for (const [id, manifest] of Object.entries(toolManifestMap)) {
+        if (toolSourceMap[id]) continue;
+        const m = manifest as { mcpParams?: unknown; type?: string };
+        if (m?.type === 'mcp' || m?.mcpParams) {
+          toolSourceMap[id] = 'mcp';
+        }
       }
 
       // Mark tools that must run on the user's machine (local-system, stdio
