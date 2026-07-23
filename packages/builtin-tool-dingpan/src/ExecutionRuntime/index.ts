@@ -155,11 +155,19 @@ export class DingpanExecutionRuntime {
       }
 
       const result = await uploadHtmlBytes({
+        asin: args.asin,
         folderId: args.folderId,
         folderLink: args.folderLink,
         html,
+        keyword: args.keyword,
+        productName: args.productName,
+        site: args.site,
         spaceId: args.spaceId,
-        uploadName: args.uploadName || (title ? `${title}.html` : undefined),
+        taskType: args.taskType,
+        // Prefer structured naming; only pass free-form uploadName when the caller set it.
+        // Do not fall back to document title (avoids random titles / legacy agent names).
+        uploadName: args.uploadName,
+        userName: args.userName,
       });
 
       if (!result.previewUrl) {

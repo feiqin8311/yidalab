@@ -45,11 +45,15 @@ export const DingpanManifest: BuiltinToolManifest = {
     {
       defaultTimeoutMs: 180_000,
       description:
-        'Upload an HTML report to DingTalk Drive and return preview_url. Prefer documentId of a persisted deliverable, or pass html to create one. Content is stored per-user before upload. Does not require an execution device.',
+        "Upload an HTML report to DingTalk Drive under today's date folder and return preview_url. Prefer structured naming fields (asin/site/taskType); server fills userName. Example name: B0GVDTV1J6_日本_推广复盘_柯鹏翔_20260723.html",
       name: DingpanApiName.uploadHtmlToDingpan,
       parameters: {
         additionalProperties: false,
         properties: {
+          asin: {
+            description: 'ASIN for the remote filename, e.g. B0GVDTV1J6',
+            type: 'string',
+          },
           documentId: {
             description:
               'Optional documents.id owned by the current user. When set, HTML is loaded from the document and dingpan metadata is written back.',
@@ -68,8 +72,24 @@ export const DingpanManifest: BuiltinToolManifest = {
               'Full HTML document string. Required when documentId is omitted; also used when creating a new deliverable document.',
             type: 'string',
           },
+          keyword: {
+            description: 'Keyword segment for the filename when ASIN is not used.',
+            type: 'string',
+          },
+          productName: {
+            description: 'Short product name for the filename.',
+            type: 'string',
+          },
+          site: {
+            description: 'Market/site label for the filename, e.g. 日本 / US',
+            type: 'string',
+          },
           spaceId: {
             description: 'Optional space id for this upload only (use with folderId).',
+            type: 'string',
+          },
+          taskType: {
+            description: 'Task short label for the filename, e.g. 推广复盘',
             type: 'string',
           },
           title: {
@@ -81,7 +101,13 @@ export const DingpanManifest: BuiltinToolManifest = {
             type: 'string',
           },
           uploadName: {
-            description: 'Optional remote file name. Defaults to report-YYYYMMDDHHmmss.html',
+            description:
+              'Optional full remote file name override. Prefer asin/site/taskType instead. Default: {ASIN}_{站点}_{任务}_{用户}_{YYYYMMDD}.html',
+            type: 'string',
+          },
+          userName: {
+            description:
+              'Current human user display name (not agent). Usually injected by the server.',
             type: 'string',
           },
         },

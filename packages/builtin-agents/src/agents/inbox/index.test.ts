@@ -20,14 +20,13 @@ describe('INBOX runtime plugins', () => {
     ]);
   });
 
-  it('systemRole offers Artifact vs 钉盘 choice; Artifact needs no file', () => {
+  it('systemRole documents Artifact / 钉盘 / ask modes and forbids sandbox HTML path', () => {
     const role = createSystemRole('zh-CN', 'TestAgent');
     expect(role).toContain('lobeArtifact');
     expect(role).toContain('askUserQuestion');
     expect(role).toContain('uploadHtmlToDingpan');
-    expect(role).toContain('聊天内预览（Artifact）');
-    expect(role).toContain('钉盘链接');
-    expect(role).toMatch(/No file|不生成文件/i);
+    expect(role).toContain('htmlDeliveryMode');
+    expect(role).toMatch(/artifact.*default|default.*artifact/i);
     expect(role).toContain('/home/user/');
     expect(role).toContain('lobe-cloud-sandbox');
     expect(role).toMatch(/HARD RULES|Deliverable rules/i);

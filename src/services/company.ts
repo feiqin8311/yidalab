@@ -56,6 +56,9 @@ class CompanyService {
   updateCompany = async (params: { name: string; workspaceId: string }) =>
     (await lambdaClient.company.updateCompany.mutate(params)).data;
 
+  updateSettings = async (params: { recommendedExamples: string[]; workspaceId: string }) =>
+    (await lambdaClient.company.updateSettings.mutate(params)).data;
+
   updateDepartment = async (params: { departmentId: string; name: string; workspaceId: string }) =>
     (await lambdaClient.company.updateDepartment.mutate(params)).data;
 

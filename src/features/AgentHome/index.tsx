@@ -1,19 +1,24 @@
 'use client';
 
 import { Flexbox } from '@lobehub/ui';
-import isEqual from 'fast-deep-equal';
 import { memo } from 'react';
 
+import { contextSelectors, useConversationStore } from '@/features/Conversation/store';
 import ToolAuthAlert from '@/routes/(main)/agent/features/Conversation/AgentWelcome/ToolAuthAlert';
-import { useAgentStore } from '@/store/agent';
-import { agentSelectors } from '@/store/agent/selectors';
+import HomeSuggest from '@/routes/(main)/home/features/HomeSuggest';
 
 import AgentInfo from './AgentInfo';
-import OpeningQuestions from './OpeningQuestions';
 import { useWelcomeExtra } from './WelcomeExtraContext';
 
+/**
+ * Agent conversation welcome.
+ * Recommended examples come from HomeSuggest:
+ * - agent openingQuestions (Settings → Opening) when configured — fill input, do not auto-send
+ * - otherwise curated ops / tool fallback chips
+ */
 const AgentHome = memo(() => {
-  const openingQuestions = useAgentStore(agentSelectors.openingQuestions, isEqual);
+  // Same scope rule as AgentInfo: conversation agent, not shared activeAgentId.
+  const agentId = useConversationStore(contextSelectors.agentId) || undefined;
   const extra = useWelcomeExtra();
 
   return (
@@ -22,7 +27,7 @@ const AgentHome = memo(() => {
       <Flexbox gap={32} style={{ paddingBottom: 'max(4vh, 16px)' }} width={'100%'}>
         <AgentInfo />
         {extra}
-        {openingQuestions.length > 0 && <OpeningQuestions questions={openingQuestions} />}
+        <HomeSuggest agentId={agentId} />
         <ToolAuthAlert />
       </Flexbox>
     </>

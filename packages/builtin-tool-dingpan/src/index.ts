@@ -1,8 +1,11 @@
+export { buildHtmlDeliverableName, shanghaiDateParts } from './ExecutionRuntime/naming';
 export { DingpanManifest } from './manifest';
 export { systemPrompt } from './systemRole';
 export {
   DingpanApiName,
   type DingpanApiNameType,
+  DingpanCompanyCredEnvKeys,
+  DingpanCompanyCredKey,
   DingpanIdentifier,
   DingpanPersonalCredEnvKeys,
   DingpanPersonalCredKey,

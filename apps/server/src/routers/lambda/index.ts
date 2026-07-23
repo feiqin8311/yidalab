@@ -39,6 +39,7 @@ import { changelogRouter } from './changelog';
 import { chunkRouter } from './chunk';
 import { comfyuiRouter } from './comfyui';
 import { companyRouter } from './company';
+import { companyFeedbackRouter } from './companyFeedback';
 import { composioRouter } from './composio';
 import { configRouter } from './config';
 import { connectorRouter } from './connector';
@@ -106,6 +107,7 @@ export const lambdaRouter = router({
   asr: asrRouter,
   chunk: chunkRouter,
   company: companyRouter,
+  companyFeedback: companyFeedbackRouter,
   comfyui: comfyuiRouter,
   config: configRouter,
   connector: connectorRouter,

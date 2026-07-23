@@ -8,7 +8,12 @@ import type { LobeChatDatabase } from '../type';
  * Default monthly credit budget for company members without a custom policy row.
  * Heavy users / admins can be raised or set unlimited via admin UI.
  */
-export const DEFAULT_MEMBER_MONTHLY_CREDITS = 500_000;
+/**
+ * Default monthly credits for company members without a custom quota row.
+ * 5M credits = $5 at CREDITS_PER_DOLLAR. Heavy ops agents (multi-step + HTML)
+ * burn ~200k credits per complex ASIN report; 500k only covered ~2 such runs.
+ */
+export const DEFAULT_MEMBER_MONTHLY_CREDITS = 5_000_000;
 
 /** USD equivalent of {@link DEFAULT_MEMBER_MONTHLY_CREDITS} (1 USD = 1e6 credits). */
 export const DEFAULT_MEMBER_MONTHLY_LIMIT_COST =
@@ -51,7 +56,7 @@ export interface MemberQuotaSnapshot extends MemberQuotaPolicy {
 /**
  * Resolve the effective monthly USD cap.
  *
- * - No policy row → default 500k credits / month (not unlimited).
+ * - No policy row → default 5M credits / month (not unlimited).
  * - Row with `monthlyLimitCost: null` → admin set unlimited.
  * - Row with a number → that cap.
  */

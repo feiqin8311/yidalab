@@ -16,6 +16,7 @@ import {
   KeyboardIcon,
   KeyIcon,
   KeyRound,
+  Lightbulb,
   Map,
   MonitorSmartphoneIcon,
   Palette as PaletteIcon,
@@ -175,6 +176,11 @@ export const useWorkspaceSettingCategory = (): WorkspaceSettingCategoryGroup[] =
               icon: BrainCircuit,
               key: WorkspaceSettingsTabs.Memory,
               label: t('tab.memory'),
+            },
+            {
+              icon: Lightbulb,
+              key: WorkspaceSettingsTabs.RecommendedExamples,
+              label: t('tab.recommendedExamples'),
             },
             {
               icon: KeyRound,

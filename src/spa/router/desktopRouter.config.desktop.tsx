@@ -6,6 +6,7 @@ import {
   Home,
   Image,
   LibraryBigIcon,
+  MessageSquarePlus,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -51,6 +52,7 @@ import WorkspaceSlugSettingsPlansPage from '@/routes/(main)/[workspaceSlug]/sett
 import WorkspaceSlugSettingsProfilePage from '@/routes/(main)/[workspaceSlug]/settings/profile';
 import WorkspaceSlugSettingsProviderPage from '@/routes/(main)/[workspaceSlug]/settings/provider';
 import WorkspaceSlugSettingsProxyPage from '@/routes/(main)/[workspaceSlug]/settings/proxy';
+import WorkspaceSlugSettingsRecommendedExamplesPage from '@/routes/(main)/[workspaceSlug]/settings/recommended-examples';
 import WorkspaceSlugSettingsReferralPage from '@/routes/(main)/[workspaceSlug]/settings/referral';
 import WorkspaceSlugSettingsServiceModelPage from '@/routes/(main)/[workspaceSlug]/settings/service-model';
 import WorkspaceSlugSettingsSkillPage from '@/routes/(main)/[workspaceSlug]/settings/skill';
@@ -102,6 +104,7 @@ import EvalBenchLayout from '@/routes/(main)/eval/bench/[benchmarkId]/_layout';
 import EvalDatasetDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/datasets/[datasetId]';
 import EvalRunDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/runs/[runId]';
 import EvalCaseDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/runs/[runId]/cases/[caseId]';
+import FeedbackPage from '@/routes/(main)/feedback';
 import FleetPage from '@/routes/(main)/fleet';
 import GroupPage from '@/routes/(main)/group';
 import DesktopGroupLayout from '@/routes/(main)/group/_layout';
@@ -455,6 +458,21 @@ export const sharedMainAreaChildren: RouteObject[] = [
     path: 'memory',
   },
 
+  // Company feedback
+  {
+    children: [
+      {
+        element: <FeedbackPage />,
+        handle: {
+          meta: routeMeta({ icon: MessageSquarePlus, titleKey: 'navigation.feedback' }),
+        },
+        index: true,
+      },
+    ],
+    errorElement: <ErrorBoundary />,
+    path: 'feedback',
+  },
+
   // Video routes
   {
     children: [
@@ -695,6 +713,10 @@ export const desktopRoutes: RouteObject[] = [
                   { element: <WorkspaceSlugSettingsHotkeyPage />, path: 'hotkey' },
                   { element: <WorkspaceSlugSettingsNotificationPage />, path: 'notification' },
                   { element: <WorkspaceSlugSettingsMemoryPage />, path: 'memory' },
+                  {
+                    element: <WorkspaceSlugSettingsRecommendedExamplesPage />,
+                    path: 'recommended-examples',
+                  },
                   { element: <WorkspaceSlugSettingsReferralPage />, path: 'referral' },
                   { element: <WorkspaceSlugSettingsProxyPage />, path: 'proxy' },
                   { element: <WorkspaceSlugSettingsSystemToolsPage />, path: 'system-tools' },

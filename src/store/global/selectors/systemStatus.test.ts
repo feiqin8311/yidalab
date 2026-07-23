@@ -165,11 +165,13 @@ describe('systemStatusSelectors', () => {
       const s: GlobalState = merge(initialState, {
         status: { sidebarItems: stored },
       });
+      // Missing bottom default `feedback` is backfilled immediately after spacer.
       expect(systemStatusSelectors.sidebarItems(null)(s)).toEqual([
         'private',
         'agent',
         'recents',
         SIDEBAR_SPACER_ID,
+        'feedback',
         'pages',
         'tasks',
         'image',
@@ -191,6 +193,7 @@ describe('systemStatusSelectors', () => {
         'community',
         'resource',
         'memory',
+        'feedback',
       ];
       const s: GlobalState = merge(initialState, {
         status: { sidebarItems: stored },
@@ -223,6 +226,7 @@ describe('systemStatusSelectors', () => {
         'private',
         'agent',
         SIDEBAR_SPACER_ID,
+        'feedback',
         'image',
         'community',
         'resource',
@@ -242,6 +246,7 @@ describe('systemStatusSelectors', () => {
       expect(items).toContain('community');
       expect(items).toContain('resource');
       expect(items).toContain('memory');
+      expect(items).toContain('feedback');
       // accordion block is flush against the spacer, in stored order
       expect(items[spacerIdx - 2]).toBe('agent');
       expect(items[spacerIdx - 1]).toBe('recents');
@@ -270,6 +275,7 @@ describe('systemStatusSelectors', () => {
         'community',
         'resource',
         'memory',
+        'feedback',
       ]);
     });
 
@@ -291,6 +297,7 @@ describe('systemStatusSelectors', () => {
         'community',
         'resource',
         'memory',
+        'feedback',
       ]);
     });
 

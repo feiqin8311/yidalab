@@ -1,0 +1,48 @@
+{
+  "description": "YidaLab personal DingTalk Drive default folders (spaceId shared). Seeds personal dingtalk-dingpan only (folder + dingtalkUserId). APP_KEY/SECRET live on company credential key dingtalk.",
+  "members": [
+    {
+      "displayName": "柯鹏翔",
+      "dingtalkUserId": "17331048354297047",
+      "dingtalkUnionId": "iiTcqTk5siSYoBBbKR7hRGiSQiEiE",
+      "folderId": "229795078298",
+      "folderLink": "https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=229795078298&type=folder"
+    },
+    {
+      "displayName": "邱文杰",
+      "dingtalkUserId": "350843032936428602",
+      "dingtalkUnionId": "6E5gYWdE9CRyFbP7kGAfdAiEiE",
+      "folderId": "229795184909",
+      "folderLink": "https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=229795184909&type=folder"
+    },
+    {
+      "displayName": "柯芦轩",
+      "dingtalkUserId": "17490879808802516",
+      "dingtalkUnionId": "TFRkQ5yNC18u1pMXolFcnQiEiE",
+      "folderId": "229795179101",
+      "folderLink": "https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=229795179101&type=folder"
+    },
+    {
+      "displayName": "Kevin",
+      "dingtalkUserId": "153901355623458228",
+      "dingtalkUnionId": "KUxaWiiPiiTLIiiSncqoJ18eAiEiE",
+      "folderId": "229795092687",
+      "folderLink": "https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=229795092687&type=folder"
+    },
+    {
+      "displayName": "Jasmin",
+      "dingtalkUserId": "17441633442965653",
+      "dingtalkUnionId": "xkGytrdjdDpvku2ygn6gEQiEiE",
+      "folderId": "229795058087",
+      "folderLink": "https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=229795058087&type=folder"
+    },
+    {
+      "displayName": "李梦",
+      "dingtalkUserId": "16063564311489688",
+      "dingtalkUnionId": "SLLzGxmR39eNcjiP93miP5dgiEiE",
+      "folderId": "229830871746",
+      "folderLink": "https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=28859011990&fileId=229830871746&type=folder"
+    }
+  ],
+  "spaceId": "28859011990"
+}

@@ -1,14 +1,32 @@
 'use client';
 
-import { Flexbox, Text } from '@lobehub/ui';
+import { Flexbox, Icon, Text } from '@lobehub/ui';
+import { createStaticStyles, cssVar, responsive } from 'antd-style';
+import { RefreshCw } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { TaskTemplateCard } from '@/features/RecommendTaskTemplates/TaskTemplateCard';
+import { TaskTemplateCardSkeleton } from '@/features/RecommendTaskTemplates/TaskTemplateCardSkeleton';
+import { useDailyBriefRecommendationsUI } from '@/features/RecommendTaskTemplates/useDailyBriefRecommendationsUI';
 import WideScreenContainer from '@/features/WideScreenContainer';
 
 import CreateTaskInlineEntry from './CreateTaskInlineEntry';
 
 const HERO_MAX_WIDTH = 960;
+const EMPTY_STATE_RECOMMEND_COUNT = 10;
+
+const styles = createStaticStyles(({ css }) => ({
+  grid: css`
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+
+    ${responsive.md} {
+      grid-template-columns: 1fr;
+    }
+  `,
+}));
 
 interface EmptyStateProps {
   /** When set, scopes task creation to this agent and locks the assignee. */
@@ -17,13 +35,14 @@ interface EmptyStateProps {
 
 const EmptyState = memo<EmptyStateProps>(({ agentId }) => {
   const { t } = useTranslation('chat');
+  const { t: tCommon } = useTranslation('common');
+  const templatesState = useDailyBriefRecommendationsUI({ count: EMPTY_STATE_RECOMMEND_COUNT });
 
   return (
     <WideScreenContainer
       gap={32}
-      justify={'center'}
       minWidth={HERO_MAX_WIDTH}
-      paddingBlock={24}
+      paddingBlock={48}
       wrapperStyle={{ flex: 1, overflowY: 'auto' }}
     >
       <Flexbox align={'center'} gap={8}>
@@ -36,6 +55,45 @@ const EmptyState = memo<EmptyStateProps>(({ agentId }) => {
       </Flexbox>
 
       <CreateTaskInlineEntry agentId={agentId} lockAssignee={!!agentId} variant={'hero'} />
+
+      {templatesState.mode !== 'hidden' && (
+        <Flexbox gap={12}>
+          <Flexbox horizontal align={'center'} justify={'space-between'}>
+            <Text fontSize={13} type={'secondary'} weight={500}>
+              {t('taskList.emptyHero.templatesTitle')}
+            </Text>
+            {templatesState.mode === 'cards' && (
+              <Flexbox
+                horizontal
+                align={'center'}
+                gap={4}
+                style={{ color: cssVar.colorTextDescription, cursor: 'pointer' }}
+                onClick={templatesState.onRefresh}
+              >
+                <Icon icon={RefreshCw} size={12} />
+                <Text fontSize={12}>{tCommon('taskTemplate.action.refresh.button')}</Text>
+              </Flexbox>
+            )}
+          </Flexbox>
+          <div className={styles.grid}>
+            {templatesState.mode === 'skeleton'
+              ? Array.from({ length: templatesState.skeletonCount }).map((_, i) => (
+                  <TaskTemplateCardSkeleton
+                    descriptionRows={2}
+                    key={`task-template-skeleton-${i}`}
+                  />
+                ))
+              : templatesState.templates.map((tmpl) => (
+                  <TaskTemplateCard
+                    key={tmpl.id}
+                    template={tmpl}
+                    onCreated={templatesState.onCreated}
+                    onDismiss={templatesState.onDismiss}
+                  />
+                ))}
+          </div>
+        </Flexbox>
+      )}
     </WideScreenContainer>
   );
 });

@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { resolveCompanyRecommendedExamples } from '@/const/recommendedExamples';
+import { useMyCompany } from '@/features/Company/hooks';
 import { useFetchInstalledPlugins } from '@/hooks/useFetchInstalledPlugins';
 import { useInitAgentConfig } from '@/hooks/useInitAgentConfig';
 import { useAgentStore } from '@/store/agent';
@@ -11,6 +13,7 @@ import { useToolStore } from '@/store/tool';
 import { agentSkillsSelectors, toolSelectors } from '@/store/tool/selectors';
 
 import { useResolvedHomeAgentId } from '../AgentSelect/useResolvedHomeAgentId';
+import { mergeRecommendExamples } from './openingQuestionsToSuggestItems';
 import { pickOpsHomeSuggests } from './opsHomeSuggests';
 import { buildPromptsFromTools, resolveToolsForHomeSuggest } from './resolveAgentTools';
 
@@ -18,28 +21,47 @@ export interface HomeSuggestItem {
   description: string;
   id: string;
   prompt: string;
-  /** ops = 运营场景模板; tool = company/MCP; opening = agent opening Qs */
-  source: 'opening' | 'ops' | 'tool';
+  /** company = 公司通用; opening = 本助理; ops = 内置运营; tool = company/MCP */
+  source: 'company' | 'opening' | 'ops' | 'tool';
   title: string;
 }
 
-const MAX_ITEMS = 6;
+/** Align with openingQuestionsToSuggestItems — show more company ops scenarios. */
+const MAX_ITEMS = 12;
+
+interface UseHomeSuggestItemsOptions {
+  /**
+   * When set (e.g. agent conversation welcome), scope tools/opening Qs to this
+   * agent instead of the home page selector.
+   */
+  agentId?: string;
+}
 
 /**
  * Home "try these" chips:
- * 1. 亚马逊运营场景模板 — 始终有内容，不展示 artifacts/memory 等基建
- * 2. 已安装的 company.* / 第三方 MCP（平台 lobe-* 已在 resolve 层剔除）
- * 3. Agent openingQuestions 补位
+ * 1. 公司通用推荐示例 + 本助理 openingQuestions（合并去重）
+ * 2. 都为空时：内置运营模板 + company/MCP 补位
+ *
+ * Wait for company membership to settle before showing ops fallback, so users
+ * don't flash OPS_HOME_SUGGESTS then jump to company defaults.
  */
-export const useHomeSuggestItems = (): {
+export const useHomeSuggestItems = (
+  options: UseHomeSuggestItemsOptions = {},
+): {
   empty: boolean;
   items: HomeSuggestItem[];
+  /** True while company (and thus company examples) is still resolving. */
+  loading: boolean;
+  /** False when list is fully user/company-configured (order is fixed). */
+  refreshable: boolean;
   refresh: () => void;
 } => {
   const { t } = useTranslation('home');
-  const { agentId } = useResolvedHomeAgentId();
+  const { agentId: homeAgentId } = useResolvedHomeAgentId();
+  const agentId = options.agentId ?? homeAgentId;
   useInitAgentConfig(agentId);
   useFetchInstalledPlugins();
+  const { data: company, isLoading: companyLoading } = useMyCompany();
 
   const useFetchAgentSkills = useToolStore((s) => s.useFetchAgentSkills);
   useFetchAgentSkills(true);
@@ -52,6 +74,12 @@ export const useHomeSuggestItems = (): {
     return agentSelectors.getAgentConfigById(agentId)(s)?.openingQuestions ?? [];
   });
 
+  const companyExamples = useMemo(() => {
+    // No company membership → no company-wide list (ops fallback may apply after load).
+    if (!company) return [] as string[];
+    return resolveCompanyRecommendedExamples(company.settings?.recommendedExamples);
+  }, [company, company?.settings?.recommendedExamples]);
+
   const builtinTools = useToolStore((s) => s.builtinTools);
   const builtinSkills = useToolStore((s) => s.builtinSkills);
   const installedPlugins = useToolStore((s) => s.installedPlugins);
@@ -60,7 +88,15 @@ export const useHomeSuggestItems = (): {
 
   const [shuffleToken, setShuffleToken] = useState(0);
 
-  const items = useMemo(() => {
+  const customItems = useMemo(
+    () => mergeRecommendExamples(companyExamples, openingQuestions, MAX_ITEMS),
+    [companyExamples, openingQuestions],
+  );
+
+  const fallbackItems = useMemo(() => {
+    // Configured list owns the grid — skip ops/tool generation.
+    if (customItems.length > 0) return [] as HomeSuggestItem[];
+
     const getMeta = (id: string) => {
       const builtin = builtinTools.find((tool) => tool.identifier === id);
       if (builtin) {
@@ -149,34 +185,29 @@ export const useHomeSuggestItems = (): {
       title: item.title,
     }));
 
-    const used = toolItems.length + opsItems.length;
-    const openingItems: HomeSuggestItem[] = openingQuestions
-      .filter(Boolean)
-      .slice(0, Math.max(0, MAX_ITEMS - used))
-      .map((question, index) => ({
-        description: question,
-        id: `opening-${index}`,
-        prompt: question,
-        source: 'opening' as const,
-        title: question,
-      }));
-
-    return [...toolItems, ...opsItems, ...openingItems].slice(0, MAX_ITEMS);
+    return [...toolItems, ...opsItems].slice(0, MAX_ITEMS);
   }, [
     agentPluginIds,
     agentSkills,
     builtinSkills,
     builtinTools,
+    customItems.length,
     installedDiscovery,
     installedPlugins,
-    openingQuestions,
     shuffleToken,
     t,
   ]);
 
+  // While company is loading, hold an empty list (UI shows skeleton) instead of
+  // ops fallback — avoids flash: ops chips → company defaults.
+  const loading = companyLoading;
+  const items = loading ? [] : customItems.length > 0 ? customItems : fallbackItems;
+
   return {
-    empty: items.length === 0,
+    empty: !loading && items.length === 0,
     items,
+    loading,
+    refreshable: !loading && customItems.length === 0,
     refresh: () => setShuffleToken((n) => n + 1),
   };
 };

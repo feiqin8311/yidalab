@@ -11,6 +11,7 @@ export * from './apiKey';
 export * from './asyncTask';
 export * from './betterAuth';
 export * from './chatGroup';
+export * from './companyFeedback';
 export * from './companyMarketMcp';
 export * from './companyMarketSkill';
 export * from './companyMemberQuota';

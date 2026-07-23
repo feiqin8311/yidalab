@@ -2,6 +2,7 @@ import { type BuiltinAgentSlug } from '@lobechat/builtin-agents';
 import { BUILTIN_AGENT_SLUGS, getAgentRuntimeConfig } from '@lobechat/builtin-agents';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
 import { TaskIdentifier } from '@lobechat/builtin-tool-task';
+import { withHtmlDeliveryInstruction, withPlanModeInstruction } from '@lobechat/const';
 import { type LobeToolManifest } from '@lobechat/context-engine';
 import {
   type ChatCompletionTool,
@@ -62,6 +63,15 @@ const applyParamsFromChatConfig = (
       ? draft.params.reasoning_effort
       : undefined;
   });
+};
+
+const applySessionPreferencesToConfig = (
+  agentConfig: LobeAgentConfig,
+  chatConfig: LobeAgentChatConfig,
+): LobeAgentConfig => {
+  let systemRole = withHtmlDeliveryInstruction(agentConfig.systemRole, chatConfig.htmlDeliveryMode);
+  systemRole = withPlanModeInstruction(systemRole, chatConfig.planMode);
+  return { ...agentConfig, systemRole };
 };
 
 /**
@@ -297,7 +307,7 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
       };
 
       return {
-        agentConfig: finalAgentConfig,
+        agentConfig: applySessionPreferencesToConfig(finalAgentConfig, finalChatConfig),
         chatConfig: finalChatConfig,
         isBuiltinAgent: false,
         plugins: applyPluginFilters(pageAgentPlugins),
@@ -322,7 +332,7 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
       };
 
       return {
-        agentConfig: finalAgentConfig,
+        agentConfig: applySessionPreferencesToConfig(finalAgentConfig, finalChatConfig),
         chatConfig: finalChatConfig,
         isBuiltinAgent: false,
         plugins: applyPluginFilters(taskAgentPlugins),
@@ -331,7 +341,7 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
 
     // Not in page scope - return standard config
     return {
-      agentConfig: finalAgentConfig,
+      agentConfig: applySessionPreferencesToConfig(finalAgentConfig, finalChatConfig),
       chatConfig: finalChatConfig,
       isBuiltinAgent: false,
       plugins: applyPluginFilters(finalPlugins),
@@ -482,7 +492,7 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
   });
 
   return {
-    agentConfig: finalAgentConfig,
+    agentConfig: applySessionPreferencesToConfig(finalAgentConfig, resolvedChatConfig),
     chatConfig: resolvedChatConfig,
     isBuiltinAgent: true,
     plugins: applyPluginFilters(finalPlugins),

@@ -12,7 +12,7 @@ import { workspaces } from './workspace';
  * - `allowedModels`: null = all company-enabled models; [] = none;
  *   otherwise only listed `{ provider, model }` pairs.
  *
- * No row → default company budget (500k credits / month) + all models.
+ * No row → default company budget (5M credits / month) + all models.
  * Admins create/update rows to raise, lower, unlimited, or lock models.
  */
 export interface AllowedModelRef {
@@ -31,7 +31,7 @@ export const companyMemberQuotas = pgTable(
       .notNull(),
     /**
      * Monthly spend cap in USD. null = unlimited when the row exists.
-     * Missing row uses DEFAULT_MEMBER_MONTHLY_LIMIT_COST (500k credits).
+     * Missing row uses DEFAULT_MEMBER_MONTHLY_LIMIT_COST (5M credits).
      */
     monthlyLimitCost: amountNumeric('monthly_limit_cost'),
     /**

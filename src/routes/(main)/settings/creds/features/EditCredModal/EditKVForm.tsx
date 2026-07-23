@@ -92,10 +92,11 @@ const EditKVForm: FC<EditKVFormProps> = ({ cred, credsApi, onCancel, onSuccess }
       if (!canManageCredentials) return;
 
       const kvPairs = values.kvPairs || [];
+      // Keep empty values so template keys (e.g. DingTalk APP_KEY) stay for later fill.
       const valuesObj = kvPairs.reduce(
         (acc, pair) => {
-          if (pair.key && pair.value) {
-            acc[pair.key] = pair.value;
+          if (pair.key) {
+            acc[pair.key] = pair.value ?? '';
           }
           return acc;
         },

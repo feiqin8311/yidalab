@@ -29,6 +29,8 @@ export enum WorkspaceSettingsTabs {
   Profile = 'profile',
   Provider = 'provider',
   Proxy = 'proxy',
+  /** Company-wide home / agent welcome chips — under Memory in the sidebar. */
+  RecommendedExamples = 'recommended-examples',
   Referral = 'referral',
   ServiceModel = 'service-model',
   Skill = 'skill',

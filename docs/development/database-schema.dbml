@@ -40,6 +40,7 @@ table agents {
     workspace_id [name: 'agents_workspace_id_idx']
     (workspace_id, visibility, user_id) [name: 'agents_workspace_visibility_idx']
     (workspace_id, slug) [name: 'agents_slug_workspace_id_unique', unique]
+    (workspace_id, user_id) [name: 'agents_inbox_workspace_user_unique', unique]
   }
 }
 
@@ -434,7 +435,8 @@ table agent_skills {
     source [name: 'agent_skills_source_idx']
     zip_file_hash [name: 'agent_skills_zip_hash_idx']
     workspace_id [name: 'agent_skills_workspace_id_idx']
-    (workspace_id, name) [name: 'agent_skills_name_workspace_id_unique', unique]
+    (workspace_id, user_id, name) [name: 'agent_skills_name_workspace_user_unique', unique]
+    (workspace_id, user_id, identifier) [name: 'agent_skills_identifier_workspace_user_unique', unique]
   }
 }
 
@@ -671,6 +673,48 @@ table chat_groups_agents {
   }
 }
 
+table company_feedback {
+  id text [pk, not null]
+  workspace_id text [not null]
+  user_id text [not null]
+  title text [not null]
+  content text [not null]
+  status text [not null, default: 'pending']
+  status_updated_at "timestamp with time zone"
+  status_updated_by text
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (workspace_id, created_at) [name: 'company_feedback_workspace_created_idx']
+    (workspace_id, status) [name: 'company_feedback_workspace_status_idx']
+  }
+}
+
+table company_market_mcps {
+  id text [pk, not null]
+  identifier text [not null]
+  name text [not null]
+  description text [not null]
+  icon text
+  category text
+  tags jsonb [default: `[]`]
+  connection jsonb [not null, default: `{"type":"http"}`]
+  tools jsonb [default: `[]`]
+  prompts jsonb [default: `[]`]
+  publisher_id text [not null]
+  workspace_id text [not null]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (workspace_id, identifier) [name: 'company_market_mcps_workspace_identifier_unique', unique]
+    (workspace_id, updated_at) [name: 'company_market_mcps_workspace_updated_idx']
+  }
+}
+
 table company_market_skills {
   id text [pk, not null]
   identifier text [not null]
@@ -678,7 +722,7 @@ table company_market_skills {
   description text [not null]
   manifest jsonb [not null, default: `{}`]
   content text [not null]
-  hide_content boolean [not null, default: false]
+  hide_content boolean [not null, default: true]
   resources jsonb [default: `{}`]
   zip_file_hash varchar(64)
   publisher_id text [not null]
@@ -691,6 +735,22 @@ table company_market_skills {
     (workspace_id, identifier) [name: 'company_market_skills_workspace_identifier_unique', unique]
     (workspace_id, updated_at) [name: 'company_market_skills_workspace_updated_idx']
     zip_file_hash [name: 'company_market_skills_zip_hash_idx']
+  }
+}
+
+table company_member_quotas {
+  workspace_id text [not null]
+  user_id text [not null]
+  monthly_limit_cost "numeric(20, 6)"
+  allowed_models jsonb
+  updated_by text
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (workspace_id, user_id) [pk]
+    user_id [name: 'company_member_quotas_user_id_idx']
   }
 }
 
@@ -1860,6 +1920,27 @@ table files_to_sessions {
   }
 }
 
+table resource_grants {
+  id text [pk, not null]
+  workspace_id text [not null]
+  resource_type text [not null]
+  resource_id text [not null]
+  grantee_type text [not null]
+  grantee_id text [not null]
+  role text [not null, default: 'viewer']
+  granted_by text [not null]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (workspace_id, resource_type, resource_id, grantee_type, grantee_id) [name: 'resource_grants_unique', unique]
+    (resource_type, resource_id) [name: 'resource_grants_resource_idx']
+    (workspace_id, grantee_type, grantee_id) [name: 'resource_grants_grantee_idx']
+    workspace_id [name: 'resource_grants_workspace_idx']
+  }
+}
+
 table session_groups {
   id text [pk, not null]
   name text [not null]
@@ -2284,6 +2365,29 @@ table users {
     username [name: 'users_username_idx']
     created_at [name: 'users_created_at_idx']
     created_at [name: 'users_banned_true_created_at_idx']
+  }
+}
+
+table user_credentials {
+  id integer [pk, not null]
+  user_id text [not null]
+  workspace_id text
+  key varchar(100) [not null]
+  name varchar(255) [not null]
+  description text
+  type text [not null]
+  values_encrypted text
+  masked_preview varchar(64)
+  last_used_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (user_id, key) [name: 'user_credentials_personal_key_uidx', unique]
+    (workspace_id, key) [name: 'user_credentials_workspace_key_uidx', unique]
+    user_id [name: 'user_credentials_user_id_idx']
+    workspace_id [name: 'user_credentials_workspace_id_idx']
   }
 }
 
@@ -2794,6 +2898,10 @@ ref: passkey.userId > users.id
 ref: auth_sessions.user_id > users.id
 
 ref: two_factor.user_id > users.id
+
+ref: company_market_mcps.publisher_id - users.id
+
+ref: company_market_mcps.workspace_id - workspaces.id
 
 ref: company_market_skills.publisher_id - users.id
 

@@ -26,6 +26,9 @@ export interface AgentSelfIterationChatConfig {
   };
 }
 
+/** How this agent should deliver HTML / visual reports. */
+export type HtmlDeliveryMode = 'artifact' | 'dingpan' | 'ask';
+
 export interface LobeAgentChatConfig extends AgentMemoryChatConfig, AgentSelfIterationChatConfig {
   codexMaxReasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh';
   /**
@@ -111,6 +114,13 @@ export interface LobeAgentChatConfig extends AgentMemoryChatConfig, AgentSelfIte
    * Number of historical messages
    */
   historyCount?: number;
+  /**
+   * HTML / visual report delivery surface.
+   * - `artifact`: always in-chat Artifact preview (default)
+   * - `dingpan`: always upload to DingTalk Drive and reply with link
+   * - `ask`: ask the user each time (legacy YidaLab behavior)
+   */
+  htmlDeliveryMode?: HtmlDeliveryMode;
   hy3ReasoningEffort?: 'no_think' | 'low' | 'high';
   /**
    * Image aspect ratio for image generation models
@@ -133,6 +143,12 @@ export interface LobeAgentChatConfig extends AgentMemoryChatConfig, AgentSelfIte
    * Effort level for Claude Opus 4.7 and later (adds xhigh tier between high and max)
    */
   opus47Effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /**
+   * Optional Plan Mode (opt-in). When true, the agent clarifies missing slots
+   * and produces a short task sheet before full tool execution.
+   * Default / undefined = off (normal execution).
+   */
+  planMode?: boolean;
 
   /**
    * Whether to preserve and pass historical thinking content to the model
@@ -267,6 +283,8 @@ export const AgentChatConfigSchema = z
     hy3ReasoningEffort: z.enum(['no_think', 'low', 'high']).optional(),
     ring2_6ReasoningEffort: z.enum(['high', 'xhigh']).optional(),
     historyCount: z.number().optional(),
+    htmlDeliveryMode: z.enum(['artifact', 'dingpan', 'ask']).optional(),
+    planMode: z.boolean().optional(),
     imageAspectRatio: z.string().optional(),
     imageAspectRatio2: z.string().optional(),
     imageResolution: z.enum(['1K', '2K', '4K']).optional(),

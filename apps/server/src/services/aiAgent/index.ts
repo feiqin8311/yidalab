@@ -20,7 +20,11 @@ import {
 } from '@lobechat/builtin-tool-self-iteration';
 import { TaskIdentifier } from '@lobechat/builtin-tool-task';
 import { builtinTools, manualModeExcludeToolIds } from '@lobechat/builtin-tools';
-import { LOADING_FLAT } from '@lobechat/const';
+import {
+  LOADING_FLAT,
+  withHtmlDeliveryInstruction,
+  withPlanModeInstruction,
+} from '@lobechat/const';
 import type {
   AgentGroupConfig,
   AgentManagementContext,
@@ -1253,6 +1257,16 @@ export class AiAgentService {
         : instructions;
       log('execAgent: appended additional instructions to systemRole');
     }
+
+    // 2.6. Session preferences: HTML delivery + optional Plan Mode
+    agentConfig.systemRole = withHtmlDeliveryInstruction(
+      agentConfig.systemRole,
+      agentConfig.chatConfig?.htmlDeliveryMode,
+    );
+    agentConfig.systemRole = withPlanModeInstruction(
+      agentConfig.systemRole,
+      agentConfig.chatConfig?.planMode,
+    );
 
     let resumeParentMessage: Awaited<ReturnType<MessageModel['findById']>>;
 

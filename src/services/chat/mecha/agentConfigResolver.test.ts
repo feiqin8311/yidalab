@@ -4,6 +4,7 @@ import { LobeAgentIdentifier } from '@lobechat/builtin-tool-lobe-agent';
 import { NotebookIdentifier } from '@lobechat/builtin-tool-notebook';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
 import { TaskIdentifier } from '@lobechat/builtin-tool-task';
+import { withHtmlDeliveryInstruction } from '@lobechat/const';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as agentStore from '@/store/agent';
@@ -13,6 +14,9 @@ import * as agentGroupSelectors from '@/store/agentGroup/selectors';
 import * as userSelectors from '@/store/user/selectors';
 
 import { resolveAgentConfig } from './agentConfigResolver';
+
+/** System roles always get the default Artifact delivery preference appended. */
+const withDefaultDelivery = (role: string) => withHtmlDeliveryInstruction(role, 'artifact');
 
 vi.hoisted(() => {
   const storage = new Map<string, string>();
@@ -354,7 +358,7 @@ describe('resolveAgentConfig', () => {
 
       const result = resolveAgentConfig({ agentId: 'builtin-agent' });
 
-      expect(result.agentConfig.systemRole).toBe('Runtime system role');
+      expect(result.agentConfig.systemRole).toBe(withDefaultDelivery('Runtime system role'));
     });
 
     it('should fallback to agent config systemRole when runtime systemRole is undefined', () => {
@@ -365,7 +369,9 @@ describe('resolveAgentConfig', () => {
 
       const result = resolveAgentConfig({ agentId: 'builtin-agent' });
 
-      expect(result.agentConfig.systemRole).toBe('You are a helpful assistant');
+      expect(result.agentConfig.systemRole).toBe(
+        withDefaultDelivery('You are a helpful assistant'),
+      );
     });
 
     it('should return empty plugins when both runtime and agent config have no plugins', () => {
@@ -791,7 +797,7 @@ describe('resolveAgentConfig', () => {
 
       // page-agent should NOT have its tools/systemRole injected again
       expect(result.plugins.filter((p) => p === PageAgentIdentifier)).toHaveLength(1);
-      expect(result.agentConfig.systemRole).toBe('Page agent system prompt');
+      expect(result.agentConfig.systemRole).toBe(withDefaultDelivery('Page agent system prompt'));
       expect(result.isBuiltinAgent).toBe(true);
       expect(result.slug).toBe('page-agent');
     });
@@ -845,7 +851,7 @@ describe('resolveAgentConfig', () => {
       });
 
       expect(result.plugins.filter((p) => p === TaskIdentifier)).toHaveLength(1);
-      expect(result.agentConfig.systemRole).toBe('Task agent system prompt');
+      expect(result.agentConfig.systemRole).toBe(withDefaultDelivery('Task agent system prompt'));
       expect(result.isBuiltinAgent).toBe(true);
       expect(result.slug).toBe('task-agent');
     });
@@ -1083,7 +1089,7 @@ describe('resolveAgentConfig', () => {
       // Should have group management tool injected
       expect(result.plugins).toContain(GroupManagementIdentifier);
       // Should have proper system role
-      expect(result.agentConfig.systemRole).toBe('Supervisor system role');
+      expect(result.agentConfig.systemRole).toBe(withDefaultDelivery('Supervisor system role'));
     });
   });
 
@@ -1324,8 +1330,11 @@ describe('resolveAgentConfig', () => {
       const result = resolveAgentConfig({ agentId: 'test-agent' });
 
       expect(result.agentConfig.systemRole).toBe(
-        'You are a helpful assistant\n\nPreferred reply language: zh-CN. Use this language unless the user explicitly asks to switch.',
+        withDefaultDelivery(
+          'You are a helpful assistant\n\nPreferred reply language: zh-CN. Use this language unless the user explicitly asks to switch.',
+        ),
       );
+      expect(result.agentConfig.systemRole).toContain('HTML deliverable surface');
     });
 
     it('should use locale instruction as systemRole when agent has no systemRole', () => {
@@ -1344,7 +1353,9 @@ describe('resolveAgentConfig', () => {
       const result = resolveAgentConfig({ agentId: 'test-agent' });
 
       expect(result.agentConfig.systemRole).toBe(
-        'Preferred reply language: ja-JP. Use this language unless the user explicitly asks to switch.',
+        withDefaultDelivery(
+          'Preferred reply language: ja-JP. Use this language unless the user explicitly asks to switch.',
+        ),
       );
     });
 
@@ -1356,7 +1367,42 @@ describe('resolveAgentConfig', () => {
 
       const result = resolveAgentConfig({ agentId: 'test-agent' });
 
-      expect(result.agentConfig.systemRole).toBe('You are a helpful assistant');
+      expect(result.agentConfig.systemRole).toBe(
+        withDefaultDelivery('You are a helpful assistant'),
+      );
+    });
+
+    it('should respect chatConfig.htmlDeliveryMode dingpan', () => {
+      vi.spyOn(agentSelectors.chatConfigByIdSelectors, 'getChatConfigById').mockReturnValue(
+        () => ({ enableStreaming: true, htmlDeliveryMode: 'dingpan' }) as any,
+      );
+
+      const result = resolveAgentConfig({ agentId: 'test-agent' });
+
+      expect(result.agentConfig.systemRole).toContain('钉盘链接');
+      expect(result.agentConfig.systemRole).toContain('uploadHtmlToDingpan');
+      expect(result.agentConfig.systemRole).not.toContain('askUserQuestion');
+    });
+
+    it('should inject plan mode instruction only when chatConfig.planMode is true', () => {
+      vi.spyOn(agentSelectors.chatConfigByIdSelectors, 'getChatConfigById').mockReturnValue(
+        () => ({ enableStreaming: true, planMode: true }) as any,
+      );
+
+      const result = resolveAgentConfig({ agentId: 'test-agent' });
+
+      expect(result.agentConfig.systemRole).toContain('Plan Mode');
+      expect(result.agentConfig.systemRole).toContain('任务单');
+    });
+
+    it('should not inject plan mode instruction when planMode is off', () => {
+      vi.spyOn(agentSelectors.chatConfigByIdSelectors, 'getChatConfigById').mockReturnValue(
+        () => ({ enableStreaming: true, planMode: false }) as any,
+      );
+
+      const result = resolveAgentConfig({ agentId: 'test-agent' });
+
+      expect(result.agentConfig.systemRole).not.toContain('## Plan Mode');
     });
   });
 });

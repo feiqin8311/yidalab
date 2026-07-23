@@ -9,6 +9,7 @@ const prefixes = {
   agentCronJobs: 'cron',
   agentSkills: 'skl',
   companyMarketSkills: 'cms',
+  companyFeedback: 'cfb',
   briefs: 'brf',
   taskComments: 'cmt',
   tasks: 'task',

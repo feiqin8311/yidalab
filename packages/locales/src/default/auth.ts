@@ -244,6 +244,13 @@ export default {
   'company.tab.general': 'General',
   'company.tab.invitations': 'Invitations',
   'company.tab.members': 'Members',
+  'company.recommendedExamples.desc':
+    'Shared welcome examples for every member. Shown on each agent’s home; members can still add more on their own agent profile. Use 【ASIN】/【站点】placeholders. First line is the card title.',
+  'company.recommendedExamples.memberReadonly':
+    'Only company admins and owners can edit recommended examples.',
+  'company.recommendedExamples.saveFailed': 'Failed to save recommended examples',
+  'company.recommendedExamples.saved': 'Recommended examples saved',
+  'company.recommendedExamples.title': 'Recommended examples',
   'company.title': 'Company',
   'company.transfer.action': 'Transfer ownership',
   'company.transfer.description': 'The selected member becomes the company owner.',

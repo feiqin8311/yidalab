@@ -20,6 +20,7 @@ Not the upstream public product. Do not use LobeHub marketing badges / Discord /
 
 | Doc                                                                                            | Purpose                                      |
 | ---------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| [docs/development/v1-internal-release-gate.md](./docs/development/v1-internal-release-gate.md) | **v1.0-internal 放行检查表**（上线前勾完）   |
 | [docs/development/yidalab-ops-checklist.md](./docs/development/yidalab-ops-checklist.md)       | Deploy / DingTalk / bot / schedule checklist |
 | [docs/development/pilot-invite.md](./docs/development/pilot-invite.md)                         | Internal pilot invite copy                   |
 | [docs/development/basic/setup-development.mdx](./docs/development/basic/setup-development.mdx) | Upstream-style local stack notes             |

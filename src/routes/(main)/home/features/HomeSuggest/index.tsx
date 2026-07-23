@@ -1,6 +1,6 @@
 'use client';
 
-import { ActionIcon, Block, Flexbox, Text } from '@lobehub/ui';
+import { ActionIcon, Block, Flexbox, Skeleton, Text } from '@lobehub/ui';
 import { cssVar } from 'antd-style';
 import { Lightbulb, RefreshCw } from 'lucide-react';
 import { memo, useCallback } from 'react';
@@ -46,13 +46,43 @@ const SuggestItem = memo<{ disabled?: boolean; item: HomeSuggestItem }>(({ item,
   );
 });
 
-const HomeSuggest = memo(() => {
+interface HomeSuggestProps {
+  /** Scope chips to this agent (agent conversation welcome). Defaults to home selector. */
+  agentId?: string;
+}
+
+const HomeSuggest = memo<HomeSuggestProps>(({ agentId }) => {
   const { t } = useTranslation('common');
   const { t: tHome } = useTranslation('home');
   const navigate = useWorkspaceAwareNavigate();
   const { allowed: canCreateContent } = usePermission('create_content');
-  const { empty, items, refresh } = useHomeSuggestItems();
+  const { empty, items, loading, refresh, refreshable } = useHomeSuggestItems({ agentId });
   const disabled = !canCreateContent;
+
+  if (loading) {
+    return (
+      <Flexbox gap={12} width={'100%'}>
+        <Flexbox horizontal align={'center'} gap={8}>
+          <Lightbulb color={cssVar.colorTextDescription} size={18} />
+          <Text color={cssVar.colorTextSecondary}>{t('home.suggestQuestions')}</Text>
+        </Flexbox>
+        <Flexbox
+          gap={12}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+        >
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Block
+              key={i}
+              style={{ borderRadius: cssVar.borderRadiusLG, paddingBlock: 12, paddingInline: 14 }}
+              variant={'outlined'}
+            >
+              <Skeleton active paragraph={{ rows: 2, width: ['70%', '100%'] }} title={false} />
+            </Block>
+          ))}
+        </Flexbox>
+      </Flexbox>
+    );
+  }
 
   if (empty) {
     return (
@@ -84,24 +114,26 @@ const HomeSuggest = memo(() => {
           <Lightbulb color={cssVar.colorTextDescription} size={18} />
           <Text color={cssVar.colorTextSecondary}>{t('home.suggestQuestions')}</Text>
         </Flexbox>
-        <Flexbox
-          horizontal
-          align={'center'}
-          gap={4}
-          style={{
-            cursor: disabled ? 'not-allowed' : 'pointer',
-            opacity: disabled ? 0.65 : undefined,
-          }}
-          onClick={() => {
-            if (disabled) return;
-            refresh();
-          }}
-        >
-          <ActionIcon disabled={disabled} icon={RefreshCw} size={'small'} />
-          <Text color={cssVar.colorTextSecondary} fontSize={12}>
-            {t('switch')}
-          </Text>
-        </Flexbox>
+        {refreshable && (
+          <Flexbox
+            horizontal
+            align={'center'}
+            gap={4}
+            style={{
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              opacity: disabled ? 0.65 : undefined,
+            }}
+            onClick={() => {
+              if (disabled) return;
+              refresh();
+            }}
+          >
+            <ActionIcon disabled={disabled} icon={RefreshCw} size={'small'} />
+            <Text color={cssVar.colorTextSecondary} fontSize={12}>
+              {t('switch')}
+            </Text>
+          </Flexbox>
+        )}
       </Flexbox>
 
       <Flexbox

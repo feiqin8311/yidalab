@@ -12,6 +12,7 @@ export default {
   'navigation.image': 'Image',
   'navigation.knowledgeBase': 'Knowledge Base',
   'navigation.lobehub': 'YidaLab',
+  'navigation.feedback': 'Feedback',
   'navigation.memory': 'Memory',
   'navigation.memoryContexts': 'Memory - Contexts',
   'navigation.memoryExperiences': 'Memory - Experiences',

@@ -164,6 +164,7 @@ export default {
 
   'cmdk.keywords.image': 'image picture photo',
 
+  'cmdk.keywords.feedback': 'feedback suggestion improve',
   'cmdk.keywords.memory': 'identities contexts preferences experiences',
 
   'cmdk.keywords.pages': 'documents write notes',
@@ -196,6 +197,7 @@ export default {
 
   'cmdk.keywords.video': 'video,generate,seedance,kling',
 
+  'cmdk.feedback': 'Feedback',
   'cmdk.memory': 'Memory',
 
   'cmdk.mentionAgent': 'Mention Agent',
@@ -562,12 +564,36 @@ export default {
   'tab.knowledgeBase': 'Library',
   'tab.marketplace': 'Marketplace',
   'tab.me': 'Me',
+  'tab.feedback': 'Feedback',
   'tab.memory': 'Memory',
   'tab.pages': 'Pages',
   'tab.resource': 'Resources',
   'tab.search': 'Search',
   'tab.setting': 'Settings',
   'tab.tasks': 'Tasks',
+  'companyFeedback.title': 'Feedback',
+  'companyFeedback.create': 'Submit feedback',
+  'companyFeedback.empty': 'No feedback yet. Share an idea to improve the product.',
+  'companyFeedback.emptyCta': 'Submit the first idea',
+  'companyFeedback.filter.all': 'All',
+  'companyFeedback.filter.pending': 'Pending',
+  'companyFeedback.filter.accepted': 'Accepted',
+  'companyFeedback.filter.declined': 'Declined',
+  'companyFeedback.form.title': 'Title',
+  'companyFeedback.form.content': 'Details',
+  'companyFeedback.form.titlePlaceholder': 'Short summary',
+  'companyFeedback.form.contentPlaceholder': 'What should we improve, and why?',
+  'companyFeedback.form.required': 'Please fill in title and details',
+  'companyFeedback.detail.edit': 'Edit',
+  'companyFeedback.detail.delete': 'Delete',
+  'companyFeedback.detail.status': 'Status',
+  'companyFeedback.companyOnly': 'Feedback is available in a company workspace.',
+  'companyFeedback.toast.created': 'Feedback submitted',
+  'companyFeedback.toast.updated': 'Feedback updated',
+  'companyFeedback.toast.deleted': 'Feedback deleted',
+  'companyFeedback.toast.statusUpdated': 'Status updated',
+  'companyFeedback.toast.failed': 'Something went wrong. Please try again.',
+
   'tab.video': 'Video',
   'telemetry.allow': 'Allow',
   'telemetry.deny': 'Deny',

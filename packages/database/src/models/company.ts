@@ -17,6 +17,12 @@ export interface CreateCompanyParams {
   position: string;
 }
 
+/** Subset of `workspaces.settings` used by company product features. */
+export interface CompanyWorkspaceSettings {
+  /** Shared recommended examples (welcome chips) for every member. */
+  recommendedExamples?: string[];
+}
+
 export interface CompanyMembership {
   avatar: string | null;
   creatorName: string | null;
@@ -26,6 +32,8 @@ export interface CompanyMembership {
   name: string;
   position: string | null;
   role: WorkspaceMemberRole;
+  /** Workspace settings (e.g. company-wide recommended examples). */
+  settings: CompanyWorkspaceSettings;
   slug: string;
 }
 
@@ -178,6 +186,7 @@ export class CompanyModel {
         primaryOwnerId: workspaces.primaryOwnerId,
         position: workspaceMembers.position,
         role: workspaceMembers.role,
+        settings: workspaces.settings,
         slug: workspaces.slug,
       })
       .from(workspaceMembers)
@@ -187,7 +196,7 @@ export class CompanyModel {
       .limit(1);
     if (!company) return null;
 
-    const { primaryOwnerId, ...companyData } = company;
+    const { primaryOwnerId, settings, ...companyData } = company;
     const [creator] = await this.db
       .select({ email: users.email, username: users.username })
       .from(users)
@@ -197,7 +206,30 @@ export class CompanyModel {
     return {
       ...companyData,
       creatorName: creator?.username || creator?.email || null,
+      settings: (settings ?? {}) as CompanyWorkspaceSettings,
     };
+  };
+
+  /**
+   * Merge-patch `workspaces.settings` (admin/owner). Shallow merge at top level.
+   */
+  updateSettings = async (workspaceId: string, patch: CompanyWorkspaceSettings) => {
+    const [current] = await this.db
+      .select({ settings: workspaces.settings })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    if (!current) throw new Error('COMPANY_NOT_FOUND');
+
+    const prev = (current.settings ?? {}) as CompanyWorkspaceSettings;
+    const next: CompanyWorkspaceSettings = { ...prev, ...patch };
+
+    const [workspace] = await this.db
+      .update(workspaces)
+      .set({ settings: next, updatedAt: new Date() })
+      .where(eq(workspaces.id, workspaceId))
+      .returning({ id: workspaces.id, settings: workspaces.settings });
+    return workspace;
   };
 
   leave = async (workspaceId: string) => {

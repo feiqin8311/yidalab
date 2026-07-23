@@ -6,6 +6,7 @@ import {
   Home,
   Image,
   LibraryBigIcon,
+  MessageSquarePlus,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -489,6 +490,21 @@ export const sharedMainAreaChildren: RouteObject[] = [
     path: 'memory',
   },
 
+  // Company feedback
+  {
+    children: [
+      {
+        element: dynamicElement(() => import('@/routes/(main)/feedback'), 'Desktop > Feedback'),
+        handle: {
+          meta: routeMeta({ icon: MessageSquarePlus, titleKey: 'navigation.feedback' }),
+        },
+        index: true,
+      },
+    ],
+    errorElement: <ErrorBoundary />,
+    path: 'feedback',
+  },
+
   // Video routes
   {
     children: [
@@ -929,6 +945,13 @@ export const desktopRoutes: RouteObject[] = [
                       'Desktop > Workspace > Settings > Memory',
                     ),
                     path: 'memory',
+                  },
+                  {
+                    element: dynamicElement(
+                      () => import('@/routes/(main)/[workspaceSlug]/settings/recommended-examples'),
+                      'Desktop > Workspace > Settings > Recommended Examples',
+                    ),
+                    path: 'recommended-examples',
                   },
                   {
                     element: dynamicElement(

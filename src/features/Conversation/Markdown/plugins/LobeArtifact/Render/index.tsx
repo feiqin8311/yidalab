@@ -1,7 +1,7 @@
 import { Center, Flexbox, Icon } from '@lobehub/ui';
 import { createStaticStyles, cx } from 'antd-style';
 import { Loader2 } from 'lucide-react';
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useIsDark } from '@/hooks/useIsDark';
@@ -72,15 +72,24 @@ const Render = memo<ArtifactProps>(({ identifier, title, type, language, childre
     ];
   });
 
+  const artifactKey = `${id}:${identifier}`;
+  // Auto-open once per artifact generation. Do NOT depend on content length —
+  // each streaming chunk used to re-open the portal after the user closed it.
+  const autoOpenedKeyRef = useRef<string | null>(null);
+  const userClosedKeyRef = useRef<string | null>(null);
+
   const openArtifactUI = () => {
+    userClosedKeyRef.current = null;
     openArtifact({ id, identifier, language, title, type });
   };
 
   useEffect(() => {
     if (!hasChildren || !isGenerating) return;
-
-    openArtifactUI();
-  }, [isGenerating, hasChildren, str, identifier, title, type, id, language]);
+    if (userClosedKeyRef.current === artifactKey) return;
+    if (autoOpenedKeyRef.current === artifactKey) return;
+    autoOpenedKeyRef.current = artifactKey;
+    openArtifact({ id, identifier, language, title, type });
+  }, [hasChildren, isGenerating, artifactKey, id, identifier, language, title, type, openArtifact]);
 
   return (
     <Flexbox
@@ -92,6 +101,7 @@ const Render = memo<ArtifactProps>(({ identifier, title, type, language, childre
         const currentArtifactMessageId = chatPortalSelectors.artifactMessageId(state);
         const currentArtifactIdentifier = chatPortalSelectors.artifactIdentifier(state);
         if (currentArtifactMessageId === id && currentArtifactIdentifier === identifier) {
+          userClosedKeyRef.current = artifactKey;
           closeArtifact();
         } else {
           openArtifactUI();

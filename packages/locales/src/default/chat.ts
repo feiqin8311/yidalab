@@ -707,6 +707,11 @@ export default {
   'chatMode.chat': 'Chat',
   'chatMode.chatDesc': 'No runtime environment or autonomy; uses fewer tokens',
   'chatMode.select': 'Switch Mode',
+  'planMode.label': 'Plan',
+  'planMode.offTooltip':
+    'Plan Mode is off. Turn on to clarify requirements and get a task sheet before full execution.',
+  'planMode.onTooltip':
+    'Plan Mode is on: the agent will clarify missing details and draft a task sheet before running tools. Turn off to execute normally.',
   'runtimeEnv.mode.cloud': 'Cloud Sandbox',
   'runtimeEnv.mode.cloudDesc': 'Run in a secure cloud sandbox',
   'runtimeEnv.mode.local': 'Local',

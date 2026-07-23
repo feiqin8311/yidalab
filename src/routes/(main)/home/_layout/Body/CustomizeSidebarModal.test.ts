@@ -26,4 +26,9 @@ describe('CustomizeSidebarModal', () => {
     expect(getSortableSidebarItemIds(false).has('memory')).toBe(true);
     expect(getSortableSidebarItemIds(true).has('memory')).toBe(true);
   });
+
+  it('shows feedback only in workspace mode', () => {
+    expect(getAvailableSidebarItems(false).some((item) => item.id === 'feedback')).toBe(false);
+    expect(getAvailableSidebarItems(true).some((item) => item.id === 'feedback')).toBe(true);
+  });
 });

@@ -868,6 +868,13 @@
       "when": 1784700000000,
       "tag": "0123_company_member_quotas",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1784789678984,
+      "tag": "0124_company_feedback",
+      "breakpoints": true
     }
   ],
   "version": "6"

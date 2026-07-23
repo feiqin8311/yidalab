@@ -33,7 +33,7 @@ export class CompanyQuotaDeniedError extends Error {
  * Enforce per-member monthly spend cap + model allowlist for company workspaces.
  * Users outside a company are unrestricted.
  *
- * Default (no policy row): 500k credits / 30-day cycle. Admin can raise,
+ * Default (no policy row): 5M credits / 30-day cycle. Admin can raise,
  * unlimited, or lock models via company_member_quotas.
  */
 export class CompanyQuotaService {
@@ -108,7 +108,7 @@ export class CompanyQuotaService {
   };
 
   clearMemberQuota = async (workspaceId: string, userId: string) => {
-    // Delete custom row → fall back to default 500k credits / month.
+    // Delete custom row → fall back to default 5M credits / month.
     await this.model.clear(workspaceId, userId);
   };
 

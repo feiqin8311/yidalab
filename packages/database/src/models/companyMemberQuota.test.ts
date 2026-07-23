@@ -32,15 +32,15 @@ describe('getQuotaCycleBounds', () => {
 });
 
 describe('resolveEffectiveMonthlyLimit', () => {
-  it('uses 500k credits default when no policy row', () => {
+  it('uses 5M credits default when no policy row', () => {
     const result = resolveEffectiveMonthlyLimit(null);
     expect(result).toEqual({
       isDefault: true,
       monthlyLimitCost: DEFAULT_MEMBER_MONTHLY_LIMIT_COST,
       unlimited: false,
     });
-    expect(DEFAULT_MEMBER_MONTHLY_CREDITS).toBe(500_000);
-    expect(DEFAULT_MEMBER_MONTHLY_LIMIT_COST).toBe(0.5);
+    expect(DEFAULT_MEMBER_MONTHLY_CREDITS).toBe(5_000_000);
+    expect(DEFAULT_MEMBER_MONTHLY_LIMIT_COST).toBe(5);
   });
 
   it('treats explicit null limit as unlimited', () => {

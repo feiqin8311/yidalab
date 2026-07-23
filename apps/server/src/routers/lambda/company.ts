@@ -270,6 +270,27 @@ export const companyRouter = router({
       };
     }),
 
+  /** Admin/owner: update company-wide recommended examples (welcome chips). */
+  updateSettings: companyProcedure
+    .input(
+      workspaceIdSchema.extend({
+        recommendedExamples: z.array(z.string().trim().min(1).max(4000)).max(20),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureManager(ctx.companyModel, input.workspaceId);
+      try {
+        return {
+          data: await ctx.companyModel.updateSettings(input.workspaceId, {
+            recommendedExamples: input.recommendedExamples,
+          }),
+          success: true,
+        };
+      } catch (error) {
+        return asTrpcError(error);
+      }
+    }),
+
   updateDepartment: companyProcedure
     .input(
       workspaceIdSchema.extend({ departmentId: z.string().min(1), name: departmentNameSchema }),

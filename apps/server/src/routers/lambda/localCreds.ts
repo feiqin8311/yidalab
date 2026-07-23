@@ -1,4 +1,9 @@
-import { DingpanPersonalCredEnvKeys, DingpanPersonalCredKey } from '@lobechat/builtin-tool-dingpan';
+import {
+  DingpanCompanyCredEnvKeys,
+  DingpanCompanyCredKey,
+  DingpanPersonalCredEnvKeys,
+  DingpanPersonalCredKey,
+} from '@lobechat/builtin-tool-dingpan';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -11,24 +16,80 @@ import { userInstalledPlugins } from '@/database/schemas';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 
-/** Ensure each user has a personal dingpan credential template (path differs per person). */
+const DINGTALK_PERSONAL_NAME = 'DingTalk';
+const DINGTALK_PERSONAL_DESC =
+  'Personal default 钉盘 folder. Company credential dingtalk holds APP_KEY/SECRET and the space operator UNION_ID; fill only your folder link.';
+const DINGTALK_COMPANY_NAME = 'DingTalk App';
+const DINGTALK_COMPANY_DESC =
+  'Shared enterprise DingTalk app (钉盘 OpenAPI): APP_KEY/SECRET + operator UNION_ID (account that can write the shared space).';
+/** Prior seed titles; rename only these so custom user names are kept. */
+const LEGACY_DINGTALK_CRED_NAMES = new Set(['DingTalk Drive (钉盘)', '钉盘 (DingTalk Drive)']);
+/** Belong on company `dingtalk` — strip leftovers from personal rows. */
+const PERSONAL_DINGTALK_APP_KEYS = new Set([
+  'DINGTALK_APP_KEY',
+  'DINGTALK_APP_SECRET',
+  'DINGTALK_UNION_ID',
+]);
+
+const emptyPersonalDingTalkValues = (): Record<string, string> =>
+  Object.fromEntries(DingpanPersonalCredEnvKeys.map((k) => [k, ''])) as Record<string, string>;
+
+/**
+ * Every member gets a personal DingTalk credential shell (key `dingtalk-dingpan`).
+ * Values start empty — folder path + identity only (not the enterprise app secret).
+ * Called on credentials list so opening Settings → Credentials is enough; no admin seed.
+ */
 const ensurePersonalDingpanCredential = async (model: UserCredentialModel) => {
   const existing = await model.findPersonalByKey(DingpanPersonalCredKey);
-  if (existing) return;
+  if (!existing) {
+    await model.createPersonalKV({
+      description: DINGTALK_PERSONAL_DESC,
+      key: DingpanPersonalCredKey,
+      name: DINGTALK_PERSONAL_NAME,
+      type: 'kv-env',
+      values: emptyPersonalDingTalkValues(),
+    });
+    return;
+  }
 
-  const values = Object.fromEntries(DingpanPersonalCredEnvKeys.map((k) => [k, ''])) as Record<
-    string,
-    string
-  >;
+  const patch: { description?: string; name?: string; values?: Record<string, string> } = {};
+  if (LEGACY_DINGTALK_CRED_NAMES.has(existing.name) || existing.name === 'DingTalk') {
+    // Keep display name; refresh description when still on legacy copy.
+    if (LEGACY_DINGTALK_CRED_NAMES.has(existing.name)) {
+      patch.name = DINGTALK_PERSONAL_NAME;
+    }
+    if (!existing.description?.includes('company-shared')) {
+      patch.description = DINGTALK_PERSONAL_DESC;
+    }
+  }
 
-  await model.createPersonalKV({
-    description:
-      'Personal DingTalk Drive (钉盘). Fill APP_KEY/SECRET, your UNION_ID, and your folder link — each person has a different path.',
-    key: DingpanPersonalCredKey,
-    name: 'DingTalk Drive (钉盘)',
-    type: 'kv-env',
-    values,
-  });
+  // Keep template keys present; drop APP_KEY/SECRET so company vault is the sole source.
+  try {
+    const full = await model.getPersonal(existing.id, { decrypt: true });
+    const current = full && 'plaintext' in full ? (full.plaintext ?? {}) : {};
+    let changed = false;
+    const merged: Record<string, string> = {};
+    for (const [k, v] of Object.entries(current)) {
+      if (PERSONAL_DINGTALK_APP_KEYS.has(k)) {
+        changed = true;
+        continue;
+      }
+      merged[k] = typeof v === 'string' ? v : '';
+    }
+    for (const k of DingpanPersonalCredEnvKeys) {
+      if (!(k in merged)) {
+        merged[k] = '';
+        changed = true;
+      }
+    }
+    if (changed) patch.values = merged;
+  } catch {
+    // Decrypt failure: still rename if needed; skip value merge.
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await model.updatePersonal(existing.id, patch);
+  }
 };
 
 /** Company-shared Tavily key for web search / crawl (Settings → Credentials). */
@@ -70,6 +131,69 @@ const ensureCompanyTavilyCredential = async (
     await model.updateCompany(companyWorkspaceId, existing.id, {
       values: { TAVILY_API_KEY: apiKey },
     });
+  } catch {
+    // Decrypt/update failures must not break the credentials list.
+  }
+};
+
+/**
+ * Ensure company vault has shared DingTalk enterprise app credentials.
+ * Seeds APP_KEY/SECRET from process.env when creating, or when either field is empty.
+ */
+const ensureCompanyDingTalkCredential = async (
+  model: UserCredentialModel,
+  companyWorkspaceId: string | null,
+  canManageCompany: boolean,
+) => {
+  if (!companyWorkspaceId || !canManageCompany) return;
+
+  const appKey = process.env.DINGTALK_APP_KEY?.trim() || '';
+  const appSecret = process.env.DINGTALK_APP_SECRET?.trim() || '';
+  const operatorUnionId = process.env.DINGTALK_UNION_ID?.trim() || '';
+  const existing = await model.findCompanyByKey(companyWorkspaceId, DingpanCompanyCredKey);
+
+  if (!existing) {
+    await model.createCompanyKV(companyWorkspaceId, {
+      description: DINGTALK_COMPANY_DESC,
+      key: DingpanCompanyCredKey,
+      name: DINGTALK_COMPANY_NAME,
+      type: 'kv-env',
+      values: {
+        DINGTALK_APP_KEY: appKey,
+        DINGTALK_APP_SECRET: appSecret,
+        DINGTALK_UNION_ID: operatorUnionId,
+      },
+    });
+    return;
+  }
+
+  if (!appKey && !appSecret && !operatorUnionId) return;
+  try {
+    const decrypted = await model.getCompany(companyWorkspaceId, existing.id, { decrypt: true });
+    const current = decrypted?.plaintext ?? {};
+    const next = { ...current };
+    let changed = false;
+    for (const k of DingpanCompanyCredEnvKeys) {
+      if (!(k in next)) {
+        next[k] = '';
+        changed = true;
+      }
+    }
+    if (!current.DINGTALK_APP_KEY?.trim() && appKey) {
+      next.DINGTALK_APP_KEY = appKey;
+      changed = true;
+    }
+    if (!current.DINGTALK_APP_SECRET?.trim() && appSecret) {
+      next.DINGTALK_APP_SECRET = appSecret;
+      changed = true;
+    }
+    if (!current.DINGTALK_UNION_ID?.trim() && operatorUnionId) {
+      next.DINGTALK_UNION_ID = operatorUnionId;
+      changed = true;
+    }
+    if (changed) {
+      await model.updateCompany(companyWorkspaceId, existing.id, { values: next });
+    }
   } catch {
     // Decrypt/update failures must not break the credentials list.
   }
@@ -452,7 +576,12 @@ export const localCredsRouter = router({
   list: localCredsProcedure.query(async ({ ctx }) => {
     // Every member gets a personal dingpan template (folder path differs per user).
     await ensurePersonalDingpanCredential(ctx.userCredentialModel);
-    // Company-shared Tavily key for web search / crawl.
+    // Company-shared DingTalk app + Tavily for web search / crawl.
+    await ensureCompanyDingTalkCredential(
+      ctx.userCredentialModel,
+      ctx.companyWorkspaceId,
+      ctx.canManageCompany,
+    );
     await ensureCompanyTavilyCredential(
       ctx.userCredentialModel,
       ctx.companyWorkspaceId,
@@ -479,6 +608,11 @@ export const localCredsRouter = router({
    */
   syncFromMcps: localCredsProcedure.mutation(async ({ ctx }) => {
     await ensurePersonalDingpanCredential(ctx.userCredentialModel);
+    await ensureCompanyDingTalkCredential(
+      ctx.userCredentialModel,
+      ctx.companyWorkspaceId,
+      ctx.canManageCompany,
+    );
     await ensureCompanyTavilyCredential(
       ctx.userCredentialModel,
       ctx.companyWorkspaceId,

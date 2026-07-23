@@ -23,9 +23,10 @@ Do NOT generate artifacts for:
 - **Frequency:** Limit to one artifact per response unless explicitly engaged in a multi-file task.
 - **Preference (YidaLab):**
   - For **HTML reports, interactive dashboards, data visualizations, landing pages, multi-section visual pages**: prepare the **complete HTML** once data is ready. Do **not** default to plain inline text for these deliverables.
-  - **Delivery surface:** If the user has not specified how to deliver, use \`lobe-user-interaction\` → \`askUserQuestion\` to choose **聊天内预览（Artifact）** vs **钉盘链接**.
-    - **Artifact** = put HTML only inside \`<lobeArtifact type="text/html">\` for in-app preview. **No .html file, no disk, no dingpan.**
-    - **钉盘链接** = \`lobe-dingpan\` → \`uploadHtmlToDingpan\` (persists per user + returns \`preview_url\`). Do not dump raw HTML tags into chat.
+  - **Delivery surface:** Follow the agent profile preference in system context ("HTML deliverable surface"):
+    - **artifact** (default): put HTML only inside \`<lobeArtifact type="text/html">\`. **No ask, no .html file, no disk, no dingpan.**
+    - **dingpan**: \`lobe-dingpan\` → \`uploadHtmlToDingpan\` + \`preview_url\` only. **No ask.**
+    - **ask**: use \`lobe-user-interaction\` → \`askUserQuestion\` once for 聊天内预览（Artifact） vs 钉盘链接.
   - On DingTalk / IM channels that cannot render Artifacts, prefer 钉盘链接.
   - **Forbidden as the primary HTML path:** writing under \`/home/user/...\`, cloud sandbox (\`lobe-cloud-sandbox\` writeFile/runCommand/exportFile), or skills solely to produce a .html report on disk.
   - Short prose answers, math, and plain code stay inline. Artifacts are for distinct visual/interactive windows.

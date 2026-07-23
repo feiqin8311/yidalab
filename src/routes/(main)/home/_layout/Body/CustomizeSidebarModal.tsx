@@ -65,12 +65,15 @@ const ALL_SIDEBAR_ITEMS: SidebarItemConfig[] = [
   { id: 'community', labelKey: 'tab.community', routeId: 'community' },
   { id: 'resource', labelKey: 'tab.resource', routeId: 'resource' },
   { id: 'memory', labelKey: 'tab.memory', routeId: 'memory' },
+  { id: 'feedback', labelKey: 'tab.feedback', routeId: 'feedback' },
 ];
 
-export const getAvailableSidebarItems = (_isWorkspaceMode: boolean): SidebarItemConfig[] =>
+export const getAvailableSidebarItems = (isWorkspaceMode: boolean): SidebarItemConfig[] =>
   ALL_SIDEBAR_ITEMS.filter((item) => {
     // Always show Memory (personal + workspace). Keep private personal-only.
     if (item.id === 'private') return false;
+    // Feedback is company-scoped only.
+    if (item.id === 'feedback') return isWorkspaceMode;
     return true;
   });
 

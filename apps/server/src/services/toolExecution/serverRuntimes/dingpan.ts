@@ -1,48 +1,29 @@
-import { DingpanManifest, DingpanPersonalCredKey } from '@lobechat/builtin-tool-dingpan';
+import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
 import {
   type DingpanDocumentBridge,
   DingpanExecutionRuntime,
 } from '@lobechat/builtin-tool-dingpan/executionRuntime';
 import type { LobeChatDatabase } from '@lobechat/database';
 
-import { UserCredentialModel } from '@/database/models/userCredential';
+import { UserModel } from '@/database/models/user';
 import { DocumentService } from '@/server/services/document';
+import { withVaultCredEnv } from '@/server/utils/withVaultCredEnv';
 
 import { type ServerRuntimeRegistration } from './types';
 
-/**
- * Inject **personal** dingpan credential into process.env for this call.
- * Each user has their own folder path (DINGTALK_FOLDER_LINK etc.) under
- * personal credential key `dingtalk-dingpan`. Deploy/.env still wins if set.
- */
-const withPersonalDingpanCredEnv = async <T>(
-  userId: string | undefined,
+const resolveUserDisplayName = async (
   serverDB: LobeChatDatabase | undefined,
-  fn: () => Promise<T>,
-): Promise<T> => {
-  if (!userId || !serverDB) return fn();
-
+  userId: string | undefined,
+): Promise<string | undefined> => {
+  if (!serverDB || !userId) return undefined;
   try {
-    const model = new UserCredentialModel(serverDB, userId);
-    const personal = await model.listDecryptedKvEnv(null);
-
-    // Prefer the dedicated dingpan credential; fall back to other personal kv-env keys.
-    const dingpan = personal.find((b) => b.key === DingpanPersonalCredKey);
-    const ordered = dingpan
-      ? [dingpan, ...personal.filter((b) => b.key !== DingpanPersonalCredKey)]
-      : personal;
-
-    for (const bundle of ordered) {
-      for (const [k, v] of Object.entries(bundle.values)) {
-        if (!v?.trim()) continue;
-        if (!process.env[k]?.trim()) process.env[k] = v;
-      }
-    }
+    const row = await UserModel.findById(serverDB, userId);
+    const name =
+      row?.username?.trim() || [row?.firstName, row?.lastName].filter(Boolean).join('').trim();
+    return name || undefined;
   } catch {
-    // Missing table / decrypt failure: still try with process env only.
+    return undefined;
   }
-
-  return fn();
 };
 
 const createDocumentBridge = (
@@ -108,22 +89,24 @@ export const dingpanRuntime: ServerRuntimeRegistration = {
     const baseRuntime = new DingpanExecutionRuntime({ documentBridge: bridge });
 
     return {
+      // Company `dingtalk` (APP_KEY/SECRET) + personal `dingtalk-dingpan` (folder/id).
       dingpanStatus: async (args: any) =>
-        withPersonalDingpanCredEnv(context.userId, context.serverDB, () =>
-          baseRuntime.dingpanStatus(args),
-        ),
+        withVaultCredEnv(context.userId, context.serverDB, () => baseRuntime.dingpanStatus(args)),
       uploadHtmlToDingpan: async (args: any) =>
-        withPersonalDingpanCredEnv(context.userId, context.serverDB, () =>
-          baseRuntime.uploadHtmlToDingpan({
+        withVaultCredEnv(context.userId, context.serverDB, async () => {
+          const injectedUserName =
+            (typeof args?.userName === 'string' && args.userName.trim()) ||
+            (await resolveUserDisplayName(context.serverDB, context.userId));
+          return baseRuntime.uploadHtmlToDingpan({
             ...args,
             // Prefer explicit arg; fall back to agent context topic when present.
             topicId: args?.topicId ?? context.topicId,
-          }),
-        ),
+            // Human user display name for filename (not agent name).
+            userName: injectedUserName,
+          });
+        }),
       uploadToDingpan: async (args: any) =>
-        withPersonalDingpanCredEnv(context.userId, context.serverDB, () =>
-          baseRuntime.uploadToDingpan(args),
-        ),
+        withVaultCredEnv(context.userId, context.serverDB, () => baseRuntime.uploadToDingpan(args)),
     };
   },
   identifier: DingpanManifest.identifier,

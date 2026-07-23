@@ -50,6 +50,7 @@ export const WORKSPACE_SETTINGS_TABS: ReadonlySet<string> = new Set([
   'profile',
   'provider',
   'proxy',
+  'recommended-examples',
   'referral',
   'service-model',
   'skill',

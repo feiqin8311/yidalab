@@ -4,6 +4,7 @@ import { Form } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import HtmlDeliveryModeControl from './HtmlDeliveryMode';
 import OpeningMessage from './OpeningMessage';
 import OpeningQuestions from './OpeningQuestions';
 
@@ -33,6 +34,12 @@ const AgentOpening = memo(() => {
           children: <OpeningQuestions />,
           desc: t('settingOpening.openingQuestions.desc'),
           label: t('settingOpening.openingQuestions.title'),
+          layout: 'vertical',
+          wrapperCol,
+        },
+        {
+          children: <HtmlDeliveryModeControl />,
+          label: t('settingOpening.htmlDeliveryMode.title'),
           layout: 'vertical',
           wrapperCol,
         },

@@ -11,6 +11,7 @@ import { useEffectiveAgentMode } from '../hooks/useEffectiveAgentMode';
 import { useChatInputStore } from '../store';
 import ApprovalMode from './ApprovalMode';
 import ModeSelector from './ModeSelector';
+import PlanModeToggle from './PlanModeToggle';
 import WorkspaceControls from './WorkspaceControls';
 
 const styles = createStaticStyles(({ css }) => ({
@@ -63,6 +64,7 @@ const ControlBar = memo(() => {
       {/* Left: chat-mode switcher + (agent-only) execution device + working directory */}
       <Flexbox horizontal align={'center'} className={styles.leftGroup} gap={4}>
         <ModeSelector />
+        <PlanModeToggle />
         {isAgentRuntimeMode && <WorkspaceControls agentId={agentId} />}
       </Flexbox>
 
