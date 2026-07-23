@@ -46,7 +46,7 @@ Per-upload override: folderLink, or spaceId + folderId (date subfolder still app
 
 <apis>
 - **uploadToDingpan**: Upload filePath (absolute, on the execution host). Optional uploadName, folderLink, spaceId, folderId. Files land under today's date folder.
-- **uploadHtmlToDingpan**: Upload HTML string and/or documentId. Pass asin/site/taskType/… for the standard name. Returns preview_url + document_id.
+- **uploadHtmlToDingpan**: Upload HTML string and/or documentId. Pass asin/site/taskType/… for the standard name. Returns preview_url + document_id. Only report success when tool JSON has success=true and preview_url; never invent a substitute URL.
 - **dingpanStatus**: Check whether app credentials and default folder are configured (does not print secrets).
 </apis>
 

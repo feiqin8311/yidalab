@@ -140,39 +140,45 @@ export class DingpanExecutionRuntime {
         };
       }
 
-      // Persist before upload when no document yet — source of truth for audit.
+      // Optional audit doc — never block dingpan upload if document write hangs/fails.
       if (!documentId && this.documentBridge) {
-        const stamp = new Date()
-          .toISOString()
-          .replaceAll(/[-:TZ.]/g, '')
-          .slice(0, 14);
-        const created = await this.documentBridge.createDeliverableDocument({
-          content: html,
-          title: title || `report-${stamp}`,
-          topicId: args.topicId,
-        });
-        documentId = created.id;
+        try {
+          const stamp = new Date()
+            .toISOString()
+            .replaceAll(/[-:TZ.]/g, '')
+            .slice(0, 14);
+          const created = await this.documentBridge.createDeliverableDocument({
+            content: html,
+            title: title || `report-${stamp}`,
+            topicId: args.topicId,
+          });
+          documentId = created.id;
+        } catch (error) {
+          console.error('[Dingpan] createDeliverableDocument failed; continue upload', error);
+        }
       }
 
       const result = await uploadHtmlBytes({
         asin: args.asin,
-        folderId: args.folderId,
-        folderLink: args.folderLink,
+        // Empty strings from the model must not override vault defaults.
+        folderId: args.folderId?.trim() || undefined,
+        folderLink: args.folderLink?.trim() || undefined,
         html,
         keyword: args.keyword,
         productName: args.productName,
         site: args.site,
-        spaceId: args.spaceId,
+        spaceId: args.spaceId?.trim() || undefined,
         taskType: args.taskType,
         // Prefer structured naming; only pass free-form uploadName when the caller set it.
         // Do not fall back to document title (avoids random titles / legacy agent names).
-        uploadName: args.uploadName,
+        uploadName: args.uploadName?.trim() || undefined,
         userName: args.userName,
       });
 
       if (!result.previewUrl) {
         return {
           content: `Upload committed but no preview URL (fileId missing). name=${result.name}`,
+          error: { message: 'Missing preview URL', type: 'DingpanUploadError' },
           success: false,
         };
       }
@@ -213,9 +219,12 @@ export class DingpanExecutionRuntime {
         success: true,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message =
+        (error instanceof Error ? error.message : String(error)).trim() ||
+        'Dingpan upload failed with an unknown error';
       return {
-        content: message,
+        // Never return empty content — empty tool results make the model invent fake URLs.
+        content: `Dingpan upload failed: ${message}`,
         error: { message, type: 'DingpanUploadError' },
         success: false,
       };

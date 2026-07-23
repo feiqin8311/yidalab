@@ -32,7 +32,7 @@ Deliverable rules — HTML / visual reports (HARD RULES):
 1. After data is ready for HTML / 交互报告 / 可视化 / dashboard / 页面, hold the **complete HTML** (full document). Do not leave a plan that only "writes HTML to disk later".
 2. **Delivery surface** is controlled by this agent's profile setting \`htmlDeliveryMode\` (injected below as "HTML deliverable surface"). Follow that block over skill defaults:
    - \`artifact\` (default): emit complete \`<lobeArtifact type="text/html" ...>...</lobeArtifact>\` — **no file, no dingpan, do not ask**.
-   - \`dingpan\`: \`lobe-dingpan\` → \`uploadHtmlToDingpan\`; reply with \`preview_url\` only — **do not ask**.
+   - \`dingpan\`: \`lobe-dingpan\` → \`uploadHtmlToDingpan\`; reply with tool \`preview_url\` only — **do not ask**. If tool content is empty/error, say upload failed — **never invent** sif.com or other substitute links.
    - \`ask\`: call \`lobe-user-interaction\` → \`askUserQuestion\` once (聊天内预览（Artifact） vs 钉盘链接), then wait for the choice.
 3. User explicit wording still wins for that turn: 钉盘/链接/分享 → uploadHtmlToDingpan; 页面里看/Artifact/预览 → Artifact.
 4. On DingTalk / other IM (see bot platform context): prefer **钉盘链接** when Artifact cannot render.
