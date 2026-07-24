@@ -1,0 +1,94 @@
+# Pull GHCR image with GITHUB_TOKEN and load it onto the prod host via SSH.
+# Needed when the server has no read:packages PAT yet.
+#
+# Secrets:
+#   PROD_SSH_HOST     e.g. 116.205.229.31
+#   PROD_SSH_USER     e.g. root
+#   PROD_SSH_PASSWORD password or use PROD_SSH_KEY instead
+#   PROD_SSH_KEY      optional private key (preferred over password)
+name: YidaLab Prod Deploy (GHCR → server)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GHCR tag to deploy
+        required: true
+        default: prod
+
+permissions:
+  packages: read
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          REF="${IMAGE}:${TAG}"
+          echo "pull $REF"
+          docker pull "$REF"
+          docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
+          echo "REF=$REF" >> "$GITHUB_ENV"
+
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      - name: Stream image to server and restart
+        env:
+          HOST: ${{ secrets.PROD_SSH_HOST }}
+          USER: ${{ secrets.PROD_SSH_USER }}
+          PASS: ${{ secrets.PROD_SSH_PASSWORD }}
+          KEY: ${{ secrets.PROD_SSH_KEY }}
+          REF: ${{ env.REF }}
+          LOCAL_TAG: yidalab:v1
+          DEPLOY_ROOT: /yida/yidalab
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOST:-}" || -z "${USER:-}" ]]; then
+            echo "::error::Set PROD_SSH_HOST and PROD_SSH_USER secrets"
+            exit 1
+          fi
+
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          if [[ -n "${KEY:-}" ]]; then
+            umask 077
+            KEYFILE="$RUNNER_TEMP/deploy_key"
+            printf '%s\n' "$KEY" > "$KEYFILE"
+            SSH=(ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+            SCP=(scp -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+          elif [[ -n "${PASS:-}" ]]; then
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
+            SCP=(sshpass -e scp "${SSH_OPTS[@]}")
+          else
+            echo "::error::Set PROD_SSH_PASSWORD or PROD_SSH_KEY"
+            exit 1
+          fi
+
+          echo "streaming $REF → ${USER}@${HOST} as $LOCAL_TAG"
+          # load + tag + compose up on remote
+          docker save "$REF" | gzip -1 | "${SSH[@]}" "${USER}@${HOST}" "
+            set -euo pipefail
+            gunzip | docker load
+            docker tag '$REF' '$LOCAL_TAG'
+            cd '$DEPLOY_ROOT'
+            docker compose up -d lobe
+            docker compose ps lobe
+            docker image inspect '$LOCAL_TAG' --format 'done id={{.Id}} created={{.Created}}'
+            curl -sI -o /dev/null -w 'http %{http_code}\n' http://127.0.0.1:3210/ || true
+          "
