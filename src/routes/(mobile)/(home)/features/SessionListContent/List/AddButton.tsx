@@ -1,37 +1,13 @@
-import { Button, Flexbox } from '@lobehub/ui';
-import { Plus } from 'lucide-react';
+'use client';
+
 import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
 
-import { useActionSWR } from '@/libs/swr';
-import { sessionKeys } from '@/libs/swr/keys';
-import { useServerConfigStore } from '@/store/serverConfig';
-import { useSessionStore } from '@/store/session';
+interface AddButtonProps {
+  groupId?: string;
+}
 
-const AddButton = memo<{ groupId?: string }>(({ groupId }) => {
-  const { t } = useTranslation('chat');
-  const createSession = useSessionStore((s) => s.createSession);
-  const mobile = useServerConfigStore((s) => s.isMobile);
-  const { mutate, isValidating } = useActionSWR(sessionKeys.createSession(groupId), () => {
-    return createSession({ group: groupId });
-  });
-
-  return (
-    <Flexbox flex={1} padding={mobile ? 16 : 0}>
-      <Button
-        block
-        icon={Plus}
-        loading={isValidating}
-        variant={'filled'}
-        style={{
-          marginTop: 8,
-        }}
-        onClick={() => mutate()}
-      >
-        {t('newAgent')}
-      </Button>
-    </Flexbox>
-  );
-});
+// Temporary product hold: agent creation is disabled for YidaLab (align desktop).
+// Mobile createSession previously spawned workspace-public "Untitled" agents.
+const AddButton = memo<AddButtonProps>(() => null);
 
 export default AddButton;

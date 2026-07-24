@@ -10,6 +10,10 @@ export interface FbaAlertJob {
   result?: {
     alert_count: number;
     fetched_count: number;
+    /** Main report dingpan preview (qr.dingtalk.com/...). */
+    preview_url?: string;
+    /** path -> preview url when multiple reports uploaded. */
+    preview_urls?: Record<string, string>;
     report_path: string;
     sid_distribution: Record<string, number>;
   } | null;

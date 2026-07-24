@@ -27,12 +27,12 @@
 
 1. 认到上表口令后，立刻调内置 tool：\
    **`lobe-fba-alert` → `runFbaAlert({ scope })`**\
-   （可选 `mode`: `self` 默认 / `dry_run` / `upload_only`）
+   （默认 `mode=upload_only`：上传钉盘并返回 `preview_url`，**不**发钉钉机器人私信；用户要 dry-run 再传 `mode=dry_run`）
 2. **禁止** `runCommand`、本地 python、设备侧脚本、OpenClaw、自拼 HTTP。
 3. **禁止** `mode=broadcast`（矩阵群发只给服务器定时任务）。
 4. 服务端配置：`FBA_ALERT_API_URL` + `FBA_ALERT_API_TOKEN`。
 
 ## 汇报
 
-- 成功：如实报 `status` / `alert_count` / `identity_source` 等；文件由 fba-bot 按该 userId 投递。
-- 失败：说清原因（未配 API、无身份、job failed），不要假装已发送。
+- 成功：在对话里给出 tool 返回的 **`preview_url`（钉盘预览链接）**，并带上 `status` / `alert_count`（与钉盘交付一致）。
+- 失败：说清原因（未配 API、job failed、限流重试仍失败等），不要假装已发送。

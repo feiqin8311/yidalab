@@ -9,15 +9,15 @@ export const FbaAlertManifest: BuiltinToolManifest = {
       // FBA jobs can take several minutes (Lingxing fetch + Excel + DingTalk).
       defaultTimeoutMs: 600_000,
       description:
-        'Run company inventory alert (LIBRATON→all, EZARC→ezarc, YPLUS→yplus). Server injects current user DingTalk id; only that person is notified. Pass scope only; never pass user ids. No site menu.',
+        'Run company inventory alert (LIBRATON→all, EZARC→ezarc, YPLUS→yplus). Default upload_only: upload Excel to 钉盘 and return preview_url (no robot notify). Pass scope only; never pass user ids. No site menu.',
       name: FbaAlertApiName.runFbaAlert,
       parameters: {
         additionalProperties: false,
         properties: {
           mode: {
             description:
-              'self (default): notify only the resolved current user. dry_run: generate report, no DingTalk send. upload_only: dingpan upload without robot messages.',
-            enum: ['self', 'dry_run', 'upload_only'],
+              'upload_only (default): dingpan upload + preview_url, no robot message. dry_run: generate report only. self: also DingTalk-notify resolved user (rare).',
+            enum: ['upload_only', 'dry_run', 'self'],
             type: 'string',
           },
           scope: {

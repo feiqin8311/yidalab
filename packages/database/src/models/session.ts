@@ -245,6 +245,12 @@ export class SessionModel {
         return result[0];
       }
 
+      // YidaLab / company workspace: default new agents to private so they never
+      // leak into every member's sidebar (mobile createSession used to hit DB
+      // default visibility=public with an empty title).
+      const agentVisibility =
+        (config as Partial<NewAgent>).visibility === 'public' ? 'public' : 'private';
+
       const newAgents = await trx
         .insert(agents)
         .values(
@@ -271,6 +277,7 @@ export class SessionModel {
               title,
               tts: tts || {},
               updatedAt: new Date(),
+              visibility: agentVisibility,
             },
           ),
         )
@@ -342,8 +349,7 @@ export class SessionModel {
 
     if (!result) return;
 
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    const { agent, clientId, ...session } = result;
+    const { agent, clientId: _clientId, ...session } = result;
     const sessionId = this.genId();
 
     const { id: _, slug: __, ...config } = agent;

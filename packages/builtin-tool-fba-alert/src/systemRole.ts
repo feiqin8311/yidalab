@@ -7,8 +7,11 @@ Fixed phrases — run immediately, no site menu:
 - 「EZARC库存预警」 → \`runFbaAlert({ scope: "ezarc" })\`
 - 「YPLUS库存预警」 → \`runFbaAlert({ scope: "yplus" })\`
 
-Default \`mode\` is \`self\`: server injects the current person's DingTalk userId (IM sender, or Web channel Owner). Use \`mode=dry_run\` only when the user asks not to send DingTalk.
+**Default mode is \`upload_only\`**: server uploads the Excel to 钉盘 and returns \`preview_url\` in the tool result (same as dingpan delivery). Do **not** expect a separate DingTalk robot private message for YidaLab chat.
 
-Do not pass user ids. Do not runCommand / OpenClaw / broadcast. Report status honestly.
+- Only pass \`mode=dry_run\` when the user asks not to upload / not to send.
+- Only pass \`mode=self\` if the product explicitly needs robot notify (rare); never invent user ids.
+- Do not runCommand / OpenClaw / broadcast.
+- On success, reply with the \`preview_url\` link (and alert_count / status). If the tool is slow, wait — rate-limit backoff may retry automatically.
 </fba_alert>
 `;

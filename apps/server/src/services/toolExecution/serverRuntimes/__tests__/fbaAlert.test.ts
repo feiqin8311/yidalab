@@ -26,27 +26,24 @@ describe('fbaAlertRuntime', () => {
     expect(runPersonalFbaAlert).not.toHaveBeenCalled();
   });
 
-  it('calls runPersonalFbaAlert with scope and botContext', async () => {
+  it('defaults to upload_only and surfaces preview_url like dingpan delivery', async () => {
     runPersonalFbaAlert.mockResolvedValue({
-      identitySource: 'dingtalk_sender',
+      identitySource: 'none',
       job: {
         job_id: 'j1',
-        result: { alert_count: 3, fetched_count: 10, report_path: 'r.xlsx', sid_distribution: {} },
+        result: {
+          alert_count: 3,
+          fetched_count: 10,
+          preview_url: 'https://qr.dingtalk.com/page/yunpan?fileId=f1',
+          report_path: 'r.xlsx',
+          sid_distribution: {},
+        },
         status: 'done',
       },
     });
 
-    const botContext = {
-      applicationId: 'app',
-      isOwner: false,
-      platform: 'dingtalk',
-      platformThreadId: 't',
-      senderExternalUserId: 'sender-1',
-    };
-
     const runtime = fbaAlertRuntime.factory({
       agentId: 'agt_1',
-      botContext,
       serverDB: {} as any,
       toolManifestMap: {},
       userId: 'user_1',
@@ -58,8 +55,7 @@ describe('fbaAlertRuntime', () => {
     expect(runPersonalFbaAlert).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: 'agt_1',
-        botContext,
-        mode: 'self',
+        mode: 'upload_only',
         scope: 'us',
         userId: 'user_1',
         wait: true,
@@ -67,6 +63,8 @@ describe('fbaAlertRuntime', () => {
       }),
     );
     expect(result.content).toContain('"alert_count": 3');
-    expect(result.content).toContain('dingtalk_sender');
+    expect(result.content).toContain('preview_url');
+    expect(result.content).toContain('qr.dingtalk.com');
+    expect((result.state as { previewUrl?: string })?.previewUrl).toContain('fileId=f1');
   });
 });

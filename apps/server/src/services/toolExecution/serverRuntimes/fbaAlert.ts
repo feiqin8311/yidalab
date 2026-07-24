@@ -43,10 +43,12 @@ export const fbaAlertRuntime: ServerRuntimeRegistration = {
         );
       }
 
-      const modeRaw = (args?.mode ?? 'self').trim().toLowerCase();
+      // Default upload_only: dingpan link in tool result, no DingTalk robot notify.
+      // dry_run / self only when the model (or user) explicitly asks.
+      const modeRaw = (args?.mode ?? 'upload_only').trim().toLowerCase();
       if (!MODES.has(modeRaw as 'self')) {
         return fail(
-          `Invalid mode "${args?.mode}". Use self | dry_run | upload_only`,
+          `Invalid mode "${args?.mode}". Use upload_only | dry_run | self`,
           'INVALID_MODE',
         );
       }
@@ -57,7 +59,7 @@ export const fbaAlertRuntime: ServerRuntimeRegistration = {
       }
       if (!context.agentId) {
         return fail(
-          'Missing agentId in tool context (needed for channel Owner fallback)',
+          'Missing agentId in tool context (needed for channel Owner fallback when mode=self)',
           'NO_AGENT',
         );
       }
@@ -81,16 +83,22 @@ export const fbaAlertRuntime: ServerRuntimeRegistration = {
           );
         }
 
+        const previewUrl = String(job.result?.preview_url ?? '').trim();
+        // Match lobe-dingpan delivery shape so UI / model can surface the link.
         const summary = {
           alert_count: job.result?.alert_count,
           fetched_count: job.result?.fetched_count,
           identity_source: identitySource,
           job_id: job.job_id,
           mode,
+          preview_url: previewUrl || undefined,
+          previewUrl: previewUrl || undefined,
+          preview_urls: job.result?.preview_urls,
           report_path: job.result?.report_path,
           scope,
           sid_distribution: job.result?.sid_distribution,
           status: job.status,
+          success: true,
         };
 
         return {

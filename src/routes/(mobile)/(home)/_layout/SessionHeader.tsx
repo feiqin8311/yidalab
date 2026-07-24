@@ -1,21 +1,22 @@
 'use client';
 
-import { ActionIcon, Flexbox } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
 import { ChatHeader } from '@lobehub/ui/mobile';
-import { MessageSquarePlus } from 'lucide-react';
 import { memo } from 'react';
 import { useNavigate } from 'react-router';
 
 import { ProductLogo } from '@/components/Branding';
-import { MOBILE_HEADER_ICON_SIZE } from '@/const/layoutTokens';
 import UserAvatar from '@/features/User/UserAvatar';
-import { useSessionStore } from '@/store/session';
 import { mobileHeaderSticky } from '@/styles/mobileHeader';
 
 import { styles } from './SessionHeader/style';
 
+/**
+ * Temporary product hold: agent creation is disabled for YidaLab (same as desktop
+ * CreateAgentButton). Mobile used to call createSession() here, which created a
+ * workspace-public empty-title agent visible to all company members.
+ */
 const Header = memo(() => {
-  const [createSession] = useSessionStore((s) => [s.createSession]);
   const navigate = useNavigate();
 
   return (
@@ -26,13 +27,6 @@ const Header = memo(() => {
           <UserAvatar size={32} onClick={() => navigate('/me')} />
           <ProductLogo type={'text'} />
         </Flexbox>
-      }
-      right={
-        <ActionIcon
-          icon={MessageSquarePlus}
-          size={MOBILE_HEADER_ICON_SIZE}
-          onClick={() => createSession()}
-        />
       }
     />
   );

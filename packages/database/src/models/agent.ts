@@ -886,6 +886,9 @@ export class AgentModel {
           {
             ...config,
             model: typeof config.model === 'string' ? config.model : null,
+            // Prefer explicit visibility; otherwise private so company members
+            // do not all inherit a newly created agent (DB column default is public).
+            visibility: config.visibility ?? 'private',
           },
         ),
       ])

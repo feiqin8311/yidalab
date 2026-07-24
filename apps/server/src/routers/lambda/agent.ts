@@ -96,8 +96,9 @@ export const agentRouter = router({
         sessionGroupId: input.groupId,
         // Router-level `visibility` wins over any nested config value so the
         // sidebar's "Create in Private" entry can't be overridden by a stale
-        // default config.
-        ...(input.visibility ? { visibility: input.visibility } : {}),
+        // default config. When omitted, default private (company workspace
+        // must not publish empty "Untitled" agents to every member).
+        visibility: input.visibility ?? input.config?.visibility ?? 'private',
       });
 
       return { agentId: agent.id };
