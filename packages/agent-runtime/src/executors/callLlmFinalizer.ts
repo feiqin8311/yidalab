@@ -18,6 +18,7 @@ import type {
   InstructionExecutionResult,
 } from '../types';
 import { applyDingpanDeliveryClaimGuard } from '../utils/deliveryClaimGuard';
+import { applyMcpAvailabilityClaimGuard } from '../utils/mcpAvailabilityClaimGuard';
 import { applyMaxTotalTokensBrake } from '../utils/runBrakes';
 
 export const VISIBLE_OUTPUT_END_PUBLISHED_STEP_INDEX_METADATA_KEY =
@@ -115,7 +116,9 @@ const sanitizeStateToolCalls = (toolCalls: MessageToolCall[]) => {
 };
 
 /**
- * Guard plain-text finals only (delivery claims must match dingpan tool results).
+ * Guard plain-text finals only:
+ * - delivery claims must match dingpan tool results
+ * - MCP "key expired / unavailable" claims require actual MCP API traffic
  * Multimodal answers keep `output.content` for in-memory state; persistence may
  * still serialize contentParts separately.
  */
@@ -129,7 +132,8 @@ const resolveGuardedPlainContent = ({
   const raw = typeof output.content === 'string' ? output.content : '';
   if (output.hasContentImages) return raw;
   if (output.toolsCalling.length > 0 || output.toolCalls.length > 0) return raw;
-  return applyDingpanDeliveryClaimGuard(raw, state.messages as any[]);
+  const messages = state.messages as any[];
+  return applyMcpAvailabilityClaimGuard(applyDingpanDeliveryClaimGuard(raw, messages), messages);
 };
 
 const persistFinalMessage = async ({
