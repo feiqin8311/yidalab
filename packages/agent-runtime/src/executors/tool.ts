@@ -4,11 +4,28 @@ import { UsageCounter } from '../core';
 import type { AgentRuntimeHost, ToolRunContext, ToolRunResult } from '../transport';
 import type { AgentEvent, AgentInstruction, AgentState, InstructionExecutor } from '../types';
 import {
+  applyMcpAvailabilityClaimGuard,
   applyToolFailStreakBrake,
   extractActivatedSkillsFromMessages,
   extractToolErrorMessage,
   normalizeEmptyToolContent,
 } from '../utils';
+
+/** Scrub false MCP-unavailable claims inside HTML before dingpan upload. */
+const scrubDingpanHtmlToolArgs = (tool: ChatToolPayload, state: AgentState): ChatToolPayload => {
+  if (tool.identifier !== 'lobe-dingpan') return tool;
+  if (tool.apiName !== 'uploadHtmlToDingpan') return tool;
+
+  try {
+    const args = JSON.parse(tool.arguments || '{}') as Record<string, unknown>;
+    if (typeof args.html !== 'string' || !args.html) return tool;
+    const guarded = applyMcpAvailabilityClaimGuard(args.html, state.messages as any[]);
+    if (guarded === args.html) return tool;
+    return { ...tool, arguments: JSON.stringify({ ...args, html: guarded }) };
+  } catch {
+    return tool;
+  }
+};
 
 const TOOL_EXECUTION_PHASE = 'tool_execution';
 const TOOL_MESSAGE_PERSIST_PHASE = 'tool_message_persist';
@@ -308,7 +325,7 @@ export const callTool =
   async (instruction, state) => {
     const { payload } = instruction as Extract<AgentInstruction, { type: 'call_tool' }>;
     const tools = requireToolTransport(host);
-    const tool = payload.toolCalling;
+    const tool = scrubDingpanHtmlToolArgs(payload.toolCalling, state);
     const events: AgentEvent[] = [];
     const runContext = createRunContext({
       host,
@@ -319,7 +336,7 @@ export const callTool =
     });
 
     await host.transports.stream.publishEvent({
-      data: payload,
+      data: { ...payload, toolCalling: tool },
       stepIndex: host.operation.stepIndex,
       type: 'tool_start',
     });
@@ -505,7 +522,8 @@ export const callToolsBatch =
     const toolsToExecute = serverTools.length > 0 ? serverTools : toolsCalling;
 
     await Promise.all(
-      toolsToExecute.map(async (tool) => {
+      toolsToExecute.map(async (rawTool) => {
+        const tool = scrubDingpanHtmlToolArgs(rawTool, state);
         const runContext = createRunContext({ host, mode: 'batch', parentMessageId, state, tool });
 
         await host.transports.stream.publishEvent({

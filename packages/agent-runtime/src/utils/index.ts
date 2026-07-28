@@ -1,5 +1,6 @@
 export * from './deliveryClaimGuard';
 export * from './llmErrorClassifier';
+export * from './mcpAvailabilityClaimGuard';
 export * from './messageSelectors';
 export * from './replay';
 export * from './runBrakes';
