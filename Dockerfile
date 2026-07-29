@@ -73,9 +73,10 @@ ENV NEXT_PUBLIC_ANALYTICS_UMAMI="${NEXT_PUBLIC_ANALYTICS_UMAMI}" \
     NEXT_PUBLIC_UMAMI_SCRIPT_URL="${NEXT_PUBLIC_UMAMI_SCRIPT_URL}" \
     NEXT_PUBLIC_UMAMI_WEBSITE_ID="${NEXT_PUBLIC_UMAMI_WEBSITE_ID}"
 
-# Node
+# Node / CI (pnpm must not prompt to purge modules in Docker)
 ENV NODE_OPTIONS="--max-old-space-size=8192" \
-    PNPM_STORE_DIR="/pnpm/store"
+    PNPM_STORE_DIR="/pnpm/store" \
+    CI="true"
 
 WORKDIR /app
 
@@ -96,11 +97,12 @@ RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
     corepack enable && \
     corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json) && \
     pnpm config set store-dir /pnpm/store && \
+    pnpm config set confirmModulesPurge false && \
     pnpm i && \
     mkdir -p /deps && \
     cd /deps && \
     echo '{"name":"deps","private":true}' > package.json && \
-    pnpm add pg drizzle-orm
+    pnpm add --ignore-workspace pg drizzle-orm
 
 COPY . .
 
