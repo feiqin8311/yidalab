@@ -18,11 +18,31 @@ export interface DingTalkRobotMessage {
   createAt?: number;
   msgId: string;
   msgtype: string;
+  /**
+   * Encrypted sender id from DingTalk. Always present, but **not** the
+   * enterprise `userid` operators copy from the admin console / free-login.
+   * Prefer {@link senderStaffId} for allowlist / owner identity.
+   */
   senderId: string;
   senderNick?: string;
+  /**
+   * Enterprise staff userid (钉钉 userid). Present on org-internal robots.
+   * This is what operators put in `settings.userId` / `allowFrom` — match it.
+   */
+  senderStaffId?: string;
   sessionWebhook: string;
   sessionWebhookExpiredTime?: number;
   text?: { content?: string };
+}
+
+/** Platform identity used for allowFrom / owner gates. Prefer staff userid. */
+export function resolveDingTalkAuthorUserId(raw: {
+  senderId?: string;
+  senderStaffId?: string;
+}): string {
+  const staff = raw.senderStaffId?.trim();
+  if (staff) return staff;
+  return (raw.senderId ?? '').trim();
 }
 
 const fallbackWebhooks = new Map<string, { expiresAt: number; url: string }>();
@@ -76,15 +96,18 @@ export class DingTalkAdapter {
       conversationType: raw.conversationType,
     });
     const text = raw.text?.content?.trim() ?? '';
+    // allowFrom / settings.userId are enterprise userids → prefer senderStaffId
+    const userId = resolveDingTalkAuthorUserId(raw);
+    const display = raw.senderNick ?? userId;
 
     return new Message({
       attachments: [],
       author: {
-        fullName: raw.senderNick ?? raw.senderId,
+        fullName: display,
         isBot: false,
         isMe: false,
-        userId: raw.senderId,
-        userName: raw.senderNick ?? raw.senderId,
+        userId,
+        userName: display,
       },
       formatted: parseMarkdown(text),
       id: raw.msgId,
