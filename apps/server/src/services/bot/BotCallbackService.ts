@@ -2,6 +2,7 @@ import debug from 'debug';
 
 import type { MessengerPlatform } from '@/config/messenger';
 import { AgentBotProviderModel } from '@/database/models/agentBotProvider';
+import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
 import { type LobeChatDatabase } from '@/database/type';
 import { getAgentRuntimeRedisClient } from '@/server/modules/AgentRuntime/redis';
@@ -399,6 +400,22 @@ export class BotCallbackService {
     }
   }
 
+  private async recoverBotReplyContent(
+    userId: string,
+    topicId: string,
+    workspaceId?: string | null,
+  ): Promise<string | undefined> {
+    try {
+      const messageModel = new MessageModel(this.db, userId, workspaceId ?? undefined);
+      const row = await messageModel.findLatestAssistantInTopic(topicId);
+      const content = typeof row?.content === 'string' ? row.content.trim() : '';
+      return content || undefined;
+    } catch (error) {
+      log('recoverBotReplyContent failed (non-fatal): %O', error);
+      return undefined;
+    }
+  }
+
   private async handleCompletion(
     body: BotCallbackBody,
     messenger: PlatformMessenger,
@@ -456,8 +473,23 @@ export class BotCallbackService {
     // ("\n", "  ") through; those collapse to empty text downstream and get
     // rejected by Telegram as "message text is empty", silently losing the
     // reply. Trim before testing.
-    const hasText = !!lastAssistantContent?.trim();
+    let replyText = lastAssistantContent;
+    let hasText = !!replyText?.trim();
     const hasAttachments = !!attachments?.length;
+    if (!hasText && !hasAttachments && body.topicId && body.userId) {
+      const recovered = await this.recoverBotReplyContent(
+        body.userId,
+        body.topicId,
+        body.workspaceId,
+      );
+      if (recovered) {
+        replyText = recovered;
+        hasText = true;
+        console.warn(
+          `[BotCallbackService] recovered ${recovered.length} chars from topic ${body.topicId} (operationId=${operationId})`,
+        );
+      }
+    }
     if (!hasText && !hasAttachments) {
       // console (not debug) — every one of these is a user-facing "bot went
       // silent" (LOBE-11632): the run completed but the completion event
@@ -480,7 +512,7 @@ export class BotCallbackService {
     // attachment-only path still drives `deliverFirstChunk` once.
     let chunks: string[];
     if (hasText) {
-      const msgBody = renderFinalReply(lastAssistantContent!);
+      const msgBody = renderFinalReply(replyText!);
       const formattedBody = client.formatMarkdown?.(msgBody) ?? msgBody;
       const finalText = client.formatReply?.(formattedBody, stats) ?? formattedBody;
       chunks = splitMessage(finalText, charLimit);

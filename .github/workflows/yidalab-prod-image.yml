@@ -1,11 +1,10 @@
-# Build linux/amd64 production image and push to GHCR.
-# Server then: docker pull + tag yidalab:v1 + compose up (minutes, no compile).
+# Build linux/amd64 production image → GHCR, then auto-deploy to prod over SSH.
+# Server receives pre-built image (no compile). Target: warm rebuild ~8–15 min end-to-end.
 #
 # First-time:
 #   1. GitHub → Settings → Actions → General → Workflow permissions: Read and write
 #   2. After first push, Packages → yidalab → Package settings → connect to repo
-#   3. Server login: echo $GHCR_TOKEN | docker login ghcr.io -u USER --password-stdin
-#      (PAT need read:packages; or use fine-grained token)
+#   3. Secrets: PROD_SSH_HOST / PROD_SSH_USER / PROD_SSH_PASSWORD (or PROD_SSH_KEY)
 #
 # Trigger: manual, or push to main / codex/yidalab-custom
 name: YidaLab Production Image
@@ -14,9 +13,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Extra image tag (optional, in addition to sha/latest)
+        description: Extra image tag (optional, in addition to sha/prod/latest)
         required: false
         default: ''
+      skip_deploy:
+        description: Skip prod deploy after image push
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - main
@@ -27,9 +31,13 @@ on:
       - 'changelog/**'
       - 'e2e/**'
       - '.agents/**'
+      - '.claude/**'
+      - '.cursor/**'
+      - '.codex/**'
 
 concurrency:
-  group: yidalab-prod-image-${{ github.ref }}
+  # One build+deploy pipeline per branch; cancel superseded pushes
+  group: yidalab-prod-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -37,19 +45,33 @@ permissions:
   packages: write
 
 env:
-  # ghcr.io/owner/repo (lowercase required by GHCR)
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  CACHE_IMAGE: ghcr.io/${{ github.repository }}/buildcache
+  LOCAL_TAG: yidalab:v1
+  DEPLOY_ROOT: /yida/yidalab
 
 jobs:
   build-and-push:
     name: Build linux/amd64 → GHCR
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
-      digest: ${{ steps.build.outputs.digest }}
+      image_ref: ${{ steps.out.outputs.image_ref }}
+      short_sha: ${{ steps.out.outputs.short_sha }}
     steps:
+      - name: Free disk space
+        # Monorepo docker build + buildkit cache needs ~20GB free on ubuntu-latest (~14GB free by default)
+        run: |
+          set -euo pipefail
+          echo "Before:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/share/swift /usr/local/.ghcup 2>/dev/null || true
+          sudo docker system prune -af 2>/dev/null || true
+          echo "After:"
+          df -h /
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -84,13 +106,22 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # GitHub-hosted runners are overseas — official npm is fine (CN mirror can be slower there)
+          # GitHub-hosted runners are overseas — official npm is fine
           build-args: |
             USE_CN_MIRROR=false
             NEXT_PUBLIC_BASE_PATH=
-          cache-from: type=gha,scope=yidalab-prod-amd64
-          cache-to: type=gha,mode=max,scope=yidalab-prod-amd64
+          # Registry cache only (mode=min): mode=max + dual GHA cache fills runner disk on this monorepo
+          cache-from: type=registry,ref=${{ env.CACHE_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.CACHE_IMAGE }}:buildcache,mode=min,image-manifest=true,oci-mediatypes=true,ignore-error=true
           provenance: false
+
+      - name: Export image ref
+        id: out
+        run: |
+          IMAGE=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "image_ref=${IMAGE}:prod" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Summary
         run: |
@@ -101,10 +132,106 @@ jobs:
             echo "${{ steps.meta.outputs.tags }}"
             echo "\`\`\`"
             echo ""
-            echo "Server deploy:"
-            echo "\`\`\`bash"
-            echo "export GHCR_IMAGE=ghcr.io/${{ github.repository }}"
-            echo "export TAG=prod   # or sha-XXXX / latest"
-            echo "cd /yida/yidalab && ./server-pull-image.sh"
-            echo "\`\`\`"
+            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo ""
+            echo "Deploy job runs next (unless skip_deploy)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy → prod server
+    needs: build-and-push
+    if: >
+      always() &&
+      needs.build-and-push.result == 'success' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        env:
+          REF: ${{ needs.build-and-push.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          REF=$(echo "$REF" | tr '[:upper:]' '[:lower:]')
+          echo "pull $REF"
+          docker pull "$REF"
+          docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
+          echo "REF=$REF" >> "$GITHUB_ENV"
+
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      - name: Stream image to server and restart
+        env:
+          HOST: ${{ secrets.PROD_SSH_HOST }}
+          USER: ${{ secrets.PROD_SSH_USER }}
+          PASS: ${{ secrets.PROD_SSH_PASSWORD }}
+          KEY: ${{ secrets.PROD_SSH_KEY }}
+          REF: ${{ env.REF }}
+          LOCAL_TAG: ${{ env.LOCAL_TAG }}
+          DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOST:-}" || -z "${USER:-}" ]]; then
+            echo "::error::Set PROD_SSH_HOST and PROD_SSH_USER secrets"
+            exit 1
+          fi
+
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          if [[ -n "${KEY:-}" ]]; then
+            umask 077
+            KEYFILE="$RUNNER_TEMP/deploy_key"
+            printf '%s\n' "$KEY" > "$KEYFILE"
+            SSH=(ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+          elif [[ -n "${PASS:-}" ]]; then
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
+          else
+            echo "::error::Set PROD_SSH_PASSWORD or PROD_SSH_KEY"
+            exit 1
+          fi
+
+          echo "streaming $REF → ${USER}@${HOST} as $LOCAL_TAG"
+          # gzip -1: faster stream (image already compressed layers); pigz if present
+          SAVE_CMD=(docker save "$REF")
+          if command -v pigz >/dev/null 2>&1; then
+            COMPRESS=(pigz -1)
+          else
+            COMPRESS=(gzip -1)
+          fi
+
+          "${SAVE_CMD[@]}" | "${COMPRESS[@]}" | "${SSH[@]}" "${USER}@${HOST}" "
+            set -euo pipefail
+            gunzip | docker load
+            docker tag '$REF' '$LOCAL_TAG'
+            cd '$DEPLOY_ROOT'
+            # image: only — do not re-build from compose build: context
+            docker compose up -d --no-build --force-recreate lobe
+            docker compose ps lobe
+            docker image inspect '$LOCAL_TAG' --format 'done id={{.Id}} created={{.Created}}'
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/ || true)
+              echo \"health try \$i: http \$code\"
+              case \"\$code\" in 200|301|302|307|308|401|403) exit 0 ;; esac
+              sleep 3
+            done
+            echo 'warning: health check did not get a ready response (container may still be starting)'
+            exit 0
+          "
+
+      - name: Summary
+        run: |
+          {
+            echo "## Deployed to prod"
+            echo ""
+            echo "- image: \`${{ env.REF }}\`"
+            echo "- host: \`${{ secrets.PROD_SSH_HOST }}\`"
+            echo "- local tag: \`${{ env.LOCAL_TAG }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

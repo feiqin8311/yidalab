@@ -12,7 +12,7 @@ testProvider({
   provider,
   defaultBaseURL,
   chatDebugEnv: 'DEBUG_VOLCENGINE_CODING_PLAN_CHAT_COMPLETION',
-  chatModel: 'doubao-seed-code',
+  chatModel: 'doubao-seed-2.1-turbo',
   test: {
     skipAPICall: true,
   },

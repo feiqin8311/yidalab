@@ -5,6 +5,7 @@ import debug from 'debug';
 
 import type { MessengerPlatform } from '@/config/messenger';
 import { AgentBotProviderModel } from '@/database/models/agentBotProvider';
+import { MessageModel } from '@/database/models/message';
 import { TopicModel } from '@/database/models/topic';
 import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
@@ -1279,7 +1280,24 @@ export class AgentBridgeService {
                 }
 
                 try {
-                  const lastAssistantContent = event.lastAssistantContent;
+                  // Prefer hook payload; recover from DB when Redis state emptied
+                  // the final assistant turn (LOBE-11632) — otherwise IM bots show
+                  // generic "Agent Execution Failed" while the app already has the reply.
+                  let lastAssistantContent = event.lastAssistantContent;
+                  if (!lastAssistantContent?.trim()) {
+                    const recovered = await this.recoverBotReplyContent({
+                      assistantMessageId: event.assistantMessageId as string | undefined,
+                      topicId: resolvedTopicId || (event.topicId as string | undefined),
+                    });
+                    if (recovered) {
+                      lastAssistantContent = recovered;
+                      log(
+                        'executeWithCallback[local]: recovered %d chars from DB for operationId=%s',
+                        recovered.length,
+                        event.operationId,
+                      );
+                    }
+                  }
                   // Convert hook-event attachments (JSON-safe) to chat-sdk
                   // Attachment shape. Only the *last* chunk carries
                   // attachments so a multi-chunk reply doesn't repeat the
@@ -1287,7 +1305,7 @@ export class AgentBridgeService {
                   const lastChunkAttachments = hookEventAttachmentsToChatSdk(
                     event.attachments as any,
                   );
-                  const hasText = !!lastAssistantContent;
+                  const hasText = !!lastAssistantContent?.trim();
                   const hasAttachments = !!lastChunkAttachments?.length;
 
                   if (hasText || hasAttachments) {
@@ -1335,7 +1353,22 @@ export class AgentBridgeService {
                         }
                       }
                     } catch (error) {
+                      // Delivery failure (e.g. DingTalk sessionWebhook expired)
+                      // must not surface as "Agent Execution Failed" — the run
+                      // already succeeded and content is in the topic.
+                      const msg = error instanceof Error ? error.message : String(error);
+                      console.error(
+                        `[AgentBridge] final reply delivery failed (content preserved in topic): ${msg}`,
+                      );
                       log('executeWithCallback[local]: failed to send final message: %O', error);
+                      try {
+                        const hint = /session webhook has expired|webhook/i.test(msg)
+                          ? '回复已生成，但钉钉会话通道已过期。请在 Web 查看完整结果，或再发一条消息继续。'
+                          : '回复已生成，但推送到当前会话失败。请在 Web 查看完整结果，或再发一条消息。';
+                        await thread.post({ markdown: hint });
+                      } catch {
+                        // webhook may already be dead — ignore
+                      }
                     }
 
                     log(
@@ -1381,7 +1414,12 @@ export class AgentBridgeService {
                     return;
                   }
 
-                  reject(new Error('Agent completed but no response content found'));
+                  // Still empty after DB recovery: resolve (not reject) so
+                  // handleMention does not post generic Execution Failed.
+                  console.error(
+                    `[AgentBridge] completion had no deliverable content (operationId=${event.operationId}, topicId=${resolvedTopicId})`,
+                  );
+                  resolve({ reply: '', topicId: resolvedTopicId });
                 } catch (error) {
                   reject(error);
                 }
@@ -1500,6 +1538,31 @@ export class AgentBridgeService {
           resolve({ reply: '', topicId: topicId ?? '' });
         });
     });
+  }
+
+  /**
+   * Recover final assistant text when the completion hook arrives empty.
+   * Prefers the turn's message id, then latest assistant row in the topic.
+   */
+  private async recoverBotReplyContent(params: {
+    assistantMessageId?: string;
+    topicId?: string;
+  }): Promise<string | undefined> {
+    const { assistantMessageId, topicId } = params;
+    if (!assistantMessageId && !topicId) return undefined;
+
+    try {
+      const messageModel = new MessageModel(this.db, this.userId, this.workspaceId);
+      let row = assistantMessageId ? await messageModel.findById(assistantMessageId) : undefined;
+      if ((!row || typeof row.content !== 'string' || !row.content.trim()) && topicId) {
+        row = await messageModel.findLatestAssistantInTopic(topicId);
+      }
+      const content = typeof row?.content === 'string' ? row.content.trim() : '';
+      return content || undefined;
+    } catch (error) {
+      log('recoverBotReplyContent failed (non-fatal): %O', error);
+      return undefined;
+    }
   }
 
   /**

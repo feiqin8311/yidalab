@@ -18,11 +18,31 @@ export interface DingTalkRobotMessage {
   createAt?: number;
   msgId: string;
   msgtype: string;
+  /**
+   * Encrypted sender id from DingTalk. Always present, but **not** the
+   * enterprise `userid` operators copy from the admin console / free-login.
+   * Prefer {@link senderStaffId} for allowlist / owner identity.
+   */
   senderId: string;
   senderNick?: string;
+  /**
+   * Enterprise staff userid (钉钉 userid). Present on org-internal robots.
+   * This is what operators put in `settings.userId` / `allowFrom` — match it.
+   */
+  senderStaffId?: string;
   sessionWebhook: string;
   sessionWebhookExpiredTime?: number;
   text?: { content?: string };
+}
+
+/** Platform identity used for allowFrom / owner gates. Prefer staff userid. */
+export function resolveDingTalkAuthorUserId(raw: {
+  senderId?: string;
+  senderStaffId?: string;
+}): string {
+  const staff = raw.senderStaffId?.trim();
+  if (staff) return staff;
+  return (raw.senderId ?? '').trim();
 }
 
 const fallbackWebhooks = new Map<string, { expiresAt: number; url: string }>();
@@ -76,15 +96,18 @@ export class DingTalkAdapter {
       conversationType: raw.conversationType,
     });
     const text = raw.text?.content?.trim() ?? '';
+    // allowFrom / settings.userId are enterprise userids → prefer senderStaffId
+    const userId = resolveDingTalkAuthorUserId(raw);
+    const display = raw.senderNick ?? userId;
 
     return new Message({
       attachments: [],
       author: {
-        fullName: raw.senderNick ?? raw.senderId,
+        fullName: display,
         isBot: false,
         isMe: false,
-        userId: raw.senderId,
-        userName: raw.senderNick ?? raw.senderId,
+        userId,
+        userName: display,
       },
       formatted: parseMarkdown(text),
       id: raw.msgId,
@@ -100,15 +123,30 @@ export class DingTalkAdapter {
     message: AdapterPostableMessage,
   ): Promise<RawMessage<unknown>> {
     const webhook = await this.getWebhook(threadId);
-    if (!webhook)
-      throw new Error('DingTalk session webhook has expired. Send a new message to continue.');
+    if (!webhook) {
+      throw new Error(
+        'DingTalk session webhook has expired. Reply is saved in the topic — send a new message to continue, or open the web app.',
+      );
+    }
+
+    const content = this.renderPostable(message);
+    // DingTalk session webhook text is capped (~2000–4000 depending on client);
+    // truncate with a clear suffix rather than failing the whole delivery.
+    const MAX = 3500;
+    const text =
+      content.length > MAX
+        ? `${content.slice(0, MAX - 40)}\n\n…(内容过长，完整版请在 Web 查看)`
+        : content;
 
     const response = await fetch(webhook, {
-      body: JSON.stringify({ msgtype: 'text', text: { content: this.renderPostable(message) } }),
+      body: JSON.stringify({ msgtype: 'text', text: { content: text } }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     });
-    if (!response.ok) throw new Error(`DingTalk reply failed: HTTP ${response.status}`);
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`DingTalk reply failed: HTTP ${response.status} ${detail}`.trim());
+    }
 
     return { id: crypto.randomUUID(), raw: await response.json() };
   }
