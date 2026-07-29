@@ -10,6 +10,33 @@ import {
 
 type Json = Record<string, unknown>;
 
+/** Per-request deadline so a hung DingTalk/OSS hop cannot leave the chat "调用工具中" forever. */
+const DINGPAN_FETCH_TIMEOUT_MS = 45_000;
+
+/** Soft cap for HTML body (~3MB). Larger payloads choke trpc + OSS and rarely finish. */
+export const DINGPAN_HTML_MAX_BYTES = 3 * 1024 * 1024;
+
+const dingpanFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DINGPAN_FETCH_TIMEOUT_MS);
+  // Prefer caller signal if present; otherwise use our timeout.
+  const onCallerAbort = () => controller.abort();
+  init?.signal?.addEventListener('abort', onCallerAbort, { once: true });
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new Error(`DingTalk API timed out after ${DINGPAN_FETCH_TIMEOUT_MS}ms`, {
+        cause: error,
+      });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    init?.signal?.removeEventListener('abort', onCallerAbort);
+  }
+};
+
 const jsonResponse = async (resp: Response, label: string): Promise<Json> => {
   let data: Json;
   try {
@@ -68,7 +95,7 @@ export const getAccessToken = async (): Promise<string> => {
   if (!appKey || !appSecret) {
     throw new Error('DINGTALK_APP_KEY and DINGTALK_APP_SECRET are required');
   }
-  const resp = await fetch('https://api.dingtalk.com/v1.0/oauth2/accessToken', {
+  const resp = await dingpanFetch('https://api.dingtalk.com/v1.0/oauth2/accessToken', {
     body: JSON.stringify({ appKey, appSecret }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
@@ -99,7 +126,7 @@ export const getUnionId = async (_accessToken?: string): Promise<string> => {
   }
 
   // 1) Prefer oapi topapi — reliable for enterprise staff userid.
-  const tokenResp = await fetch(
+  const tokenResp = await dingpanFetch(
     `https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(appKey)}&appsecret=${encodeURIComponent(appSecret)}`,
   );
   const tokenData = (await tokenResp.json()) as Json;
@@ -108,7 +135,7 @@ export const getUnionId = async (_accessToken?: string): Promise<string> => {
   }
   const oapiToken = String(tokenData.access_token);
 
-  const userResp = await fetch(
+  const userResp = await dingpanFetch(
     `https://oapi.dingtalk.com/topapi/v2/user/get?access_token=${encodeURIComponent(oapiToken)}`,
     {
       body: JSON.stringify({ language: 'zh_CN', userid: userId }),
@@ -126,7 +153,7 @@ export const getUnionId = async (_accessToken?: string): Promise<string> => {
 
   // 2) Fallback: new contact API (works for some tenants / id shapes).
   if (_accessToken) {
-    const resp = await fetch(
+    const resp = await dingpanFetch(
       `https://api.dingtalk.com/v1.0/contact/users/${encodeURIComponent(userId)}?language=zh_CN`,
       { headers: { 'x-acs-dingtalk-access-token': _accessToken } },
     );
@@ -157,7 +184,7 @@ const listDentries = async (input: {
     });
     if (nextToken) qs.set('nextToken', nextToken);
     const url = `https://api.dingtalk.com/v1.0/storage/spaces/${input.spaceId}/dentries?${qs.toString()}`;
-    const resp = await fetch(url, {
+    const resp = await dingpanFetch(url, {
       headers: { 'x-acs-dingtalk-access-token': input.accessToken },
       method: 'GET',
     });
@@ -182,7 +209,7 @@ const createFolder = async (input: {
     `https://api.dingtalk.com/v1.0/storage/spaces/${encodeURIComponent(input.spaceId)}/dentries/${encodeURIComponent(input.parentId)}/folders`,
   );
   url.searchParams.set('unionId', input.unionId);
-  const resp = await fetch(url, {
+  const resp = await dingpanFetch(url, {
     body: JSON.stringify({ name: input.name }),
     headers: {
       'Content-Type': 'application/json',
@@ -304,7 +331,7 @@ const queryUploadInfo = async (input: {
   unionId: string;
 }) => {
   const url = `https://api.dingtalk.com/v1.0/storage/spaces/${encodeURIComponent(input.spaceId)}/files/uploadInfos/query?unionId=${encodeURIComponent(input.unionId)}`;
-  const resp = await fetch(url, {
+  const resp = await dingpanFetch(url, {
     body: JSON.stringify({
       fileName: input.name,
       fileSize: input.size,
@@ -326,14 +353,27 @@ const putToOss = async (
   headers: Record<string, string>,
   body: Buffer | Uint8Array,
 ) => {
-  const resp = await fetch(ossUrl, {
-    body: Buffer.from(body),
-    headers,
-    method: 'PUT',
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`OSS PUT failed: HTTP ${resp.status} ${text.slice(0, 300)}`);
+  // OSS PUT can be large; allow a longer single-hop deadline than API calls.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  try {
+    const resp = await fetch(ossUrl, {
+      body: Buffer.from(body),
+      headers,
+      method: 'PUT',
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`OSS PUT failed: HTTP ${resp.status} ${text.slice(0, 300)}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new Error('OSS PUT timed out after 90000ms', { cause: error });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 };
 
@@ -346,7 +386,7 @@ const commitDentry = async (input: {
   uploadKey: string;
 }) => {
   const url = `https://api.dingtalk.com/v1.0/storage/spaces/${encodeURIComponent(input.spaceId)}/files/commit?unionId=${encodeURIComponent(input.unionId)}`;
-  const resp = await fetch(url, {
+  const resp = await dingpanFetch(url, {
     body: JSON.stringify({
       name: input.name,
       parentId: input.folderId,
@@ -471,6 +511,12 @@ export const uploadHtmlToDingpan = async (
 ) => {
   const html = input.html?.trim();
   if (!html) throw new Error('html content is required');
+  const htmlBytes = Buffer.byteLength(html, 'utf8');
+  if (htmlBytes > DINGPAN_HTML_MAX_BYTES) {
+    throw new Error(
+      `HTML too large (${htmlBytes} bytes > ${DINGPAN_HTML_MAX_BYTES}). Shrink the report (fewer charts/tables) and retry uploadHtmlToDingpan.`,
+    );
+  }
 
   let safeName = input.uploadName?.trim();
   if (safeName) {

@@ -22,6 +22,14 @@ const ToolMessage = memo<ToolMessageProps>(({ disableEditing, id, index }) => {
   const deleteToolMessage = useConversationStore((s) => s.deleteToolMessage);
   const [loading, setLoading] = useState(false);
 
+  // Still executing (no result/error yet) — do not scare users with "orphan".
+  // The orphan banner is for terminal tool rows that lost their assistant link.
+  const isPending =
+    !item?.content &&
+    !item?.pluginError &&
+    item?.pluginIntervention?.status !== 'rejected' &&
+    item?.pluginIntervention?.status !== 'aborted';
+
   const handleDelete = async () => {
     setLoading(true);
     try {
@@ -33,7 +41,7 @@ const ToolMessage = memo<ToolMessageProps>(({ disableEditing, id, index }) => {
 
   return (
     <Flexbox gap={4} paddingBlock={12}>
-      {canEdit && !disableEditing && (
+      {canEdit && !disableEditing && !isPending && (
         <Alert
           title={t('inspector.orphanedToolCall')}
           type={'secondary'}
