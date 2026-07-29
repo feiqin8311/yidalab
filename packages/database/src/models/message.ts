@@ -1733,6 +1733,18 @@ export class MessageModel {
     return rows[0];
   };
 
+  /** Latest assistant row in a topic (DESC). Used when completion hooks miss final text. */
+  findLatestAssistantInTopic = async (topicId: string): Promise<DBMessageItem | undefined> => {
+    const rows = (await this.db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.topicId, topicId), eq(messages.role, 'assistant'), this.ownership()))
+      .orderBy(desc(messages.createdAt))
+      .limit(1)) as DBMessageItem[];
+
+    return rows[0];
+  };
+
   countWords = async (params?: {
     endDate?: string;
     range?: [string, string];

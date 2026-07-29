@@ -123,15 +123,30 @@ export class DingTalkAdapter {
     message: AdapterPostableMessage,
   ): Promise<RawMessage<unknown>> {
     const webhook = await this.getWebhook(threadId);
-    if (!webhook)
-      throw new Error('DingTalk session webhook has expired. Send a new message to continue.');
+    if (!webhook) {
+      throw new Error(
+        'DingTalk session webhook has expired. Reply is saved in the topic — send a new message to continue, or open the web app.',
+      );
+    }
+
+    const content = this.renderPostable(message);
+    // DingTalk session webhook text is capped (~2000–4000 depending on client);
+    // truncate with a clear suffix rather than failing the whole delivery.
+    const MAX = 3500;
+    const text =
+      content.length > MAX
+        ? `${content.slice(0, MAX - 40)}\n\n…(内容过长，完整版请在 Web 查看)`
+        : content;
 
     const response = await fetch(webhook, {
-      body: JSON.stringify({ msgtype: 'text', text: { content: this.renderPostable(message) } }),
+      body: JSON.stringify({ msgtype: 'text', text: { content: text } }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     });
-    if (!response.ok) throw new Error(`DingTalk reply failed: HTTP ${response.status}`);
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`DingTalk reply failed: HTTP ${response.status} ${detail}`.trim());
+    }
 
     return { id: crypto.randomUUID(), raw: await response.json() };
   }

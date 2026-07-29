@@ -506,6 +506,7 @@ export class CompletionLifecycle {
           operationId,
           assistantMessageId,
           metadata?.userId || this.userId,
+          event.topicId ?? metadata?.topicId,
         );
         if (recovered) event.lastAssistantContent = recovered;
       }
@@ -604,15 +605,22 @@ export class CompletionLifecycle {
     operationId: string,
     assistantMessageId: string | undefined,
     userId: string,
+    topicId?: string,
   ): Promise<string | undefined> {
-    if (!assistantMessageId) return undefined;
-
     try {
       const messageModel =
         userId === this.userId
           ? this.messageModel
           : new MessageModel(this.serverDB, userId, this.workspaceId);
-      const row = await messageModel.findById(assistantMessageId);
+
+      // Prefer the completion-turn message id; fall back to latest assistant in topic
+      // when Redis state / metadata omitted the id (bot IM path still has the row).
+      let row = assistantMessageId ? await messageModel.findById(assistantMessageId) : undefined;
+      let recoveredFrom: string | undefined = assistantMessageId;
+      if ((!row || typeof row.content !== 'string' || !row.content.trim()) && topicId) {
+        row = await messageModel.findLatestAssistantInTopic(topicId);
+        recoveredFrom = row?.id ? `topic:${topicId}#${row.id}` : undefined;
+      }
       const raw = typeof row?.content === 'string' ? row.content : undefined;
       if (!raw?.trim()) return undefined;
 
@@ -638,7 +646,7 @@ export class CompletionLifecycle {
       // production logs — the silent variant of this is what made
       // LOBE-11632 hard to diagnose.
       console.warn(
-        `[CompletionLifecycle][${operationId}] completion event had no assistant text; recovered ${content.length} chars from message ${assistantMessageId}`,
+        `[CompletionLifecycle][${operationId}] completion event had no assistant text; recovered ${content.length} chars from ${recoveredFrom ?? 'db'}`,
       );
       return content;
     } catch (error) {
@@ -695,6 +703,9 @@ export class CompletionLifecycle {
       assistantMessageId,
       event: {
         agentId: metadata?.agentId || '',
+        // Surface on the hook event so IM bot delivery can recover text by message id
+        // when Redis lastAssistantContent is empty (LOBE-11632).
+        assistantMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
         cost: state?.cost?.total,
         duration,
