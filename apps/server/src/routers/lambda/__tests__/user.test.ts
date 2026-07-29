@@ -358,5 +358,30 @@ describe('userRouter', () => {
         }),
       );
     });
+
+    it('should let ordinary workspace members save personal tool approval mode', async () => {
+      // Regression: company members used to get FORBIDDEN on tool.* because it was
+      // gated behind agent:update:* — Auto Approve then vanished after refresh.
+      const updateSetting = vi.fn().mockResolvedValue({ rowCount: 1 });
+
+      vi.mocked(UserModel).mockImplementation(
+        () =>
+          ({
+            updateSetting,
+          }) as any,
+      );
+
+      await userRouter
+        .createCaller({ ...mockCtx, workspaceId: 'ws_company' } as any)
+        .updateSettings({
+          tool: { humanIntervention: { approvalMode: 'auto-run' } },
+        });
+
+      expect(updateSetting).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: { humanIntervention: { approvalMode: 'auto-run' } },
+        }),
+      );
+    });
   });
 });

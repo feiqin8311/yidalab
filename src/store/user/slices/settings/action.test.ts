@@ -125,6 +125,23 @@ describe('SettingsAction', () => {
         expect.any(AbortSignal),
       );
     });
+
+    it('should roll back optimistic settings when save fails', async () => {
+      const { result } = renderHook(() => useUserStore());
+      const before = result.current.settings;
+
+      vi.mocked(userService.updateUserSettings).mockRejectedValueOnce(new Error('FORBIDDEN'));
+
+      await act(async () => {
+        await expect(
+          result.current.setSettings({
+            tool: { humanIntervention: { approvalMode: 'auto-run' } },
+          }),
+        ).rejects.toThrow('FORBIDDEN');
+      });
+
+      expect(result.current.settings).toEqual(before);
+    });
   });
 
   describe('updateDefaultAgent', () => {

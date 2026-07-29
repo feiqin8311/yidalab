@@ -4,7 +4,7 @@ import { LobeAgentIdentifier } from '@lobechat/builtin-tool-lobe-agent';
 import { NotebookIdentifier } from '@lobechat/builtin-tool-notebook';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
 import { TaskIdentifier } from '@lobechat/builtin-tool-task';
-import { withHtmlDeliveryInstruction } from '@lobechat/const';
+import { DEFAULT_HTML_DELIVERY_MODE, withHtmlDeliveryInstruction } from '@lobechat/const';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as agentStore from '@/store/agent';
@@ -15,8 +15,9 @@ import * as userSelectors from '@/store/user/selectors';
 
 import { resolveAgentConfig } from './agentConfigResolver';
 
-/** System roles always get the default Artifact delivery preference appended. */
-const withDefaultDelivery = (role: string) => withHtmlDeliveryInstruction(role, 'artifact');
+/** System roles always get the product default HTML delivery preference appended. */
+const withDefaultDelivery = (role: string) =>
+  withHtmlDeliveryInstruction(role, DEFAULT_HTML_DELIVERY_MODE);
 
 vi.hoisted(() => {
   const storage = new Map<string, string>();

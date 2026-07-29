@@ -37,11 +37,16 @@ export const AssistantsRank = memo<{ mobile?: boolean }>(({ mobile }) => {
     const link = mobile
       ? qs.stringifyUrl({ query: { showMobileWorkspace: true }, url: path })
       : path;
+    // Prefer the stored agent title (e.g. renamed inbox "Jasmin"). Only fall
+    // back to the product inbox label when title is empty.
+    const displayName =
+      item.title?.trim() ||
+      (isInbox ? t('inbox.title', { ns: 'chat' }) : t('defaultAgent', { ns: 'chat' }));
 
     return {
       icon: (
         <Avatar
-          alt={item.title || t('defaultAgent', { ns: 'chat' })}
+          alt={displayName}
           avatar={item.avatar || DEFAULT_AVATAR}
           background={item.backgroundColor || undefined}
           size={20}
@@ -50,9 +55,7 @@ export const AssistantsRank = memo<{ mobile?: boolean }>(({ mobile }) => {
       link,
       name: (
         <Link href={link} style={{ color: 'inherit' }}>
-          {isInbox
-            ? t('inbox.title', { ns: 'chat' })
-            : item.title || t('defaultAgent', { ns: 'chat' })}
+          {displayName}
         </Link>
       ),
       value: item.count,

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
@@ -226,6 +227,79 @@ describe('AgentBotProviderModel', () => {
       const results = await model.findByAgentId(agentId);
       expect(results).toHaveLength(2);
     });
+
+    it('lists and heals personal-scope bots when the agent is company-scoped', async () => {
+      // Regression: gateway finds bots by (platform, appId) globally, so
+      // messages keep flowing; UI findByAgentId used ownership on the bot row
+      // and missed workspace_id IS NULL orphans on a company agent.
+      const workspaceId = 'bot-provider-orphan-ws';
+      await serverDB.insert(workspaces).values({
+        id: workspaceId,
+        name: 'Orphan WS',
+        primaryOwnerId: userId,
+        slug: 'orphan-ws',
+      });
+      const companyAgentId = 'bot-provider-company-agent';
+      await serverDB.insert(agents).values({
+        id: companyAgentId,
+        title: 'Company Inbox',
+        userId,
+        workspaceId,
+      });
+
+      // Orphan: created under personal scope (workspace_id null)
+      await serverDB.insert(agentBotProviders).values({
+        agentId: companyAgentId,
+        applicationId: 'ding-orphan-app',
+        credentials: JSON.stringify({ clientId: 'x', clientSecret: 'y' }),
+        platform: 'dingtalk',
+        userId,
+        workspaceId: null,
+      });
+
+      const companyModel = new AgentBotProviderModel(serverDB, userId, mockGateKeeper, workspaceId);
+      const results = await companyModel.findByAgentId(companyAgentId);
+      expect(results).toHaveLength(1);
+      expect(results[0]!.applicationId).toBe('ding-orphan-app');
+      expect(results[0]!.workspaceId).toBe(workspaceId);
+
+      // Healed in DB for subsequent ownership-scoped ops
+      const [row] = await serverDB
+        .select()
+        .from(agentBotProviders)
+        .where(eq(agentBotProviders.applicationId, 'ding-orphan-app'));
+      expect(row?.workspaceId).toBe(workspaceId);
+    });
+  });
+
+  describe('create workspace alignment', () => {
+    it('writes bot.workspace_id from the agent, not the personal request ctx', async () => {
+      const workspaceId = 'bot-provider-create-ws';
+      await serverDB.insert(workspaces).values({
+        id: workspaceId,
+        name: 'Create WS',
+        primaryOwnerId: userId,
+        slug: 'create-ws',
+      });
+      const companyAgentId = 'bot-provider-create-agent';
+      await serverDB.insert(agents).values({
+        id: companyAgentId,
+        title: 'WS Agent',
+        userId,
+        workspaceId,
+      });
+
+      // Personal-scope model (no workspaceId) — still tags the bot as company
+      const personalModel = new AgentBotProviderModel(serverDB, userId, mockGateKeeper);
+      const created = await personalModel.create({
+        agentId: companyAgentId,
+        applicationId: 'app-aligned',
+        credentials: { botToken: 'tok' },
+        platform: 'dingtalk',
+      });
+
+      expect(created.workspaceId).toBe(workspaceId);
+    });
   });
 
   describe('update', () => {
@@ -348,10 +422,17 @@ describe('AgentBotProviderModel', () => {
         primaryOwnerId: userId,
         slug: 'test-ws',
       });
+      const companyAgentId = 'bot-provider-ws-agent';
+      await serverDB.insert(agents).values({
+        id: companyAgentId,
+        title: 'WS Agent',
+        userId,
+        workspaceId,
+      });
 
       const wsModel = new AgentBotProviderModel(serverDB, userId, mockGateKeeper, workspaceId);
       await wsModel.create({
-        agentId,
+        agentId: companyAgentId,
         applicationId: 'ws-app',
         credentials: { botToken: 'ws-tok' },
         platform: 'discord',

@@ -50,10 +50,13 @@ const usernameSchema = z
   .regex(/^[\w\u4E00-\u9FA5\s\-.·]+$/, { message: 'USERNAME_INVALID' });
 
 const AVATAR_WEBAPI_PREFIX = '/webapi/';
+// Workspace-shared / org-level prefs — only owner/admin (or workspace:update:all).
 const OWNER_SETTING_KEYS = ['defaultAgent', 'image', 'memory', 'systemAgent', 'tts'] as const;
-const MEMBER_SETTING_KEYS = ['tool'] as const;
+// Personal prefs (e.g. tool.humanIntervention approval mode) live on user_settings
+// for the caller. Do NOT gate them: ordinary company members must be able to
+// switch Auto Approve. Gating `tool` behind agent:update:* made the UI look
+// saved (optimistic) then snap back to Manual on refresh.
 const WORKSPACE_UPDATE_PERMISSION = 'workspace:update:all';
-const WORKSPACE_CONTENT_PERMISSIONS = ['agent:update:all', 'agent:update:owner'] as const;
 
 // Accept only: base64 data URL, absolute http(s) URL, empty string,
 // or an internal /webapi/user/avatar/<userId>/... path scoped to the caller.
@@ -79,9 +82,6 @@ const assertSafeAvatarInput = (input: string, userId: string) => {
 
 const hasOwnerSettingChange = (input: Partial<UserSettings>) =>
   OWNER_SETTING_KEYS.some((key) => input[key] !== undefined);
-
-const hasMemberSettingChange = (input: Partial<UserSettings>) =>
-  MEMBER_SETTING_KEYS.some((key) => input[key] !== undefined);
 
 const userProcedure = authedProcedure.use(serverDatabase).use(async ({ ctx, next }) => {
   return next({
@@ -520,27 +520,21 @@ export const userRouter = router({
   updateSettings: userProcedure.input(UserSettingsSchema).mutation(async ({ ctx, input }) => {
     const { keyVaults, ...res } = input as Partial<UserSettings>;
 
-    if (ctx.workspaceId && (hasOwnerSettingChange(res) || hasMemberSettingChange(res))) {
+    // Only org-level settings need a workspace permission check. Personal rows
+    // (tool approval mode, general, …) always write to the caller's own
+    // user_settings and must succeed for ordinary members.
+    if (ctx.workspaceId && hasOwnerSettingChange(res)) {
       // Company service-model settings: owner/admin manage (product rule).
       // Fall back to RBAC for pure workspaces; RBAC may be unseeded on company.
-      let allowed: boolean;
-      if (hasOwnerSettingChange(res)) {
-        const membership = await new CompanyModel(ctx.serverDB, ctx.userId).getMembership(
-          ctx.workspaceId,
-        );
-        allowed =
-          membership?.role === 'owner' ||
-          membership?.role === 'admin' ||
-          (await new RbacModel(ctx.serverDB, ctx.userId).hasPermission(
-            WORKSPACE_UPDATE_PERMISSION,
-            { workspaceId: ctx.workspaceId },
-          ));
-      } else {
-        allowed = await new RbacModel(ctx.serverDB, ctx.userId).hasAnyPermission(
-          [...WORKSPACE_CONTENT_PERMISSIONS],
-          { workspaceId: ctx.workspaceId },
-        );
-      }
+      const membership = await new CompanyModel(ctx.serverDB, ctx.userId).getMembership(
+        ctx.workspaceId,
+      );
+      const allowed =
+        membership?.role === 'owner' ||
+        membership?.role === 'admin' ||
+        (await new RbacModel(ctx.serverDB, ctx.userId).hasPermission(WORKSPACE_UPDATE_PERMISSION, {
+          workspaceId: ctx.workspaceId,
+        }));
 
       if (!allowed) {
         throw new TRPCError({

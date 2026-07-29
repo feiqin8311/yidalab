@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import type { AgentBotProviderItem, NewAgentBotProvider } from '../schemas';
-import { agentBotProviders } from '../schemas';
+import { agentBotProviders, agents } from '../schemas';
 import type { LobeChatDatabase } from '../type';
 import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 
@@ -32,6 +32,38 @@ export class AgentBotProviderModel {
   private ownership = () =>
     buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agentBotProviders);
 
+  /** Agent row visible under the caller's current personal/workspace scope. */
+  private resolveAccessibleAgent = async (agentId: string) => {
+    const [row] = await this.db
+      .select({ id: agents.id, workspaceId: agents.workspaceId })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, agentId),
+          buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agents),
+        ),
+      )
+      .limit(1);
+
+    return row;
+  };
+
+  /**
+   * Bot rows must live in the same workspace as their agent. Prefer the agent
+   * row over the request ctx so a personal-scope create cannot orphan a
+   * company agent binding (gateway still delivers messages; UI lists miss it).
+   */
+  private resolveBotWorkspaceId = async (agentId: string): Promise<string | undefined> => {
+    const [agent] = await this.db
+      .select({ workspaceId: agents.workspaceId })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+
+    if (!agent) return this.workspaceId;
+    return agent.workspaceId ?? undefined;
+  };
+
   // --------------- User-scoped CRUD ---------------
 
   create = async (
@@ -40,14 +72,12 @@ export class AgentBotProviderModel {
     },
   ) => {
     const credentials = await this.encrypt(params.credentials);
+    const workspaceId = await this.resolveBotWorkspaceId(params.agentId);
 
     const [result] = await this.db
       .insert(agentBotProviders)
       .values(
-        buildWorkspacePayload(
-          { userId: this.userId, workspaceId: this.workspaceId },
-          { ...params, credentials },
-        ),
+        buildWorkspacePayload({ userId: this.userId, workspaceId }, { ...params, credentials }),
       )
       .returning();
 
@@ -91,14 +121,37 @@ export class AgentBotProviderModel {
     return this.decryptRow(result);
   };
 
+  /**
+   * List bot bindings for an agent the caller can open.
+   *
+   * Uses agent visibility (not bot-row ownership) so historical orphans —
+   * bot.workspace_id NULL while agent is company-scoped — still appear in the
+   * channel UI. Heals mismatched workspace_id on read.
+   */
   findByAgentId = async (agentId: string) => {
+    const agent = await this.resolveAccessibleAgent(agentId);
+    if (!agent) return [];
+
     const results = await this.db
       .select()
       .from(agentBotProviders)
-      .where(and(eq(agentBotProviders.agentId, agentId), this.ownership()))
+      .where(eq(agentBotProviders.agentId, agentId))
       .orderBy(desc(agentBotProviders.updatedAt));
 
-    return Promise.all(results.map((r) => this.decryptRow(r)));
+    const expectedWs = agent.workspaceId ?? null;
+    const healed = await Promise.all(
+      results.map(async (row) => {
+        if ((row.workspaceId ?? null) === expectedWs) return row;
+        const [updated] = await this.db
+          .update(agentBotProviders)
+          .set({ updatedAt: new Date(), workspaceId: expectedWs })
+          .where(eq(agentBotProviders.id, row.id))
+          .returning();
+        return updated ?? { ...row, workspaceId: expectedWs };
+      }),
+    );
+
+    return Promise.all(healed.map((r) => this.decryptRow(r)));
   };
 
   update = async (
