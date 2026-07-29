@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ## Set global build ENV
 ARG NODEJS_VERSION="24"
 
@@ -25,6 +26,14 @@ RUN set -e && \
     cp /usr/local/bin/node /distroless/bin/node && \
     cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.crt && \
     rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
+
+## Workspace manifests only (package.json). Source edits do not change this stage's output.
+FROM base AS workspace-manifests
+WORKDIR /tmp/ws
+COPY packages ./packages
+COPY apps ./apps
+RUN find packages apps -type f ! -name package.json -delete \
+    && find packages apps -type d -empty -delete 2>/dev/null || true
 
 ## Builder image, install all the dependencies and build the app
 FROM base AS builder
@@ -65,18 +74,18 @@ ENV NEXT_PUBLIC_ANALYTICS_UMAMI="${NEXT_PUBLIC_ANALYTICS_UMAMI}" \
     NEXT_PUBLIC_UMAMI_WEBSITE_ID="${NEXT_PUBLIC_UMAMI_WEBSITE_ID}"
 
 # Node
-ENV NODE_OPTIONS="--max-old-space-size=8192"
+ENV NODE_OPTIONS="--max-old-space-size=8192" \
+    PNPM_STORE_DIR="/pnpm/store"
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml ./
-COPY .npmrc ./
-COPY packages ./packages
+COPY package.json pnpm-workspace.yaml .npmrc ./
 COPY patches ./patches
-# bring in desktop workspace manifest so pnpm can resolve it
-COPY apps/desktop/src/main/package.json ./apps/desktop/src/main/package.json
+COPY --from=workspace-manifests /tmp/ws/packages ./packages
+COPY --from=workspace-manifests /tmp/ws/apps ./apps
 
-RUN set -e && \
+RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
+    set -e && \
     if [ "${USE_CN_MIRROR:-false}" = "true" ]; then \
         export SENTRYCLI_CDNURL="https://npmmirror.com/mirrors/sentry-cli"; \
         npm config set registry "https://registry.npmmirror.com/"; \
@@ -86,6 +95,7 @@ RUN set -e && \
     npm i -g corepack@latest && \
     corepack enable && \
     corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json) && \
+    pnpm config set store-dir /pnpm/store && \
     pnpm i && \
     mkdir -p /deps && \
     cd /deps && \
@@ -98,8 +108,9 @@ COPY . .
 RUN pnpm exec tsx scripts/dockerPrebuild.mts
 RUN rm -rf src/app/desktop "src/app/(backend)/trpc/desktop"
 
-# run build standalone for docker version
-RUN npm run build:docker
+# run build standalone for docker version (reuse Next compile cache across builds)
+RUN --mount=type=cache,id=yidalab-next-cache,target=/app/.next/cache \
+    npm run build:docker
 
 ## Application image, copy all the files for production
 FROM busybox:latest AS app

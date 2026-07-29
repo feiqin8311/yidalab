@@ -1,11 +1,9 @@
-# Pull GHCR image with GITHUB_TOKEN and load it onto the prod host via SSH.
-# Needed when the server has no read:packages PAT yet.
+# Manual re-deploy of an existing GHCR tag (no rebuild).
+# Daily path: push → YidaLab Production Image (build + auto-deploy).
+# Use this when you only need to re-push a known tag (e.g. rollback to sha-xxx).
 #
 # Secrets:
-#   PROD_SSH_HOST     e.g. 116.205.229.31
-#   PROD_SSH_USER     e.g. root
-#   PROD_SSH_PASSWORD password or use PROD_SSH_KEY instead
-#   PROD_SSH_KEY      optional private key (preferred over password)
+#   PROD_SSH_HOST / PROD_SSH_USER / PROD_SSH_PASSWORD or PROD_SSH_KEY
 name: YidaLab Prod Deploy (GHCR → server)
 
 on:
@@ -23,7 +21,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -70,25 +68,22 @@ jobs:
             KEYFILE="$RUNNER_TEMP/deploy_key"
             printf '%s\n' "$KEY" > "$KEYFILE"
             SSH=(ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-            SCP=(scp -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
           elif [[ -n "${PASS:-}" ]]; then
             export SSHPASS="$PASS"
             SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
-            SCP=(sshpass -e scp "${SSH_OPTS[@]}")
           else
             echo "::error::Set PROD_SSH_PASSWORD or PROD_SSH_KEY"
             exit 1
           fi
 
           echo "streaming $REF → ${USER}@${HOST} as $LOCAL_TAG"
-          # load + tag + compose up on remote
           docker save "$REF" | gzip -1 | "${SSH[@]}" "${USER}@${HOST}" "
             set -euo pipefail
             gunzip | docker load
             docker tag '$REF' '$LOCAL_TAG'
             cd '$DEPLOY_ROOT'
-            docker compose up -d lobe
+            docker compose up -d --no-build --force-recreate lobe
             docker compose ps lobe
             docker image inspect '$LOCAL_TAG' --format 'done id={{.Id}} created={{.Created}}'
-            curl -sI -o /dev/null -w 'http %{http_code}\n' http://127.0.0.1:3210/ || true
+            curl -s -o /dev/null -w 'http %{http_code}\n' http://127.0.0.1:3210/ || true
           "
