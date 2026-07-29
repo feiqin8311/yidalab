@@ -1,15 +1,15 @@
 import type { ModelProviderCard } from '@/types/llm';
 
-// ref: https://www.volcengine.com/docs/82379/1925114
+// ref: https://www.volcengine.com/docs/82379/1928261
 const VolcengineCodingPlan: ModelProviderCard = {
   chatModels: [],
-  checkModel: 'doubao-seed-code',
+  checkModel: 'doubao-seed-2.1-turbo',
   description:
-    'Volcengine Coding Plan from ByteDance provides access to multiple coding models including Doubao-Seed-Code, GLM-4.7, DeepSeek-V3.2, and Kimi-K2.5 via a fixed-fee subscription.',
+    'Volcengine Coding Plan from ByteDance provides access to multiple coding models including Doubao-Seed-2.1-Turbo, GLM-5.2, DeepSeek-V4, MiniMax-M3, and Kimi-K2.7-Code via a fixed-fee subscription.',
   disableBrowserRequest: true,
   id: 'volcenginecodingplan',
   modelList: { showModelFetcher: false },
-  modelsUrl: 'https://www.volcengine.com/docs/82379/1925114',
+  modelsUrl: 'https://www.volcengine.com/docs/82379/1928261',
   name: 'Volcengine Coding Plan',
   settings: {
     disableBrowserRequest: true,
