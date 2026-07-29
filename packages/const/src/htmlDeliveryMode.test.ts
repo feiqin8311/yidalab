@@ -8,11 +8,13 @@ import {
 } from './htmlDeliveryMode';
 
 describe('htmlDeliveryMode', () => {
-  it('defaults unknown values to artifact', () => {
+  it('defaults unknown values to dingpan', () => {
     expect(resolveHtmlDeliveryMode(undefined)).toBe(DEFAULT_HTML_DELIVERY_MODE);
-    expect(resolveHtmlDeliveryMode('nope')).toBe('artifact');
+    expect(DEFAULT_HTML_DELIVERY_MODE).toBe('dingpan');
+    expect(resolveHtmlDeliveryMode('nope')).toBe('dingpan');
     expect(resolveHtmlDeliveryMode('dingpan')).toBe('dingpan');
     expect(resolveHtmlDeliveryMode('ask')).toBe('ask');
+    expect(resolveHtmlDeliveryMode('artifact')).toBe('artifact');
   });
 
   it('builds distinct hard instructions per mode', () => {

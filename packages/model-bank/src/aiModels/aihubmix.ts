@@ -19,42 +19,34 @@ const aihubmixChatModels: AIChatModelCard[] = [
     id: 'gpt-5.5',
     knowledgeCutoff: '2025-12',
     maxOutput: 128_000,
+    // See openai.ts gpt-5.5 — lookup without lookupParams always billed $0.
     pricing: {
       units: [
         {
-          lookup: {
-            prices: {
-              '[0, 0.272]': 5,
-              '[0.272, infinity]': 10,
-            },
-            pricingParams: ['textInput'],
-          },
           name: 'textInput',
-          strategy: 'lookup',
+          strategy: 'tiered',
+          tiers: [
+            { rate: 5, upTo: 272_000 },
+            { rate: 10, upTo: 'infinity' },
+          ],
           unit: 'millionTokens',
         },
         {
-          lookup: {
-            prices: {
-              '[0, 0.272]': 0.5,
-              '[0.272, infinity]': 1,
-            },
-            pricingParams: ['textInput'],
-          },
           name: 'textInput_cacheRead',
-          strategy: 'lookup',
+          strategy: 'tiered',
+          tiers: [
+            { rate: 0.5, upTo: 272_000 },
+            { rate: 1, upTo: 'infinity' },
+          ],
           unit: 'millionTokens',
         },
         {
-          lookup: {
-            prices: {
-              '[0, 0.272]': 30,
-              '[0.272, infinity]': 45,
-            },
-            pricingParams: ['textInput'],
-          },
           name: 'textOutput',
-          strategy: 'lookup',
+          strategy: 'tiered',
+          tiers: [
+            { rate: 30, upTo: 272_000 },
+            { rate: 45, upTo: 'infinity' },
+          ],
           unit: 'millionTokens',
         },
       ],

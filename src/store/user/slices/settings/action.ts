@@ -189,8 +189,15 @@ export class UserSettingsActionImpl {
     this.#set({ settings: diffs }, false, 'optimistic_updateSettings');
 
     const abortController = this.#get().internal_createSignal();
-    await userService.updateUserSettings(diffs, abortController.signal);
-    await this.#get().refreshUserState();
+    try {
+      await userService.updateUserSettings(diffs, abortController.signal);
+      await this.#get().refreshUserState();
+    } catch (error) {
+      // Save failed (e.g. FORBIDDEN) — undo optimistic UI so Auto Approve does
+      // not look sticky until refresh.
+      this.#set({ settings: prevSetting }, false, 'rollback_updateSettings');
+      throw error;
+    }
   };
 
   updateDefaultAgent = async (defaultAgent: PartialDeep<LobeAgentSettings>): Promise<void> => {

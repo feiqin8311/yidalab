@@ -6,7 +6,8 @@ export const HTML_DELIVERY_MODES = [
   'ask',
 ] as const satisfies readonly HtmlDeliveryMode[];
 
-export const DEFAULT_HTML_DELIVERY_MODE: HtmlDeliveryMode = 'artifact';
+/** YidaLab default: shareable DingTalk Drive link (+ in-app preview). */
+export const DEFAULT_HTML_DELIVERY_MODE: HtmlDeliveryMode = 'dingpan';
 
 export const isHtmlDeliveryMode = (value: unknown): value is HtmlDeliveryMode =>
   typeof value === 'string' && (HTML_DELIVERY_MODES as readonly string[]).includes(value);
@@ -44,7 +45,7 @@ export const buildHtmlDeliveryInstruction = (mode?: string | null): string => {
     ].join('\n');
   }
 
-  // artifact (default)
+  // artifact
   return [
     '## HTML deliverable surface (agent preference — HARD)',
     'Mode: **聊天内预览（Artifact）** (`artifact`)',

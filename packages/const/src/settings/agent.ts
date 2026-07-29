@@ -33,8 +33,8 @@ export const DEFAULT_AGENT_CHAT_CONFIG: LobeAgentChatConfig = {
   enableHistoryCount: false,
   enableStreaming: true,
   historyCount: 20,
-  /** Default: in-chat Artifact preview for HTML reports. */
-  htmlDeliveryMode: 'artifact',
+  /** YidaLab default: DingTalk Drive link (+ in-app preview) for HTML reports. */
+  htmlDeliveryMode: 'dingpan',
   reasoningBudgetToken: 1024,
   searchFCModel: DEFAULT_AGENT_SEARCH_FC_MODEL,
   searchMode: 'auto',

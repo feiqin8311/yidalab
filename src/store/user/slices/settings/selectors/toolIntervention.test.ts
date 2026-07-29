@@ -7,14 +7,14 @@ import { toolInterventionSelectors } from './toolIntervention';
 
 describe('toolInterventionSelectors', () => {
   describe('approvalMode', () => {
-    it('should return "manual" by default when no config exists', () => {
+    it('should return "auto-run" by default when no config exists', () => {
       const s: UserState = merge(initialState, {
         settings: {},
       });
 
       const result = toolInterventionSelectors.approvalMode(s as UserStore);
 
-      expect(result).toBe('manual');
+      expect(result).toBe('auto-run');
     });
 
     it('should return "auto-run" when configured', () => {
@@ -113,14 +113,14 @@ describe('toolInterventionSelectors', () => {
   });
 
   describe('config', () => {
-    it('should return empty object by default', () => {
+    it('should return auto-run default humanIntervention when no user override', () => {
       const s: UserState = merge(initialState, {
         settings: {},
       });
 
       const result = toolInterventionSelectors.config(s as UserStore);
 
-      expect(result).toEqual({});
+      expect(result).toEqual({ approvalMode: 'auto-run' });
     });
 
     it('should return full humanIntervention config', () => {
