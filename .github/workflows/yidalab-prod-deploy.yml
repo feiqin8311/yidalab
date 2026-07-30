@@ -160,30 +160,35 @@ jobs:
           docker compose logs lobe --tail 400 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|Database migrate|error' | tail -60 || true
 
           echo "=== db schema ==="
-          docker compose exec -T lobe node -e '
-          const { Client } = require("pg");
-          const c = new Client({ connectionString: process.env.DATABASE_URL });
-          (async () => {
-            await c.connect();
-            const r = await c.query(`
-              select
-                to_regclass('"'"'public.file_workbooks'"'"')::text as file_workbooks,
-                to_regclass('"'"'public.file_sheet_assets'"'"')::text as file_sheet_assets,
-                exists(
-                  select 1 from information_schema.columns
-                  where table_name = '"'"'files'"'"' and column_name = '"'"'parse_status'"'"'
-                ) as has_parse_status,
-                exists(
-                  select 1 from information_schema.columns
-                  where table_name = '"'"'file_workbooks'"'"' and column_name = '"'"'generation_id'"'"'
-                ) as has_generation_id
-            `);
-            console.log(JSON.stringify(r.rows[0]));
-            const row = r.rows[0];
-            const ok = row.file_workbooks && row.file_sheet_assets && row.has_parse_status && row.has_generation_id;
-            await c.end();
-            if (!ok) process.exit(3);
-          })().catch((e) => { console.error("db_check_failed", e.message); process.exit(3); });
+          # Image keeps pg under /app (not always resolvable from bare node -e cwd).
+          docker compose exec -T lobe sh -c '
+            set -e
+            cd /app
+            node -e "
+              const { Client } = require(\"pg\");
+              const c = new Client({ connectionString: process.env.DATABASE_URL });
+              (async () => {
+                await c.connect();
+                const r = await c.query(\`
+                  select
+                    to_regclass('"'"'public.file_workbooks'"'"')::text as file_workbooks,
+                    to_regclass('"'"'public.file_sheet_assets'"'"')::text as file_sheet_assets,
+                    exists(
+                      select 1 from information_schema.columns
+                      where table_name = '"'"'files'"'"' and column_name = '"'"'parse_status'"'"'
+                    ) as has_parse_status,
+                    exists(
+                      select 1 from information_schema.columns
+                      where table_name = '"'"'file_workbooks'"'"' and column_name = '"'"'generation_id'"'"'
+                    ) as has_generation_id
+                \`);
+                console.log(JSON.stringify(r.rows[0]));
+                const row = r.rows[0];
+                const ok = row.file_workbooks && row.file_sheet_assets && row.has_parse_status && row.has_generation_id;
+                await c.end();
+                if (!ok) process.exit(3);
+              })().catch((e) => { console.error(\"db_check_failed\", e.message); process.exit(3); });
+            "
           '
 
           echo "=== verify done ==="
