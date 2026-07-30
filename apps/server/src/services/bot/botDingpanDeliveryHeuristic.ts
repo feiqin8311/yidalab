@@ -20,26 +20,77 @@ export const shouldEnsureDingpanForBotReply = (reply: string): boolean => {
 };
 
 const PURE_PROGRESS_FALLBACK =
-  '分析数据已就绪，但本轮未成功调用 uploadHtmlToDingpan 上传 HTML 报告（仅输出了上传进度文案）。请重试，或在 Web 打开同一话题查看。';
+  '本轮模型陷入重复进度/规划文案（未完成工具调用或未上传报告）。请重试，或到 Web 打开同一话题查看中间结果。';
 
-const countProgressPhrases = (text: string) =>
-  (text.match(/正在上传|上传中|正在生成 HTML|上传钉盘|uploadHtml/gi) ?? []).length;
+/** Upload fake progress */
+const UPLOAD_PROGRESS_RE = /正在上传|上传中|正在生成 HTML|上传钉盘|uploadHtml/i;
+/** Tool-planning loops (e.g. "日期改为…同时查询…" repeated hundreds of times) */
+const TOOL_PLAN_NARRATION_RE =
+  /日期改为|缩小范围|同时查询|查询竞争|判断头部|领星限制|最多查询|90\s*天|单次最多/;
+
+const countMatches = (text: string, re: RegExp) =>
+  (text.match(new RegExp(re.source, 'gi')) ?? []).length;
 
 /**
- * Strip fake "正在上传 HTML…" loops. Keep the first real conclusions block when present.
+ * Collapse when the same short sentence is repeated many times (generic loop detector).
+ */
+export const collapseRepeatedSentences = (reply: string): string => {
+  const text = reply.trim();
+  if (text.length < 200) return text;
+
+  const parts = text
+    .split(/(?<=[。！？\n])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length < 6) return text;
+
+  const freq = new Map<string, number>();
+  for (const p of parts) {
+    const key = p.replaceAll(/\s+/g, ' ').slice(0, 80);
+    if (key.length < 8) continue;
+    freq.set(key, (freq.get(key) ?? 0) + 1);
+  }
+
+  const maxRepeat = Math.max(0, ...freq.values());
+  if (maxRepeat < 4) return text;
+
+  const kept: string[] = [];
+  const seen = new Map<string, number>();
+  for (const p of parts) {
+    const key = p.replaceAll(/\s+/g, ' ').slice(0, 80);
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    // Keep first 2 occurrences of any sentence; drop further clones
+    if (n <= 2) kept.push(p);
+  }
+
+  const cleaned = kept
+    .join('')
+    .replaceAll(/\n{3,}/g, '\n\n')
+    .trim();
+  if (cleaned.length < 40 && maxRepeat >= 4) return PURE_PROGRESS_FALLBACK;
+  return cleaned || text;
+};
+
+/**
+ * Strip fake progress / planning loops. Keep real conclusions when present.
  */
 export const scrubFakeUploadProgressNarration = (reply: string): string => {
-  const text = reply.trim();
+  let text = reply.trim();
   if (!text) return text;
 
-  const progressHits = countProgressPhrases(text);
-  if (progressHits < 3 && text.length < 1500) return text;
+  // 1) Generic sentence-repeat collapse (covers 日期改为… 同时查询… spam)
+  text = collapseRepeatedSentences(text);
 
-  // Cut at the first progress-spam cascade (common failure mode).
+  const uploadHits = countMatches(text, UPLOAD_PROGRESS_RE);
+  const planHits = countMatches(text, TOOL_PLAN_NARRATION_RE);
+
+  if (uploadHits < 3 && planHits < 4 && text.length < 1500) return text;
+
+  // 2) Cut at first upload-progress cascade
   const cascadeIdx = text.search(
-    /稍等上传|以下是 HTML|正在上传 HTML|报告已准备完毕|开始上传|上传中[。.]/,
+    /稍等上传|以下是 HTML|正在上传 HTML|报告已准备完毕|开始上传|上传中[。.]|日期改为.{0,40}日期改为/,
   );
-  // Keep any non-trivial prefix before the spam cascade starts.
   let head = cascadeIdx > 20 ? text.slice(0, cascadeIdx).trim() : text;
 
   head = head
@@ -47,7 +98,8 @@ export const scrubFakeUploadProgressNarration = (reply: string): string => {
     .replaceAll(/上传中[。.]?/g, '')
     .replaceAll(/正在生成 HTML 报告[^\n。]{0,40}/g, '')
     .replaceAll(/生成完成，上传钉盘[。.]?/g, '')
-    .replaceAll(/上传钉盘[。.]?/g, '')
+    .replaceAll(/(?:日期改为\d{4}-\d{2}-\d{2}至\d{4}-\d{2}-\d{2}[。.]?\s*){2,}/g, '')
+    .replaceAll(/(?:同时查询关键词竞争格局[^\n。]{0,30}[。.]?\s*){2,}/g, '')
     .replaceAll(/\n{3,}/g, '\n\n')
     .trim();
 
@@ -56,15 +108,23 @@ export const scrubFakeUploadProgressNarration = (reply: string): string => {
     .replaceAll(/上传中[\s\S]*$/g, '')
     .trim();
 
+  // Re-collapse after regex cleanup
+  head = collapseRepeatedSentences(head);
+
   const hasSubstance =
     head.length >= 20 &&
     (REPORTISH_RE.test(head) || /结论|旺季|峰值|建议|投放|关键词|起量/.test(head));
 
   if (!hasSubstance) {
-    return progressHits >= 3 ? PURE_PROGRESS_FALLBACK : text;
+    return uploadHits >= 3 || planHits >= 4 ? PURE_PROGRESS_FALLBACK : text;
   }
 
-  if (countProgressPhrases(head) >= 5) return PURE_PROGRESS_FALLBACK;
+  if (
+    countMatches(head, UPLOAD_PROGRESS_RE) >= 5 ||
+    countMatches(head, TOOL_PLAN_NARRATION_RE) >= 8
+  ) {
+    return PURE_PROGRESS_FALLBACK;
+  }
 
   return head;
 };
