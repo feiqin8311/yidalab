@@ -1,0 +1,92 @@
+# One-shot prod verification via existing PROD_SSH_* secrets.
+name: YidaLab Prod Verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      expect_sha:
+        description: Expected image revision prefix (e.g. de6519c)
+        required: false
+        default: de6519c
+
+jobs:
+  verify:
+    name: SSH verify prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      - name: Verify container + migrations
+        env:
+          HOST: ${{ secrets.PROD_SSH_HOST }}
+          USER: ${{ secrets.PROD_SSH_USER }}
+          PASS: ${{ secrets.PROD_SSH_PASSWORD }}
+          EXPECT: ${{ inputs.expect_sha }}
+        run: |
+          set -euo pipefail
+          export SSHPASS="$PASS"
+          SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+
+          "${SSH[@]}" "${USER}@${HOST}" "EXPECT='$EXPECT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /yida/yidalab
+          echo "=== host ==="
+          hostname
+          date -u
+
+          echo "=== image revision ==="
+          REV=$(docker image inspect yidalab:v1 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || echo missing)
+          echo "revision=$REV"
+          echo "expect_prefix=$EXPECT"
+          case "$REV" in
+            ${EXPECT}*) echo "revision_ok=yes" ;;
+            *) echo "revision_ok=no"; exit 2 ;;
+          esac
+
+          echo "=== container ==="
+          docker compose ps lobe 2>/dev/null || docker ps --filter name=yidalab-app --format '{{.Names}} {{.Status}} {{.Image}}'
+
+          echo "=== health ==="
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3210/ || true)
+          echo "http_code=$code"
+
+          echo "=== recent migrate logs ==="
+          docker compose logs lobe --tail 300 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|error|Database' | tail -50 || true
+
+          echo "=== db schema check ==="
+          docker compose exec -T lobe node -e '
+          const { Client } = require("pg");
+          const c = new Client({ connectionString: process.env.DATABASE_URL });
+          (async () => {
+            await c.connect();
+            const r = await c.query(`
+              select
+                to_regclass('"'"'public.file_workbooks'"'"')::text as file_workbooks,
+                to_regclass('"'"'public.file_sheet_assets'"'"')::text as file_sheet_assets,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'files'"'"' and column_name = '"'"'parse_status'"'"'
+                ) as has_parse_status,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'file_workbooks'"'"' and column_name = '"'"'generation_id'"'"'
+                ) as has_generation_id
+            `);
+            console.log(JSON.stringify(r.rows[0]));
+            const ok =
+              r.rows[0].file_workbooks &&
+              r.rows[0].file_sheet_assets &&
+              r.rows[0].has_parse_status &&
+              r.rows[0].has_generation_id;
+            await c.end();
+            if (!ok) process.exit(3);
+          })().catch((e) => {
+            console.error("db_check_failed", e.message);
+            process.exit(3);
+          });
+          '
+
+          echo "=== verify done ==="
+          REMOTE
