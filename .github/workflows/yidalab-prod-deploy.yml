@@ -1,6 +1,7 @@
 # Manual re-deploy of an existing GHCR tag (no rebuild).
 # Daily path: push → YidaLab Production Image (build + auto-deploy).
 # Use this when you only need to re-push a known tag (e.g. rollback to sha-xxx).
+# Set verify_only=true to skip redeploy and only SSH-check revision + migrations.
 #
 # Secrets:
 #   PROD_SSH_HOST / PROD_SSH_USER / PROD_SSH_PASSWORD or PROD_SSH_KEY
@@ -13,6 +14,15 @@ on:
         description: GHCR tag to deploy
         required: true
         default: prod
+      verify_only:
+        description: Skip redeploy; only verify running image + DB schema
+        type: boolean
+        required: false
+        default: false
+      expect_sha:
+        description: Expected revision prefix when verify_only (e.g. de6519c)
+        required: false
+        default: de6519c
 
 permissions:
   packages: read
@@ -20,6 +30,7 @@ permissions:
 
 jobs:
   deploy:
+    if: ${{ inputs.verify_only != true && inputs.verify_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -87,3 +98,93 @@ jobs:
             docker image inspect '$LOCAL_TAG' --format 'done id={{.Id}} created={{.Created}}'
             curl -s -o /dev/null -w 'http %{http_code}\n' http://127.0.0.1:3210/ || true
           "
+
+  verify:
+    if: ${{ inputs.verify_only == true || inputs.verify_only == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install sshpass
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+
+      - name: SSH verify revision + schema
+        env:
+          HOST: ${{ secrets.PROD_SSH_HOST }}
+          USER: ${{ secrets.PROD_SSH_USER }}
+          PASS: ${{ secrets.PROD_SSH_PASSWORD }}
+          KEY: ${{ secrets.PROD_SSH_KEY }}
+          EXPECT: ${{ inputs.expect_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOST:-}" || -z "${USER:-}" ]]; then
+            echo "::error::Set PROD_SSH_HOST and PROD_SSH_USER secrets"
+            exit 1
+          fi
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          if [[ -n "${KEY:-}" ]]; then
+            umask 077
+            KEYFILE="$RUNNER_TEMP/deploy_key"
+            printf '%s\n' "$KEY" > "$KEYFILE"
+            SSH=(ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+          elif [[ -n "${PASS:-}" ]]; then
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
+          else
+            echo "::error::Set PROD_SSH_PASSWORD or PROD_SSH_KEY"
+            exit 1
+          fi
+
+          "${SSH[@]}" "${USER}@${HOST}" "EXPECT='$EXPECT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /yida/yidalab
+          echo "=== host ==="
+          hostname; date -u
+
+          echo "=== image revision ==="
+          REV=$(docker image inspect yidalab:v1 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || echo missing)
+          echo "revision=$REV"
+          echo "expect_prefix=$EXPECT"
+          case "$REV" in
+            ${EXPECT}*) echo "revision_ok=yes" ;;
+            *) echo "revision_ok=no"; exit 2 ;;
+          esac
+
+          echo "=== container ==="
+          docker compose ps lobe 2>/dev/null || docker ps --filter name=yidalab-app --format '{{.Names}} {{.Status}} {{.Image}}'
+
+          echo "=== health ==="
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3210/ || true)
+          echo "http_code=$code"
+
+          echo "=== migrate logs ==="
+          docker compose logs lobe --tail 400 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|Database migrate|error' | tail -60 || true
+
+          echo "=== db schema ==="
+          docker compose exec -T lobe node -e '
+          const { Client } = require("pg");
+          const c = new Client({ connectionString: process.env.DATABASE_URL });
+          (async () => {
+            await c.connect();
+            const r = await c.query(`
+              select
+                to_regclass('"'"'public.file_workbooks'"'"')::text as file_workbooks,
+                to_regclass('"'"'public.file_sheet_assets'"'"')::text as file_sheet_assets,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'files'"'"' and column_name = '"'"'parse_status'"'"'
+                ) as has_parse_status,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'file_workbooks'"'"' and column_name = '"'"'generation_id'"'"'
+                ) as has_generation_id
+            `);
+            console.log(JSON.stringify(r.rows[0]));
+            const row = r.rows[0];
+            const ok = row.file_workbooks && row.file_sheet_assets && row.has_parse_status && row.has_generation_id;
+            await c.end();
+            if (!ok) process.exit(3);
+          })().catch((e) => { console.error("db_check_failed", e.message); process.exit(3); });
+          '
+
+          echo "=== verify done ==="
+          REMOTE
