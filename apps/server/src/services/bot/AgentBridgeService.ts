@@ -16,6 +16,7 @@ import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewa
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
 import { SystemAgentService } from '@/server/services/systemAgent';
 
+import { ensureBotDingpanDelivery } from './ensureBotDingpanDelivery';
 import { formatPrompt as formatPromptUtil } from './formatPrompt';
 import type { BotReplyLocale, PlatformClient } from './platforms';
 import {
@@ -1311,7 +1312,18 @@ export class AgentBridgeService {
                   if (hasText || hasAttachments) {
                     let chunks: string[];
                     if (hasText) {
-                      const replyBody = renderFinalReply(lastAssistantContent!);
+                      // IM cannot render Artifacts: attach dingpan preview_url
+                      // if upload already ran, or upload a minimal HTML snapshot
+                      // for report-length answers that skipped the tool.
+                      lastAssistantContent = await ensureBotDingpanDelivery({
+                        db: this.db,
+                        plainText: true,
+                        reply: lastAssistantContent!,
+                        topicId: resolvedTopicId || (event.topicId as string | undefined),
+                        userId: this.userId,
+                        workspaceId: this.workspaceId,
+                      });
+                      const replyBody = renderFinalReply(lastAssistantContent);
                       const replyStats = {
                         elapsedMs: event.duration ?? getElapsedMs(),
                         llmCalls: event.llmCalls ?? 0,

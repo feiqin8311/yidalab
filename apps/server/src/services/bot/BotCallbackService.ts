@@ -16,6 +16,7 @@ import { messengerPlatformRegistry } from '@/server/services/messenger/platforms
 import { SystemAgentService } from '@/server/services/systemAgent';
 
 import { AgentBridgeService } from './AgentBridgeService';
+import { ensureBotDingpanDelivery } from './ensureBotDingpanDelivery';
 import type {
   BotMessageAttachment,
   BotReplyLocale,
@@ -512,7 +513,15 @@ export class BotCallbackService {
     // attachment-only path still drives `deliverFirstChunk` once.
     let chunks: string[];
     if (hasText) {
-      const msgBody = renderFinalReply(replyText!);
+      replyText = await ensureBotDingpanDelivery({
+        db: this.db,
+        plainText: true,
+        reply: replyText!,
+        topicId: body.topicId,
+        userId: body.userId,
+        workspaceId: body.workspaceId,
+      });
+      const msgBody = renderFinalReply(replyText);
       const formattedBody = client.formatMarkdown?.(msgBody) ?? msgBody;
       const finalText = client.formatReply?.(formattedBody, stats) ?? formattedBody;
       chunks = splitMessage(finalText, charLimit);
