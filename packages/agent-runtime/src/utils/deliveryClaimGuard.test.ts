@@ -55,6 +55,20 @@ describe('applyDingpanDeliveryClaimGuard', () => {
     expect(applyDingpanDeliveryClaimGuard('hello', [])).toBe('hello');
   });
 
+  it('appends preview_url when tool succeeded even without 钉盘 claim', () => {
+    const messages = [
+      {
+        content: JSON.stringify({ preview_url: preview, success: true }),
+        plugin: { apiName: 'uploadHtmlToDingpan', identifier: 'lobe-dingpan' },
+        role: 'tool' as const,
+      },
+    ];
+    const content = '以下是核心结论：\n\n1. 旺季在 8 月';
+    const guarded = applyDingpanDeliveryClaimGuard(content, messages);
+    expect(guarded).toContain(preview);
+    expect(guarded).toContain('以下是核心结论');
+  });
+
   it('rewrites fake sif link when tool succeeded', () => {
     const messages = [
       {

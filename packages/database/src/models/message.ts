@@ -1745,6 +1745,39 @@ export class MessageModel {
     return rows[0];
   };
 
+  /**
+   * Recent dingpan upload tool rows for a topic (newest first).
+   * Used by bot delivery to attach preview_url when the model forgot the link.
+   */
+  findRecentDingpanUploadsInTopic = async (
+    topicId: string,
+    limit = 8,
+  ): Promise<
+    Array<{ apiName: string | null; content: string | null; identifier: string | null }>
+  > => {
+    const rows = await this.db
+      .select({
+        apiName: messagePlugins.apiName,
+        content: messages.content,
+        identifier: messagePlugins.identifier,
+      })
+      .from(messages)
+      .innerJoin(messagePlugins, eq(messagePlugins.id, messages.id))
+      .where(
+        and(
+          eq(messages.topicId, topicId),
+          eq(messages.role, 'tool'),
+          eq(messagePlugins.identifier, 'lobe-dingpan'),
+          inArray(messagePlugins.apiName, ['uploadHtmlToDingpan', 'uploadToDingpan']),
+          this.ownership(),
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
+
+    return rows;
+  };
+
   countWords = async (params?: {
     endDate?: string;
     range?: [string, string];

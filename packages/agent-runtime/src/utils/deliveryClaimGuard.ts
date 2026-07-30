@@ -118,16 +118,17 @@ export const applyDingpanDeliveryClaimGuard = (
   const latest = outcomes.at(-1)!;
 
   if (latest.success && latest.previewUrl) {
-    if (!claimsDingpanDelivery(content) && !content.includes(latest.previewUrl)) {
-      return content;
+    let next = content;
+
+    // When the model claims 钉盘 delivery, rewrite wrong hosts to tool authority.
+    if (claimsDingpanDelivery(content)) {
+      next = content.replaceAll(MD_LINK_RE, (full, label: string, url: string) => {
+        if (url.includes('qr.dingtalk.com') || url === latest.previewUrl) return full;
+        return `[${label?.trim() || '打开钉盘预览'}](${latest.previewUrl})`;
+      });
     }
 
-    let next = content.replaceAll(MD_LINK_RE, (full, label: string, url: string) => {
-      if (url.includes('qr.dingtalk.com') || url === latest.previewUrl) return full;
-      // Wrong host while talking about 钉盘 / upload — force tool preview_url.
-      return `[${label?.trim() || '打开钉盘预览'}](${latest.previewUrl})`;
-    });
-
+    // Always surface the real preview_url once upload succeeded (model often forgets).
     if (!next.includes(latest.previewUrl)) {
       next = `${next.trim()}\n\n[打开钉盘预览](${latest.previewUrl})`;
     }
