@@ -4,6 +4,7 @@ import { buildWorkbookManifestCard, shouldInlineParsedText } from './manifestCar
 import type { WorkbookAssetBuild } from './workbookAsset';
 
 const sample: WorkbookAssetBuild = {
+  coverage: { columnsCapped: false, sheetsCapped: false, sourceSheetCount: 2 },
   parserVersion: 'workbook-v1',
   sheetCount: 2,
   sheets: [
@@ -26,6 +27,7 @@ const sample: WorkbookAssetBuild = {
       sheetName: 'Sheet2',
     },
   ],
+  totalJsonlBytes: 0,
   totalRows: 1003,
   unrestrictedTokenEstimate: 500_000,
 };

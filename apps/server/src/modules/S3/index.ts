@@ -119,6 +119,44 @@ export class S3 {
   }
 
   /**
+   * Stream object body to a local file without buffering the full object in JS heap.
+   */
+  public async downloadFileToPath(key: string, destPath: string): Promise<void> {
+    const { createWriteStream } = await import('node:fs');
+    const { pipeline } = await import('node:stream/promises');
+    const { Readable } = await import('node:stream');
+
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    });
+    const response = await this.client.send(command);
+    if (!response.Body) {
+      throw new Error(`No body in response with ${key}`);
+    }
+
+    const body = response.Body as {
+      transformToByteArray?: () => Promise<Uint8Array>;
+      [Symbol.asyncIterator]?: () => AsyncIterator<Uint8Array>;
+    };
+
+    // Prefer Node stream pipeline when Body is stream-like; else fall back to byte array write.
+    if (typeof (response.Body as any).pipe === 'function') {
+      await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(destPath));
+      return;
+    }
+
+    if (typeof body[Symbol.asyncIterator] === 'function') {
+      await pipeline(Readable.from(body as AsyncIterable<Uint8Array>), createWriteStream(destPath));
+      return;
+    }
+
+    const bytes = await response.Body.transformToByteArray();
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(destPath, Buffer.from(bytes));
+  }
+
+  /**
    * Get file metadata from S3 using HeadObject
    * This is used to verify actual file size from S3 instead of trusting client-provided values
    */

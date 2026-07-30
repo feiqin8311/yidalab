@@ -362,6 +362,8 @@ export function defineConfig(config: CustomNextConfig) {
       'pdfjs-dist',
       'ajv',
       'oidc-provider',
+      '@duckdb/node-api',
+      '@duckdb/node-bindings',
     ],
 
     transpilePackages: ['mermaid'],

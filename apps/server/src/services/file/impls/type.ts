@@ -37,6 +37,11 @@ export interface FileServiceImpl {
   deleteFiles: (keys: string[]) => Promise<any>;
 
   /**
+   * Stream object to a local path (prefer over getFileByteArray for large objects).
+   */
+  downloadToPath?: (key: string, destPath: string) => Promise<void>;
+
+  /**
    * Get file byte array
    */
   getFileByteArray: (key: string) => Promise<Uint8Array>;

@@ -7,7 +7,7 @@ export const WORKBOOK_PARSER_VERSION = 'workbook-v1';
 
 /**
  * Hard platform limits for one parse job.
- * File cap is intentionally tight (no worker isolation yet): 20MB on disk.
+ * XLSX materialize runs in a child process (see workbookParseIsolate); caps still apply.
  */
 export const WORKBOOK_MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const WORKBOOK_MAX_FILE_BYTES_HARD = WORKBOOK_MAX_FILE_BYTES;
@@ -19,9 +19,11 @@ export const WORKBOOK_MAX_TOTAL_CELLS = 2_000_000;
 /** Total derived JSONL payload across all sheets (bytes). */
 export const WORKBOOK_MAX_TOTAL_JSONL_BYTES = 64 * 1024 * 1024;
 export const WORKBOOK_INLINE_JSONL_MAX_BYTES = 512 * 1024;
+/** Prefer parquet when sheet JSONL exceeds this and DuckDB is available. */
+export const WORKBOOK_PARQUET_MIN_BYTES = 512 * 1024;
 export const WORKBOOK_SAMPLE_ROWS = 5;
 export const WORKBOOK_CARD_SAMPLE_ROWS = 3;
-/** In-process concurrent parse slots (main thread, no worker). */
+/** In-process concurrent parse slots (fallback path / tests). */
 export const WORKBOOK_PARSE_CONCURRENCY = 1;
 
 export interface WorkbookSheetAssetBuild {
@@ -97,14 +99,17 @@ export async function withWorkbookParseSlot<T>(fn: () => Promise<T>): Promise<T>
 }
 
 /**
- * One-shot structured parse. Bounds: on-disk size → !ref cells → rows → jsonl bytes.
- * Full isolation (worker) remains a platform follow-up.
+ * One-shot structured parse. Prefer `buildWorkbookAssetsIsolated` in server workers
+ * so timeout can SIGKILL the child. This entry uses an in-process slot mutex.
  */
 export async function buildWorkbookAssetsFromPath(filePath: string): Promise<WorkbookAssetBuild> {
   return withWorkbookParseSlot(() => buildWorkbookAssetsFromPathUnlocked(filePath));
 }
 
-async function buildWorkbookAssetsFromPathUnlocked(filePath: string): Promise<WorkbookAssetBuild> {
+/** Unlocked in-process parse (tests + isolate fallback). */
+export async function buildWorkbookAssetsFromPathUnlocked(
+  filePath: string,
+): Promise<WorkbookAssetBuild> {
   const fileStat = await stat(filePath);
   if (fileStat.size > WORKBOOK_MAX_FILE_BYTES_HARD) {
     throw new Error(

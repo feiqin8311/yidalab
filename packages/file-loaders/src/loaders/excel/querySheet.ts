@@ -116,25 +116,28 @@ const parseLine = (line: string): Record<string, string> | null => {
   }
 };
 
-const applyCharBudget = (
+/** Apply page char budget including single-row clamp (shared with file/stream paths). */
+export const applySheetCharBudget = (
   rows: Record<string, string>[],
+  maxChars: number = SHEET_QUERY_MAX_CHARS,
 ): { rows: Record<string, string>[]; truncated: boolean } => {
   if (rows.length === 0) return { rows, truncated: false };
-  let page = rows.map((r) => clampRowForBudget(r, SHEET_QUERY_MAX_CHARS));
+  let page = rows.map((r) => clampRowForBudget(r, maxChars));
   let chars = JSON.stringify(page).length;
   let truncated = page.some((r, i) => JSON.stringify(r) !== JSON.stringify(rows[i]));
-  while (page.length > 1 && chars > SHEET_QUERY_MAX_CHARS) {
+  while (page.length > 1 && chars > maxChars) {
     page = page.slice(0, -1);
     truncated = true;
     chars = JSON.stringify(page).length;
   }
-  // Single row still over budget after clamp (should be rare): keep clamped form.
-  if (page.length === 1 && chars > SHEET_QUERY_MAX_CHARS) {
-    page = [clampRowForBudget(page[0]!, Math.floor(SHEET_QUERY_MAX_CHARS * 0.9))];
+  if (page.length === 1 && chars > maxChars) {
+    page = [clampRowForBudget(page[0]!, Math.floor(maxChars * 0.9))];
     truncated = true;
   }
   return { rows: page, truncated };
 };
+
+const applyCharBudget = applySheetCharBudget;
 
 /**
  * Query newline-delimited JSON rows with cursor pagination and hard caps.

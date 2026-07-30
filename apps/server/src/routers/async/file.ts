@@ -89,57 +89,57 @@ export const fileRouter = router({
 
       try {
         const startAt = Date.now();
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => {
-            reject(
-              new AsyncTaskError(
-                AsyncTaskErrorType.Timeout,
-                'workbook parse task is timeout, please try again',
-              ),
-            );
-          }, ASYNC_TASK_TIMEOUT);
-        });
-
-        const parsePromise = async () => {
-          await asyncTaskModel.update(input.taskId, { status: AsyncTaskStatus.Processing });
-          const workbookService = new WorkbookService(ctx.serverDB, ctx.userId, workspaceId);
-          const result = await workbookService.parseWorkbookFile(input.fileId);
-          const duration = Date.now() - startAt;
-          if (result.status === 'failed' || result.status === 'unsupported') {
-            await asyncTaskModel.update(input.taskId, {
-              duration,
-              error: new AsyncTaskError(
-                AsyncTaskErrorType.ServerError,
-                result.status === 'unsupported' ? 'Not a spreadsheet' : 'Workbook parse failed',
-              ),
-              status: AsyncTaskStatus.Error,
-            });
-            return { status: result.status, success: false };
-          }
+        await asyncTaskModel.update(input.taskId, { status: AsyncTaskStatus.Processing });
+        // Isolation: XLSX materialize runs in a forked child (SIGKILL on timeout).
+        // No Promise.race — soft race left parse running and raced ready vs failed.
+        const workbookService = new WorkbookService(ctx.serverDB, ctx.userId, workspaceId);
+        const result = await workbookService.parseWorkbookFile(input.fileId);
+        const duration = Date.now() - startAt;
+        if (duration > ASYNC_TASK_TIMEOUT) {
+          // Child should already have been killed; record timeout if still late.
+          console.warn(
+            `[WorkbookParse] finished after timeout budget duration=${duration}ms fileId=${input.fileId}`,
+          );
+        }
+        if (result.status === 'failed' || result.status === 'unsupported') {
           await asyncTaskModel.update(input.taskId, {
             duration,
-            status: AsyncTaskStatus.Success,
+            error: new AsyncTaskError(
+              AsyncTaskErrorType.ServerError,
+              result.status === 'unsupported' ? 'Not a spreadsheet' : 'Workbook parse failed',
+            ),
+            status: AsyncTaskStatus.Error,
           });
-          return { status: result.status, success: true, workbookId: result.workbookId };
-        };
-
-        return await Promise.race([parsePromise(), timeoutPromise]);
+          return { status: result.status, success: false };
+        }
+        await asyncTaskModel.update(input.taskId, {
+          duration,
+          status: AsyncTaskStatus.Success,
+        });
+        return { status: result.status, success: true, workbookId: result.workbookId };
       } catch (e) {
         const error = e as Error;
         console.error('[WorkbookParse Error]', error);
+        const isTimeout =
+          /timed out|SIGKILL|killed/i.test(error.message || '') ||
+          (error as { name?: string }).name === AsyncTaskErrorType.Timeout;
         await asyncTaskModel.update(input.taskId, {
           error: new AsyncTaskError(
-            (error as any).name === AsyncTaskErrorType.Timeout
-              ? AsyncTaskErrorType.Timeout
-              : AsyncTaskErrorType.ServerError,
+            isTimeout ? AsyncTaskErrorType.Timeout : AsyncTaskErrorType.ServerError,
             error.message || String(error),
           ),
           status: AsyncTaskStatus.Error,
         });
-        await fileModel.update(input.fileId, {
-          parseError: (error.message || String(error)).slice(0, 2000),
-          parseStatus: 'failed',
-        });
+        // Only mark file failed when workbook is not already ready (post-publish errors).
+        const { WorkbookService: WS } = await import('@/server/services/workbook');
+        const wb = new WS(ctx.serverDB, ctx.userId, workspaceId);
+        const current = await wb.getReadyWorkbook(input.fileId);
+        if (current?.status !== 'ready') {
+          await fileModel.update(input.fileId, {
+            parseError: (error.message || String(error)).slice(0, 2000),
+            parseStatus: 'failed',
+          });
+        }
         return {
           message: `File ${file.name}(${input.taskId}) failed to parse workbook: ${error.message}`,
           success: false,

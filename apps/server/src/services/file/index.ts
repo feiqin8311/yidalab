@@ -66,6 +66,18 @@ export class FileService {
   }
 
   /**
+   * Download storage object to a local path (stream when impl supports it).
+   */
+  public async downloadToPath(key: string, destPath: string): Promise<void> {
+    if (this.impl.downloadToPath) {
+      return this.impl.downloadToPath(key, destPath);
+    }
+    const bytes = await this.impl.getFileByteArray(key);
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(destPath, Buffer.from(bytes));
+  }
+
+  /**
    * Create pre-signed upload URL
    */
   public async createPreSignedUrl(key: string): Promise<string> {
