@@ -47,6 +47,11 @@ export function resolveDingTalkAuthorUserId(raw: {
 
 const fallbackWebhooks = new Map<string, { expiresAt: number; url: string }>();
 
+/** chat stringifyMarkdown emits CommonMark autolinks; strip for plain-text IM. */
+export function toDingTalkPlainText(text: string): string {
+  return text.replaceAll(/<(https?:\/\/[^>\s]+)>/g, '$1');
+}
+
 export class DingTalkAdapter {
   readonly name = 'dingtalk';
   readonly userName = 'dingtalk-bot';
@@ -187,15 +192,19 @@ export class DingTalkAdapter {
     return { conversationId: parts.join(':'), conversationType };
   }
   renderFormatted(content: FormattedContent): string {
-    return stringifyMarkdown(content.ast);
+    return toDingTalkPlainText(stringifyMarkdown(content.ast));
   }
 
   private renderPostable(message: AdapterPostableMessage): string {
-    if (typeof message === 'string') return message;
-    if ('raw' in message) return message.raw;
-    if ('markdown' in message) return stringifyMarkdown(parseMarkdown(message.markdown));
-    if ('ast' in message) return stringifyMarkdown(message.ast);
-    return 'fallbackText' in message ? (message.fallbackText ?? '') : '';
+    if (typeof message === 'string') return toDingTalkPlainText(message);
+    if ('raw' in message) return toDingTalkPlainText(message.raw);
+    if ('markdown' in message) {
+      // chat's stringifyMarkdown re-wraps bare URLs as <https://...> autolinks.
+      // DingTalk session webhook is plain text — angle brackets show literally.
+      return toDingTalkPlainText(stringifyMarkdown(parseMarkdown(message.markdown)));
+    }
+    if ('ast' in message) return toDingTalkPlainText(stringifyMarkdown(message.ast));
+    return 'fallbackText' in message ? toDingTalkPlainText(message.fallbackText ?? '') : '';
   }
 
   private key(threadId: string) {
