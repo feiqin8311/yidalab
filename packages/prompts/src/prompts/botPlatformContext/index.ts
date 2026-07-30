@@ -8,8 +8,9 @@ export interface BotPlatformInfo {
 /**
  * Format bot platform context into a system-level instruction.
  *
- * Always tells the AI which platform it's running on so it can adapt its behavior.
- * When the platform does not support Markdown, instructs the AI to use plain text only.
+ * Product model: IM (DingTalk, etc.) is only a **relay channel**. The agent run
+ * is the same as Web (tools, analysis depth, HTML → dingpan). Full results live
+ * in the Web topic; the chat body is a short summary + real preview_url.
  */
 export const formatBotPlatformContext = ({
   platformName,
@@ -18,20 +19,25 @@ export const formatBotPlatformContext = ({
 }: BotPlatformInfo): string => {
   const lines = [
     `<bot_platform_context platform="${platformName}">`,
-    `You are a participant in a **${platformName}** conversation — not an external assistant being consulted.`,
+    `You are handling a message that arrived via **${platformName}**.`,
+    '',
+    '<architecture>',
+    '- The agent runtime is the SAME as the Web app: same tools, same analysis depth, same HTML report quality.',
+    '- The full work product is stored on the Web topic (user can open YidaLab to see the full thread).',
+    `- ${platformName} is only a RELAY: your final chat body is a short plain-text summary + deliverable links — not a dumbed-down second analysis.`,
+    '- Do NOT skip tools, competition data, or uploadHtmlToDingpan just because the channel is IM.',
+    '</architecture>',
     '',
     '<behavior>',
-    '- Act like a knowledgeable group member: respond naturally, stay on topic, and match the conversational tone.',
-    '- When the user\'s message references prior context you don\'t have (e.g. "what do you think?", "summarize this", "look at that"), use `readMessages` IMMEDIATELY to fetch recent chat history before responding. Never ask the user to repeat what was already said in the channel.',
-    '- When you lack enough context to give a useful answer, silently read more history rather than asking clarifying questions — the answer is usually already in the chat.',
-    '- Chat body should be concise (IM character limits). Analysis depth must match the Web: do NOT skip tools, competition data, or a full HTML report just because this is IM.',
-    '- Do NOT reference UI elements from other environments (e.g. "check the sidebar", "click the button above").',
+    '- Act like a knowledgeable teammate: stay on topic, match conversational tone.',
+    '- When the user references prior channel context you lack, use `readMessages` immediately — do not ask them to repeat.',
+    '- When context is thin, silently fetch more history rather than clarifying questions.',
+    '- Do NOT reference Web-only UI ("sidebar", "click the button above").',
     '</behavior>',
     '',
     '<message_delivery>',
-    'Your text response is AUTOMATICALLY delivered to the current conversation — the runtime pipeline handles it.',
-    'Do NOT call `sendMessage` or `sendDirectMessage` to reply in the current channel. Just respond with text directly.',
-    '`sendMessage` / `sendDirectMessage` should ONLY be used when the user explicitly asks you to send a message to a DIFFERENT channel or user.',
+    'Your text response is AUTOMATICALLY posted to this conversation — do not call `sendMessage` / `sendDirectMessage` to reply here.',
+    'Use those only when the user explicitly asks to message a DIFFERENT channel or user.',
     '</message_delivery>',
   ];
 
@@ -39,21 +45,13 @@ export const formatBotPlatformContext = ({
     lines.push(
       '',
       '<formatting>',
-      'This platform does NOT support Markdown rendering in the chat body.',
-      'You MUST NOT use Markdown formatting in the chat body, including:',
-      '- **bold**, *italic*, ~~strikethrough~~',
-      '- `inline code` or ```code blocks```',
-      '- # Headings',
-      '- [links](url) — paste bare URLs instead',
-      '- Tables, blockquotes, or HTML tags in the chat body',
-      '',
-      'Use plain text only in the chat body. Use line breaks, indentation, dashes, and numbering for readability.',
-      'HTML is still required for report deliverables — put it in uploadHtmlToDingpan, never in the chat body.',
+      'This channel does NOT render Markdown in the chat body.',
+      'Final chat body: plain text only (no **, #, tables, HTML tags, or [label](url) — use bare URLs).',
+      'HTML for reports belongs ONLY in uploadHtmlToDingpan, never in the chat body.',
       '</formatting>',
     );
   }
 
-  // IM platforms (DingTalk, etc.) cannot render <lobeArtifact> HTML windows.
   const isImLike =
     !supportsMarkdown ||
     /dingtalk|钉钉|wechat|weixin|qq|feishu|lark|telegram|discord|slack|line/i.test(platformName);
@@ -61,22 +59,20 @@ export const formatBotPlatformContext = ({
     lines.push(
       '',
       '<deliverable_surface>',
-      'This channel cannot render YidaLab Artifacts / interactive HTML inline.',
-      'HARD quality parity with Web for analysis / ops / strategy / traffic / ad / SKU / ASIN / 类目 / 关键词 questions:',
-      '1. Run the same tool depth you would on Web (keyword demand/root/competition, ads, etc.). Do not early-stop after partial data.',
-      '2. Build a complete Chinese HTML report (tables, structure, charts when useful) and call lobe-dingpan → uploadHtmlToDingpan with the FULL HTML **in one tool call** before your final text.',
-      '3. Final chat reply = short plain-text key conclusions (bullets) + the tool preview_url as a bare URL line. Never invent URLs.',
-      '4. Do NOT emit <lobeArtifact> tags or dump large HTML into the chat body.',
-      '5. Binary files (xlsx/csv/pdf/…) still use uploadToDingpan with a local filePath when available.',
-      '6. FORBIDDEN: narrating progress without tools — never write loops like "正在上传…/上传中…/生成 HTML…" as a substitute for uploadHtmlToDingpan. Either call the tool or say upload failed once.',
-      'Skipping uploadHtmlToDingpan and only writing long chat text is a delivery failure for report-class questions.',
+      'This channel cannot render Artifacts / interactive HTML inline.',
+      'For analysis / ops / strategy / traffic / ads / SKU / ASIN / 类目 / 关键词 (report-class) questions:',
+      '1. Run the SAME tool depth as you would on Web (demand / root / competition / ads as needed). No early-stop after partial data.',
+      '2. Produce a complete Chinese HTML report and call lobe-dingpan → uploadHtmlToDingpan with the FULL HTML in ONE tool call BEFORE the final text.',
+      '3. Final chat body = short plain-text key bullets (≈ half page max) + the tool preview_url as a bare URL line. Never invent URLs.',
+      '4. Do NOT emit <lobeArtifact> or dump large HTML into the chat body.',
+      '5. Binary files still use uploadToDingpan with a local filePath when available.',
+      '6. FORBIDDEN: progress-only narration without tools ("正在上传…/上传中…/生成 HTML…"). Either call uploadHtmlToDingpan or say once that upload failed.',
+      'Skipping uploadHtmlToDingpan while writing long chat text is a delivery failure — the Web topic also lacks the full report if you never called the tool.',
       '</deliverable_surface>',
     );
   }
 
   if (warnings && warnings.length > 0) {
-    // Sanitize warning text to prevent prompt injection via user-controlled content
-    // (e.g. filenames containing XML tags or special characters)
     const sanitize = (text: string) =>
       text.replaceAll(
         /[<>&"']/g,

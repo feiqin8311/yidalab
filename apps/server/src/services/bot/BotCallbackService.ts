@@ -16,7 +16,6 @@ import { messengerPlatformRegistry } from '@/server/services/messenger/platforms
 import { SystemAgentService } from '@/server/services/systemAgent';
 
 import { AgentBridgeService } from './AgentBridgeService';
-import { ensureBotDingpanDelivery } from './ensureBotDingpanDelivery';
 import type {
   BotMessageAttachment,
   BotReplyLocale,
@@ -30,6 +29,7 @@ import {
   platformRegistry,
   resolveBotProviderConfig,
 } from './platforms';
+import { prepareBotOutboundReply } from './prepareBotOutboundReply';
 import { clearReactionState, getReactionState, saveReactionState } from './reactionState';
 import {
   renderAgentError,
@@ -526,9 +526,8 @@ export class BotCallbackService {
     // attachment-only path still drives `deliverFirstChunk` once.
     let chunks: string[];
     if (hasText) {
-      replyText = await ensureBotDingpanDelivery({
+      replyText = await prepareBotOutboundReply({
         db: this.db,
-        plainText: true,
         reply: replyText!,
         topicId: body.topicId,
         userId: body.userId,
