@@ -400,6 +400,35 @@ describe('ToolNameResolver', () => {
       expect(result[0].apiName).toBe('MD5HASH_abc123def456');
     });
 
+    it('should recover query_sku_ads____mcp when identifier is the api name', () => {
+      const toolCalls = [
+        {
+          function: {
+            arguments: '{"sku":"304002"}',
+            name: 'query_sku_ads____mcp',
+          },
+          id: 'call_1',
+          type: 'function',
+        },
+      ];
+      const manifests = {
+        'company.mcp.lingxing-mcp': {
+          api: [{ description: '', name: 'query_sku_ads', parameters: {} }],
+          identifier: 'company.mcp.lingxing-mcp',
+          meta: {},
+          type: 'mcp',
+        },
+      };
+      const offered = [resolver.generate('company.mcp.lingxing-mcp', 'query_sku_ads', 'mcp')];
+
+      const result = resolver.resolve(toolCalls, manifests, offered);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].identifier).toBe('company.mcp.lingxing-mcp');
+      expect(result[0].apiName).toBe('query_sku_ads');
+      expect(result[0].type).toBe('mcp');
+    });
+
     it('should keep hashed apiName if api not found in manifest', () => {
       const toolCalls = [
         {

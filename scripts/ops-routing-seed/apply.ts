@@ -30,13 +30,13 @@ const LINGXING_DESCRIPTION =
   '领星广告短查询。用户像「国家+活动+SKU」时：activateTools(company.mcp.lingxing-mcp) 后直接 query_*，禁止 readReference/OpenClaw。例：美国 916341大词广泛-TOSROS 916341';
 
 const FBA_DESCRIPTION =
-  '库存预警固定口令：LIBRATON库存预警 / EZARC库存预警 / YPLUS库存预警。收到即执行 lobe-fba-alert.runFbaAlert；按当前人钉钉 userId 只发本人，无需选站点。禁止 runCommand/OpenClaw/广播。';
+  '库存预警固定口令：LIBRATON库存预警 / EZARC库存预警 / YPLUS库存预警。收到即执行 lobe-fba-alert.runFbaAlert（默认 upload_only：上传钉盘并返回 preview_url，不发钉钉私信）。无需选站点。禁止 runCommand/OpenClaw/广播。';
 
 const AMAZON_OPS_DESCRIPTION =
   '亚马逊运营路由：ASIN流量诊断、类目大盘、Listing/Rufus、VOC评论、竞品七图、DTC站外调研、推广节奏、领星短查询。按意图 activate 对应 company MCP/skill（SIF/领星/SellerSprite/DTC），输出中文 HTML；交付走 Artifact 或钉盘，勿把 Artifacts/Memory 当业务能力。';
 
 const LINGXING_MCP_DESCRIPTION =
-  '领星广告 MCP（首选查数）。工具：query_campaign_ads(country 用 US/CA/UK…), query_sku_ads, query_asin_ads, query_asin_ad_architecture, query_campaign_querywords, query_negative_rules, get_schema_summary。失败换 SKU/ASIN 路径，勿重复同一 country 报错参数。';
+  '领星广告 MCP（首选查数）。工具：query_campaign_ads(country 用 US/CA/UK…), query_sku_ads, query_asin_ads, query_asin_ad_architecture, query_campaign_querywords, query_negative_rules, get_schema_summary。HARD：单次日期跨度≤90天（近7/14/30 分段查，勿一次拉半年）。失败换 SKU/ASIN 路径，勿重复同一 country 报错参数。调用时必须用 activate 后的完整 MCP 工具名，禁止把 api 名当 identifier。';
 
 const main = async () => {
   if (!process.env.DATABASE_URL) {
