@@ -46,6 +46,8 @@ export const compactBotRelayText = (reply: string, maxChars = MAX_RELAY_CHARS): 
 
   // Drop markdown link wrappers → bare URL (IM has no MD)
   text = text.replaceAll(/\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g, '$2');
+  // CommonMark autolink <https://...> — DingTalk shows the brackets as literal junk
+  text = text.replaceAll(/<(https?:\/\/[^>\s]+)>/g, '$1');
 
   if (text.length <= maxChars) return text;
 

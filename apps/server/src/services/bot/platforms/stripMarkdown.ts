@@ -149,6 +149,9 @@ export function stripMarkdown(md: string): string {
   // Links: [text](url) → text (url)
   text = text.replaceAll(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
 
+  // Autolinks: <https://...> → bare URL (DingTalk / plain-text IM)
+  text = text.replaceAll(/<(https?:\/\/[^>\s]+)>/g, '$1');
+
   // Bold + italic: ***text*** or ___text___
   text = text.replaceAll(/\*{3}(.+?)\*{3}/g, '$1');
   text = text.replaceAll(/_{3}(.+?)_{3}/g, '$1');

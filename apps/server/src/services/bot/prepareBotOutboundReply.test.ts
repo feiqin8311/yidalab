@@ -15,6 +15,13 @@ describe('compactBotRelayText', () => {
     expect(compactBotRelayText(`[打开](${url})`)).not.toContain('](');
   });
 
+  it('strips angle-bracket autolinks around dingpan urls', () => {
+    const out = compactBotRelayText(`钉盘报告：\n<${url}>`);
+    expect(out).toContain(url);
+    expect(out).not.toContain(`<${url}>`);
+    expect(out).not.toMatch(/<https?:/);
+  });
+
   it('puts dingpan url after clipped conclusions', () => {
     const long = `${'结论要点。'.repeat(200)}\n${url}\n更多尾巴`;
     const out = compactBotRelayText(long, 200);
