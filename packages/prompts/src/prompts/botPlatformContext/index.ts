@@ -64,10 +64,11 @@ export const formatBotPlatformContext = ({
       'This channel cannot render YidaLab Artifacts / interactive HTML inline.',
       'HARD quality parity with Web for analysis / ops / strategy / traffic / ad / SKU / ASIN / 类目 / 关键词 questions:',
       '1. Run the same tool depth you would on Web (keyword demand/root/competition, ads, etc.). Do not early-stop after partial data.',
-      '2. Build a complete Chinese HTML report (tables, structure, charts when useful) and call lobe-dingpan → uploadHtmlToDingpan with the FULL HTML before your final text.',
+      '2. Build a complete Chinese HTML report (tables, structure, charts when useful) and call lobe-dingpan → uploadHtmlToDingpan with the FULL HTML **in one tool call** before your final text.',
       '3. Final chat reply = short plain-text key conclusions (bullets) + the tool preview_url as a bare URL line. Never invent URLs.',
       '4. Do NOT emit <lobeArtifact> tags or dump large HTML into the chat body.',
       '5. Binary files (xlsx/csv/pdf/…) still use uploadToDingpan with a local filePath when available.',
+      '6. FORBIDDEN: narrating progress without tools — never write loops like "正在上传…/上传中…/生成 HTML…" as a substitute for uploadHtmlToDingpan. Either call the tool or say upload failed once.',
       'Skipping uploadHtmlToDingpan and only writing long chat text is a delivery failure for report-class questions.',
       '</deliverable_surface>',
     );
