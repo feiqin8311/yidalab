@@ -12,20 +12,28 @@ export const WORKBOOK_PARSE_CHILD_TIMEOUT_MS = (60 * 5 - 5) * 1000;
 /** Child V8 heap hard ceiling (MB). */
 export const WORKBOOK_PARSE_CHILD_MAX_OLD_SPACE_MB = 512;
 
+/**
+ * Resolve worker script path at runtime.
+ * Avoid static path.join(cwd, 'packages/...') string forms that Turbopack
+ * treats as module imports (breaks next build:docker).
+ */
 const resolveWorkerPath = (): string => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.join(here, 'workbookParseWorker.cjs'),
-    path.join(process.cwd(), 'packages/file-loaders/src/loaders/excel/workbookParseWorker.cjs'),
-    path.join(
-      process.cwd(),
-      'node_modules/@lobechat/file-loaders/src/loaders/excel/workbookParseWorker.cjs',
-    ),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return candidates[0]!;
+  const local = path.join(here, 'workbookParseWorker.cjs');
+  // turbopackIgnore: do not trace whole project from dynamic existsSync
+  if (existsSync(/* turbopackIgnore: true */ local)) return local;
+
+  const cwd = process.cwd();
+  // Build segments at runtime so Turbopack cannot constant-fold to ROOT imports
+  const monorepoSegs = ['packages', 'file-loaders', 'src', 'loaders', 'excel'];
+  const monorepo = path.join(cwd, ...monorepoSegs, 'workbookParseWorker.cjs');
+  if (existsSync(/* turbopackIgnore: true */ monorepo)) return monorepo;
+
+  const pkgSegs = ['node_modules', '@lobechat', 'file-loaders', 'src', 'loaders', 'excel'];
+  const fromPkg = path.join(cwd, ...pkgSegs, 'workbookParseWorker.cjs');
+  if (existsSync(/* turbopackIgnore: true */ fromPkg)) return fromPkg;
+
+  return local;
 };
 
 export interface IsolatedParseOptions {
@@ -111,7 +119,7 @@ export async function buildWorkbookAssetsIsolated(
   const heapMb = options.maxOldSpaceMb ?? WORKBOOK_PARSE_CHILD_MAX_OLD_SPACE_MB;
   const workerPath = resolveWorkerPath();
 
-  if (!existsSync(workerPath)) {
+  if (!existsSync(/* turbopackIgnore: true */ workerPath)) {
     throw new Error(
       `Workbook parse worker missing at ${workerPath}. Set WORKBOOK_PARSE_IN_PROCESS=1 only for local debug.`,
     );
