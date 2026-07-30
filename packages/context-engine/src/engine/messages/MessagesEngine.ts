@@ -148,6 +148,8 @@ export class MessagesEngine {
       enableHistoryCount,
       historyCount,
       forceFinish,
+      forceFinishDeliveryOnly,
+      forceFinishReason,
       historySummary,
       formatHistorySummary,
       knowledge,
@@ -493,8 +495,12 @@ export class MessagesEngine {
 
       // Tool message reordering
       new ToolMessageReorder(),
-      // Force finish summary (when maxSteps exceeded)
-      new ForceFinishSummaryInjector({ enabled: !!forceFinish }),
+      // Force finish summary (maxSteps / token / tool-fail; optional delivery-only)
+      new ForceFinishSummaryInjector({
+        deliveryOnly: !!forceFinishDeliveryOnly,
+        enabled: !!forceFinish,
+        reason: forceFinishReason,
+      }),
       // Message cleanup (final step)
       new MessageCleanupProcessor(),
     ];

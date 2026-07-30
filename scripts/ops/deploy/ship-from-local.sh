@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
-# From developer machine: pack git HEAD → upload → server cached rebuild + up.
+# FALLBACK: pack git HEAD → upload → server rebuild (slow).
+# Daily path: git push → Actions "YidaLab Production Image" (no server compile).
+#
 # Env:
 #   DEPLOY_HOST   default root@116.205.229.31
 #   DEPLOY_ROOT   default /yida/yidalab
 #   SSHPASS       if set, uses sshpass -e
 #   NO_CACHE=1    cold build on server
 #   SKIP_BUILD=1  only upload src, do not build
+#   CONFIRM_SERVER_BUILD=1  required unless SKIP_BUILD=1
 set -euo pipefail
+
+if [[ "${SKIP_BUILD:-0}" != "1" && "${CONFIRM_SERVER_BUILD:-0}" != "1" ]]; then
+  cat >&2 <<'EOF'
+Refusing ship-from-local server build.
+
+Daily:  git push origin main   # CI builds + deploys
+Manual: TAG=prod ./scripts/ops/deploy/remote-pull-image.sh
+
+Emergency server build:
+  CONFIRM_SERVER_BUILD=1 ./scripts/ops/deploy/ship-from-local.sh
+EOF
+  exit 2
+fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$REPO_ROOT"

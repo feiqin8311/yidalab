@@ -70,6 +70,17 @@ AUTH_DINGTALK_CORP_ID=
 # TELEMETRY_DISABLED=1
 ```
 
+## Production deploy
+
+**Do not compile on the server.** Push → GitHub Actions builds the image → SSH deploys to `116.205.229.31`.
+
+```bash
+git push origin main # or codex/yidalab-custom
+# Actions: "YidaLab Production Image" (~15–25 min)
+```
+
+Details: [scripts/ops/deploy/README.md](./scripts/ops/deploy/README.md)
+
 ## Branch
 
 Default product branch for this fork: `main` on `feiqin8311/yidalab`.\

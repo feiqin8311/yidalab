@@ -390,14 +390,21 @@ export class GeneralChatAgent implements Agent {
       ...this.getAllowedToolNamesPayload(),
     };
     const compressionEnabled = this.config.compressionConfig?.enabled ?? true;
-    // Mirror RuntimeExecutors.callLlm: when state.forceFinish is set, the
-    // executor strips all tools via buildStepToolDelta (deactivatedToolIds: ['*']),
-    // so they must not count against the compression budget either — otherwise
-    // we'd burn an extra summarization pass on tool tokens that won't be sent.
+    // Mirror RuntimeExecutors.callLlm: plain forceFinish strips all tools.
+    // Delivery-only forceFinish (bot/dingpan) still exposes uploadHtmlToDingpan —
+    // those tools are tiny; exclude only when tools are fully stripped.
+    const forceFinishStripsAllTools =
+      !!state.forceFinish &&
+      !(
+        state.metadata?.botContext ||
+        state.metadata?.bot ||
+        state.metadata?.agentConfig?.chatConfig?.htmlDeliveryMode === 'dingpan' ||
+        state.metadata?.htmlDeliveryMode === 'dingpan'
+      );
     const compressionOptions = {
       maxWindowToken: this.config.compressionConfig?.maxWindowToken,
       thresholdRatio: this.config.compressionConfig?.thresholdRatio,
-      tools: state.forceFinish ? undefined : payloadWithAllowedToolNames.tools,
+      tools: forceFinishStripsAllTools ? undefined : payloadWithAllowedToolNames.tools,
     };
 
     if (compressionEnabled) {
@@ -465,12 +472,19 @@ export class GeneralChatAgent implements Agent {
       case 'user_input': {
         // Check if context compression is enabled and needed before calling LLM
         const compressionEnabled = this.config.compressionConfig?.enabled ?? true; // Default to enabled
-        // Mirror RuntimeExecutors.callLlm: force-finish steps ship without tools,
-        // so they must not count against the compression budget here either.
+        // Plain forceFinish strips tools; delivery-only keeps dingpan upload tools.
+        const forceFinishStripsAllTools =
+          !!state.forceFinish &&
+          !(
+            state.metadata?.botContext ||
+            state.metadata?.bot ||
+            state.metadata?.agentConfig?.chatConfig?.htmlDeliveryMode === 'dingpan' ||
+            state.metadata?.htmlDeliveryMode === 'dingpan'
+          );
         const compressionOptions = {
           maxWindowToken: this.config.compressionConfig?.maxWindowToken,
           thresholdRatio: this.config.compressionConfig?.thresholdRatio,
-          tools: state.forceFinish ? undefined : this.getTools(state),
+          tools: forceFinishStripsAllTools ? undefined : this.getTools(state),
         };
 
         if (compressionEnabled) {

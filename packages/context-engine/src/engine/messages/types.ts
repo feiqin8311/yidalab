@@ -240,6 +240,12 @@ export interface MessagesEngineParams {
   enableHistoryCount?: boolean;
   /** Force finish flag: when true, injects summary prompt for max-steps completion */
   forceFinish?: boolean;
+  /**
+   * forceFinish delivery-only: keep 钉盘 upload tool; prompt asks for HTML upload.
+   */
+  forceFinishDeliveryOnly?: boolean;
+  /** Optional brake reason shown in the force-finish system message. */
+  forceFinishReason?: string;
   /** Function to format history summary */
   formatHistorySummary?: (summary: string) => string;
   /** History message count limit */

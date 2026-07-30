@@ -4,6 +4,45 @@ import type { JSONSchema7 } from 'json-schema';
 import { systemPrompt } from './systemRole';
 import { DingpanApiName, DingpanIdentifier } from './types';
 
+/** Upload-HTML-only surface for forceFinish delivery (no file upload / status). */
+export const DingpanDeliveryManifest: BuiltinToolManifest = {
+  api: [
+    {
+      defaultTimeoutMs: 180_000,
+      description:
+        "Upload an HTML report to DingTalk Drive under today's date folder and return preview_url. Prefer structured naming fields (asin/site/taskType); server fills userName.",
+      name: DingpanApiName.uploadHtmlToDingpan,
+      parameters: {
+        additionalProperties: false,
+        properties: {
+          asin: { description: 'ASIN for the remote filename', type: 'string' },
+          html: {
+            description: 'Full HTML document string (required).',
+            type: 'string',
+          },
+          keyword: { description: 'Keyword segment for the filename', type: 'string' },
+          productName: { description: 'Short product name for the filename', type: 'string' },
+          site: { description: 'Market/site label, e.g. 日本 / US / CA', type: 'string' },
+          taskType: { description: 'Task short label, e.g. 推广复盘', type: 'string' },
+          title: { description: 'Title for the persisted document', type: 'string' },
+          topicId: { description: 'Topic id for the deliverable document', type: 'string' },
+          uploadName: { description: 'Optional full remote file name override', type: 'string' },
+        },
+        required: ['html'],
+        type: 'object',
+      } satisfies JSONSchema7,
+    },
+  ],
+  identifier: DingpanIdentifier,
+  meta: {
+    avatar: '📎',
+    description: 'Force-finish delivery: upload HTML report to 钉盘 only.',
+    title: 'Dingpan',
+  },
+  systemRole: systemPrompt,
+  type: 'builtin',
+};
+
 export const DingpanManifest: BuiltinToolManifest = {
   api: [
     {

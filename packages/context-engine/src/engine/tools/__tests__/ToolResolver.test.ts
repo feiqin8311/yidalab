@@ -209,6 +209,27 @@ describe('ToolResolver', () => {
       expect(result.manifestMap['web-search']).toBeDefined();
       expect(result.manifestMap['calculator']).toBeDefined();
     });
+
+    it('should keep forceFinish delivery tools when forceFinishDeliveryToolIds set', () => {
+      const dingpan: LobeToolManifest = {
+        api: [{ description: 'upload html', name: 'uploadHtmlToDingpan', parameters: {} }],
+        identifier: 'lobe-dingpan',
+        meta: { title: 'Dingpan' },
+      };
+      const opSet = makeOperationToolSet([mockSearchManifest, dingpan]);
+      const delta: StepToolDelta = {
+        activatedTools: [],
+        deactivatedToolIds: ['*'],
+        forceFinishDeliveryToolIds: ['lobe-dingpan'],
+      };
+
+      const result = resolver.resolve(opSet, delta);
+
+      expect(result.enabledToolIds).toEqual(['lobe-dingpan']);
+      expect(result.tools.length).toBeGreaterThan(0);
+      expect(result.promptManifestMap['lobe-dingpan']).toBeDefined();
+      expect(result.promptManifestMap['web-search']).toBeUndefined();
+    });
   });
 
   describe('deduplication', () => {

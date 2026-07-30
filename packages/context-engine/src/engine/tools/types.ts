@@ -211,6 +211,11 @@ export interface StepToolDelta {
     source: ActivationSource;
   }>;
   deactivatedToolIds?: string[];
+  /**
+   * When forceFinish sets deactivatedToolIds to `*`, optionally keep these
+   * tool identifiers (e.g. lobe-dingpan upload-only) so delivery can finish.
+   */
+  forceFinishDeliveryToolIds?: string[];
 }
 
 /**
