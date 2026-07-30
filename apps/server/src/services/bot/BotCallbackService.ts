@@ -408,9 +408,22 @@ export class BotCallbackService {
   ): Promise<string | undefined> {
     try {
       const messageModel = new MessageModel(this.db, userId, workspaceId ?? undefined);
-      const row = await messageModel.findLatestAssistantInTopic(topicId);
+      let row = await messageModel.findLatestAssistantWithContentInTopic(topicId);
+      if (!row) row = await messageModel.findLatestAssistantInTopic(topicId);
       const content = typeof row?.content === 'string' ? row.content.trim() : '';
-      return content || undefined;
+      if (content) return content;
+
+      const toolErrors = await messageModel.findRecentToolErrorsInTopic(topicId);
+      if (toolErrors.length === 0) {
+        return '本轮未能生成有效回复（工具调用异常或模型空输出）。请缩短问题后重试，或到 Web 打开同一话题查看中间结果。';
+      }
+      const unique = [...new Set(toolErrors)].slice(0, 3);
+      return [
+        '本轮未能生成完整回复，工具侧出现错误：',
+        ...unique.map((e) => `- ${e}`),
+        '',
+        '建议：缩小领星查询日期窗口（单次≤90天）、确认 MCP 已 activate 后重试；或到 Web 查看该话题。',
+      ].join('\n');
     } catch (error) {
       log('recoverBotReplyContent failed (non-fatal): %O', error);
       return undefined;

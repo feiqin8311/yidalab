@@ -1426,12 +1426,17 @@ export class AgentBridgeService {
                     return;
                   }
 
-                  // Still empty after DB recovery: resolve (not reject) so
-                  // handleMention does not post generic Execution Failed.
+                  // Last resort: still post a short notice so DingTalk is not silent.
+                  const emptyFallback = '本轮未能生成有效回复。请重试，或到 Web 打开同一话题查看。';
                   console.error(
-                    `[AgentBridge] completion had no deliverable content (operationId=${event.operationId}, topicId=${resolvedTopicId})`,
+                    `[AgentBridge] completion had no deliverable content (operationId=${event.operationId}, topicId=${resolvedTopicId}); posting fallback notice`,
                   );
-                  resolve({ reply: '', topicId: resolvedTopicId });
+                  try {
+                    await thread.post({ markdown: emptyFallback });
+                  } catch {
+                    // webhook may already be dead
+                  }
+                  resolve({ reply: emptyFallback, topicId: resolvedTopicId });
                 } catch (error) {
                   reject(error);
                 }
@@ -1554,7 +1559,9 @@ export class AgentBridgeService {
 
   /**
    * Recover final assistant text when the completion hook arrives empty.
-   * Prefers the turn's message id, then latest assistant row in the topic.
+   * Prefers the turn's message id, then latest non-empty assistant row.
+   * If still empty, synthesize a short failure notice from recent tool errors
+   * so IM bots never go completely silent (Jasmin empty-completion case).
    */
   private async recoverBotReplyContent(params: {
     assistantMessageId?: string;
@@ -1567,10 +1574,26 @@ export class AgentBridgeService {
       const messageModel = new MessageModel(this.db, this.userId, this.workspaceId);
       let row = assistantMessageId ? await messageModel.findById(assistantMessageId) : undefined;
       if ((!row || typeof row.content !== 'string' || !row.content.trim()) && topicId) {
+        row = await messageModel.findLatestAssistantWithContentInTopic(topicId);
+      }
+      if ((!row || typeof row.content !== 'string' || !row.content.trim()) && topicId) {
         row = await messageModel.findLatestAssistantInTopic(topicId);
       }
       const content = typeof row?.content === 'string' ? row.content.trim() : '';
-      return content || undefined;
+      if (content) return content;
+
+      if (!topicId) return undefined;
+      const toolErrors = await messageModel.findRecentToolErrorsInTopic(topicId);
+      if (toolErrors.length === 0) {
+        return '本轮未能生成有效回复（工具调用异常或模型空输出）。请缩短问题后重试，或到 Web 打开同一话题查看中间结果。';
+      }
+      const unique = [...new Set(toolErrors)].slice(0, 3);
+      return [
+        '本轮未能生成完整回复，工具侧出现错误：',
+        ...unique.map((e) => `- ${e}`),
+        '',
+        '建议：缩小领星查询日期窗口（单次≤90天）、确认 MCP 已 activate 后重试；或到 Web 查看该话题。',
+      ].join('\n');
     } catch (error) {
       log('recoverBotReplyContent failed (non-fatal): %O', error);
       return undefined;

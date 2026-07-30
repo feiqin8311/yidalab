@@ -1746,6 +1746,62 @@ export class MessageModel {
   };
 
   /**
+   * Latest assistant row with non-empty content (skips tool-call-only turns).
+   * Prefer this for bot empty-completion recovery.
+   */
+  findLatestAssistantWithContentInTopic = async (
+    topicId: string,
+  ): Promise<DBMessageItem | undefined> => {
+    const rows = (await this.db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.topicId, topicId),
+          eq(messages.role, 'assistant'),
+          isNotNull(messages.content),
+          sql`length(trim(${messages.content})) > 0`,
+          this.ownership(),
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(1)) as DBMessageItem[];
+
+    return rows[0];
+  };
+
+  /**
+   * Recent tool failure snippets for bot empty-completion fallback copy.
+   */
+  findRecentToolErrorsInTopic = async (topicId: string, limit = 6): Promise<string[]> => {
+    const rows = await this.db
+      .select({
+        content: messages.content,
+        error: messages.error,
+      })
+      .from(messages)
+      .where(and(eq(messages.topicId, topicId), eq(messages.role, 'tool'), this.ownership()))
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
+
+    const out: string[] = [];
+    for (const row of rows) {
+      const errObj =
+        row.error && typeof row.error === 'object' ? (row.error as { message?: string }) : null;
+      if (errObj?.message?.trim()) {
+        out.push(errObj.message.trim().slice(0, 200));
+        continue;
+      }
+      const text = typeof row.content === 'string' ? row.content : '';
+      if (/error|失败|not found|not implemented|最多查询|Manifest not found/i.test(text)) {
+        const oneLine = text.replaceAll(/\s+/g, ' ').trim().slice(0, 200);
+        if (oneLine) out.push(oneLine);
+      }
+    }
+    return out;
+  };
+
+  /**
    * Recent dingpan upload tool rows for a topic (newest first).
    * Used by bot delivery to attach preview_url when the model forgot the link.
    */

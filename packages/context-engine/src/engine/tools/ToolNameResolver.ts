@@ -143,6 +143,35 @@ export class ToolNameResolver {
           }
         }
 
+        // Malformed wire names like `query_sku_ads____mcp` (model put api as
+        // identifier and type as apiName). Recover when the bare identifier
+        // uniquely matches an API on an allowed manifest.
+        const TYPE_SUFFIXES = new Set(['mcp', 'builtin', 'default', 'standalone', 'markdown']);
+        if (TYPE_SUFFIXES.has(apiName) && !manifests[identifier]) {
+          const bareName = identifier;
+          const matches: Array<{ id: string; type: string }> = [];
+          for (const [id, manifest] of Object.entries(manifests)) {
+            const matchedApi = manifest?.api?.find(
+              (api: LobeChatPluginApi) => api.name === bareName,
+            );
+            if (!matchedApi) continue;
+            if (offeredSet && !offeredSet.has(this.generate(id, matchedApi.name, manifest.type))) {
+              continue;
+            }
+            matches.push({ id, type: manifest.type || apiName });
+          }
+          if (matches.length === 1) {
+            return {
+              apiName: bareName,
+              arguments: toolCall.function.arguments,
+              id: toolCall.id,
+              identifier: matches[0].id,
+              thoughtSignature: toolCall.thoughtSignature,
+              type: (type ?? matches[0].type ?? 'mcp') as any,
+            };
+          }
+        }
+
         const payload: ChatToolPayload = {
           apiName,
           arguments: toolCall.function.arguments,
