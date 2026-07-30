@@ -22,6 +22,7 @@ vi.mock('../../resourceEvents', () => ({ publishResourceEvent: vi.fn() }));
 
 const publishResourceEventMock = vi.mocked(publishResourceEvent);
 vi.mock('@lobechat/file-loaders', () => ({
+  isSpreadsheetFile: vi.fn(() => false),
   loadFile: vi.fn(),
   UnsupportedFileTypeError: class UnsupportedFileTypeError extends Error {
     fileType: string;

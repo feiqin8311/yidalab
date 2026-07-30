@@ -94,6 +94,7 @@ export const buildServerCallLlmContext = async ({
   });
   const {
     capabilities,
+    contextWindowTokens,
     messagesForContext,
     modelDisplayName,
     modelKnowledgeCutoff,
@@ -509,6 +510,7 @@ export const buildServerCallLlmContext = async ({
     model,
     modelDisplayName,
     modelKnowledgeCutoff,
+    contextWindowTokens,
     provider,
     systemRole: agentConfig.systemRole ?? undefined,
     toolDiscoveryConfig,

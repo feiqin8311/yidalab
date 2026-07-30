@@ -42,6 +42,7 @@ import { userInteractionRuntime } from './userInteraction';
 import { verifyResultRuntime } from './verifyResult';
 import { webBrowsingRuntime } from './webBrowsing';
 import { webOnboardingRuntime } from './webOnboarding';
+import { workbookRuntime } from './workbook';
 
 /**
  * Registry of server runtime factories by identifier
@@ -93,6 +94,7 @@ registerRuntimes([
   pageAgentRuntime,
   verifyResultRuntime,
   lobeDeliveryCheckerRuntime,
+  workbookRuntime,
 ]);
 
 // ==================== Registry API ====================

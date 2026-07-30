@@ -871,14 +871,17 @@ export class MessageModel {
 
     if (fileIds.length === 0) return { documentsMap: {}, relatedFileList };
 
+    // Cap at SQL so multi-MB legacy bodies never enter Node heap.
+    const LEGACY_DOC_CONTENT_CAP = 80_000;
     const documentsList = await runTimedStage(
       timing,
       'db.message.queryWithWhere.documents.select',
       () =>
         this.db
           .select({
-            content: documents.content,
+            content: sql<string>`left(${documents.content}, ${LEGACY_DOC_CONTENT_CAP})`,
             fileId: documents.fileId,
+            fullLen: sql<number>`length(coalesce(${documents.content}, ''))`,
           })
           .from(documents)
           .where(inArray(documents.fileId, fileIds)),
@@ -887,7 +890,13 @@ export class MessageModel {
 
     const documentsMap = documentsList.reduce(
       (acc, doc) => {
-        if (doc.fileId) acc[doc.fileId] = doc.content as string;
+        if (!doc.fileId) return acc;
+        const raw = (doc.content as string) || '';
+        const fullLen = Number(doc.fullLen) || raw.length;
+        acc[doc.fileId] =
+          fullLen > LEGACY_DOC_CONTENT_CAP
+            ? `${raw}\n\n…[legacy document body capped for chat load]`
+            : raw;
         return acc;
       },
       {} as Record<string, string>,
@@ -1183,17 +1192,25 @@ export class MessageModel {
     let documentsMap: Record<string, string> = {};
 
     if (fileIds.length > 0) {
+      const LEGACY_DOC_CONTENT_CAP = 80_000;
       const documentsList = await this.db
         .select({
-          content: documents.content,
+          content: sql<string>`left(${documents.content}, ${LEGACY_DOC_CONTENT_CAP})`,
           fileId: documents.fileId,
+          fullLen: sql<number>`length(coalesce(${documents.content}, ''))`,
         })
         .from(documents)
         .where(inArray(documents.fileId, fileIds));
 
       documentsMap = documentsList.reduce(
         (acc, doc) => {
-          if (doc.fileId) acc[doc.fileId] = doc.content as string;
+          if (!doc.fileId) return acc;
+          const raw = (doc.content as string) || '';
+          const fullLen = Number(doc.fullLen) || raw.length;
+          acc[doc.fileId] =
+            fullLen > LEGACY_DOC_CONTENT_CAP
+              ? `${raw}\n\n…[legacy document body capped for chat load]`
+              : raw;
           return acc;
         },
         {} as Record<string, string>,

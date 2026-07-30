@@ -63,6 +63,10 @@ import {
 } from '../../providers';
 import { SelectedToolInjector } from '../../providers/SelectedToolInjector';
 import type { ContextProcessor } from '../../types';
+import {
+  DEFAULT_OUTPUT_RESERVE,
+  inputBudgetFromContextWindow,
+} from '../../utils/contextBudgetGate';
 import { ToolNameResolver } from '../tools';
 import type { MessagesEngineParams, MessagesEngineResult } from './types';
 
@@ -106,7 +110,24 @@ export class MessagesEngine {
    */
   async process(): Promise<MessagesEngineResult> {
     const pipeline = this.buildPipeline();
-    const result = await pipeline.process({ messages: this.params.messages });
+    const maxTokens = inputBudgetFromContextWindow(
+      this.params.contextWindowTokens,
+      this.params.outputReserveTokens ?? DEFAULT_OUTPUT_RESERVE,
+    );
+    const result = await pipeline.process({
+      messages: this.params.messages,
+      metadata: {
+        maxTokens,
+        model: this.params.model,
+        provider: this.params.provider,
+      },
+    });
+
+    if (result.isAborted) {
+      const err = new Error(result.abortReason || 'Context pipeline aborted');
+      (err as Error & { code?: string }).code = 'CONTEXT_BUDGET_EXCEEDED';
+      throw err;
+    }
 
     return {
       messages: result.messages as OpenAIChatMessage[],

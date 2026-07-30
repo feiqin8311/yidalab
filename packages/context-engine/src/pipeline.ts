@@ -65,7 +65,11 @@ export class ContextEngine {
   /**
    * Execute pipeline processing
    */
-  async process(input: { messages: Array<any> }): Promise<PipelineResult> {
+  async process(input: {
+    messages: Array<any>;
+    /** Seed metadata (e.g. maxTokens input budget for context gate). */
+    metadata?: Record<string, unknown>;
+  }): Promise<PipelineResult> {
     const startTime = Date.now();
     const processorDurations: Record<string, number> = {};
 
@@ -74,7 +78,7 @@ export class ContextEngine {
       initialState: { messages: input.messages },
       isAborted: false,
       messages: [...input.messages],
-      metadata: {},
+      metadata: { ...input.metadata },
     };
 
     log('Starting pipeline processing');
@@ -117,9 +121,7 @@ export class ContextEngine {
           // Build a diagnostic message that includes the immediate cause so
           // dashboard viewers can triage without raw stack access.
           const causeSummary =
-            cause.message.length > 300
-              ? cause.message.slice(0, 300) + '…'
-              : cause.message;
+            cause.message.length > 300 ? cause.message.slice(0, 300) + '…' : cause.message;
 
           throw new PipelineError(
             `Processor [${processor.name}] execution failed: ${causeSummary}`,

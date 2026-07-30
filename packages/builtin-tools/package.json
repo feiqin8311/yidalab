@@ -51,6 +51,7 @@
     "@lobechat/builtin-tool-verify": "workspace:*",
     "@lobechat/builtin-tool-web-browsing": "workspace:*",
     "@lobechat/builtin-tool-web-onboarding": "workspace:*",
+    "@lobechat/builtin-tool-workbook": "workspace:*",
     "@lobechat/const": "workspace:*",
     "@lobehub/icons": "^5.10.0"
   },

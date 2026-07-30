@@ -288,6 +288,13 @@ export interface MessagesEngineParams {
   // ========== File handling ==========
   /** File context configuration */
   fileContext?: FileContextConfig;
+  /**
+   * Model context window (tokens). Used to seed pipeline maxTokens =
+   * contextWindow - outputReserve for the final context budget gate.
+   */
+  contextWindowTokens?: number;
+  /** Reserved tokens for model output when deriving input budget (default 8192). */
+  outputReserveTokens?: number;
 
   // ========== Extended contexts (both frontend and backend) ==========
   /** Agent Builder context */

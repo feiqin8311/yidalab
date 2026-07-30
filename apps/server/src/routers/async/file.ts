@@ -19,6 +19,7 @@ import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import { ChunkService } from '@/server/services/chunk';
 import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
+import { WorkbookService } from '@/server/services/workbook';
 import { type IAsyncTaskError } from '@/types/asyncTask';
 import { AsyncTaskError, AsyncTaskErrorType, AsyncTaskStatus } from '@/types/asyncTask';
 import { safeParseJSON } from '@/utils/safeParseJSON';
@@ -57,6 +58,95 @@ const resolveWorkspaceIdFromFile = async (
 };
 
 export const fileRouter = router({
+  /**
+   * Async workbook parse worker (HTTP self-call). Does not parse on upload thread.
+   * Prefer dedicated process/container in production; this keeps isolation via timeout + claim lease.
+   */
+  parseWorkbook: fileProcedure
+    .input(
+      z.object({
+        fileId: z.string(),
+        taskId: z.string(),
+        workspaceId: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = await resolveWorkspaceIdFromFile(
+        ctx.serverDB,
+        ctx.userId,
+        input.fileId,
+        input.workspaceId,
+      );
+      const asyncTaskModel = new AsyncTaskModel(ctx.serverDB, ctx.userId, workspaceId);
+      const fileModel = new FileModel(ctx.serverDB, ctx.userId, workspaceId);
+      const file = await fileModel.findById(input.fileId);
+      if (!file) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'File not found' });
+      }
+
+      const asyncTask = await asyncTaskModel.findById(input.taskId);
+      if (!asyncTask) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Async Task not found' });
+
+      try {
+        const startAt = Date.now();
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new AsyncTaskError(
+                AsyncTaskErrorType.Timeout,
+                'workbook parse task is timeout, please try again',
+              ),
+            );
+          }, ASYNC_TASK_TIMEOUT);
+        });
+
+        const parsePromise = async () => {
+          await asyncTaskModel.update(input.taskId, { status: AsyncTaskStatus.Processing });
+          const workbookService = new WorkbookService(ctx.serverDB, ctx.userId, workspaceId);
+          const result = await workbookService.parseWorkbookFile(input.fileId);
+          const duration = Date.now() - startAt;
+          if (result.status === 'failed' || result.status === 'unsupported') {
+            await asyncTaskModel.update(input.taskId, {
+              duration,
+              error: new AsyncTaskError(
+                AsyncTaskErrorType.ServerError,
+                result.status === 'unsupported' ? 'Not a spreadsheet' : 'Workbook parse failed',
+              ),
+              status: AsyncTaskStatus.Error,
+            });
+            return { status: result.status, success: false };
+          }
+          await asyncTaskModel.update(input.taskId, {
+            duration,
+            status: AsyncTaskStatus.Success,
+          });
+          return { status: result.status, success: true, workbookId: result.workbookId };
+        };
+
+        return await Promise.race([parsePromise(), timeoutPromise]);
+      } catch (e) {
+        const error = e as Error;
+        console.error('[WorkbookParse Error]', error);
+        await asyncTaskModel.update(input.taskId, {
+          error: new AsyncTaskError(
+            (error as any).name === AsyncTaskErrorType.Timeout
+              ? AsyncTaskErrorType.Timeout
+              : AsyncTaskErrorType.ServerError,
+            error.message || String(error),
+          ),
+          status: AsyncTaskStatus.Error,
+        });
+        await fileModel.update(input.fileId, {
+          parseError: (error.message || String(error)).slice(0, 2000),
+          parseStatus: 'failed',
+        });
+        return {
+          message: `File ${file.name}(${input.taskId}) failed to parse workbook: ${error.message}`,
+          success: false,
+        };
+      }
+    }),
+
   embeddingChunks: fileProcedure
     .use(checkEmbeddingUsage)
     .input(

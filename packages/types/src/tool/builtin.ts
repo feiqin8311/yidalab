@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { z } from 'zod';
 
+import type { ToolExecutionResult } from '../contextPlatform';
 import { type RuntimeStepContext } from '../stepContext';
 import { type HumanInterventionConfig, type HumanInterventionPolicy } from './intervention';
 import { HumanInterventionConfigSchema, HumanInterventionPolicySchema } from './intervention';
@@ -438,6 +439,11 @@ export interface BuiltinServerRuntimeOutput {
    */
   deferred?: boolean;
   error?: any;
+  /**
+   * Optional four-view payload (model / UI / artifact / telemetry).
+   * When set, `content` should equal modelView.content for back-compat.
+   */
+  executionResult?: ToolExecutionResult;
   state?: any;
   success: boolean;
 }

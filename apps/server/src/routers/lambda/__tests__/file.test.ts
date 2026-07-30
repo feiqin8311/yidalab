@@ -136,9 +136,11 @@ const mockChunkCountByFileId = vi.fn();
 
 vi.mock('@/database/models/asyncTask', () => ({
   AsyncTaskModel: vi.fn(() => ({
+    create: vi.fn().mockResolvedValue('async-task-id'),
     delete: mockAsyncTaskDelete,
     findById: mockAsyncTaskFindById,
     findByIds: mockAsyncTaskFindByIds,
+    update: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 
@@ -216,6 +218,12 @@ vi.mock('@/database/models/document', () => ({
 vi.mock('@/server/services/document', () => ({
   DocumentService: vi.fn(() => ({
     deleteDocuments: mockDocumentServiceDeleteDocuments,
+  })),
+}));
+
+vi.mock('@/server/services/workbook', () => ({
+  WorkbookService: vi.fn(() => ({
+    asyncEnqueueParse: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 

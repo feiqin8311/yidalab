@@ -34,6 +34,7 @@ import { UserInteractionManifest } from '@lobechat/builtin-tool-user-interaction
 import { VerifyToolManifest } from '@lobechat/builtin-tool-verify';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { WebOnboardingManifest } from '@lobechat/builtin-tool-web-onboarding';
+import { WorkbookManifest } from '@lobechat/builtin-tool-workbook';
 import { isDesktop, RECOMMENDED_SKILLS, RecommendedSkillType } from '@lobechat/const';
 import { type LobeBuiltinTool } from '@lobechat/types';
 
@@ -58,6 +59,8 @@ export const defaultToolIds = [
   DingpanManifest.identifier,
   // Company FBA inventory alert → dingtalk-fba-bot HTTP
   FbaAlertManifest.identifier,
+  // Bounded Excel inspect/query for large chat attachments
+  WorkbookManifest.identifier,
 ];
 
 /**
@@ -87,6 +90,7 @@ export const alwaysOnToolIds = [
   SkillStoreManifest.identifier,
   DingpanManifest.identifier,
   FbaAlertManifest.identifier,
+  WorkbookManifest.identifier,
 ];
 
 /**
@@ -320,6 +324,11 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
   {
     identifier: CalculatorManifest.identifier,
     manifest: CalculatorManifest,
+    type: 'builtin',
+  },
+  {
+    identifier: WorkbookManifest.identifier,
+    manifest: WorkbookManifest,
     type: 'builtin',
   },
   {

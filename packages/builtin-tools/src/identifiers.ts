@@ -30,6 +30,7 @@ import { UserInteractionManifest } from '@lobechat/builtin-tool-user-interaction
 import { VerifyToolManifest } from '@lobechat/builtin-tool-verify';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { WebOnboardingManifest } from '@lobechat/builtin-tool-web-onboarding';
+import { WorkbookManifest } from '@lobechat/builtin-tool-workbook';
 
 export const builtinToolIdentifiers: string[] = [
   AgentBuilderManifest.identifier,
@@ -62,4 +63,5 @@ export const builtinToolIdentifiers: string[] = [
   WebOnboardingManifest.identifier,
   VerifyToolManifest.identifier,
   LobeDeliveryCheckerManifest.identifier,
+  WorkbookManifest.identifier,
 ];

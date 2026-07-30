@@ -274,6 +274,28 @@ export const fileRouter = router({
         );
       });
 
+      // Spreadsheets: enqueue async structured parse (never parse on upload thread).
+      // Dynamic imports keep lambda module graph light for unit tests.
+      try {
+        const { isSpreadsheetFile } = await import('@lobechat/file-loaders');
+        if (isSpreadsheetFile(input.fileType, input.name)) {
+          const { WorkbookService } = await import('@/server/services/workbook');
+          const workbookService = new WorkbookService(
+            ctx.serverDB,
+            ctx.userId,
+            ctx.workspaceId ?? undefined,
+          );
+          await workbookService.asyncEnqueueParse(id, true, {
+            fileType: input.fileType,
+            name: input.name,
+            userId: ctx.userId,
+            workspaceId: ctx.workspaceId,
+          });
+        }
+      } catch (e) {
+        console.error('[createFile] workbook enqueue failed:', e);
+      }
+
       return { id, url: await ctx.fileService.getFileAccessUrl({ id, url: input.url }) };
     }),
   findById: fileProcedure

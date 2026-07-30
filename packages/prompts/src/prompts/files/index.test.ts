@@ -70,7 +70,7 @@ describe('filesPrompts', () => {
 </context.instruction>
 <files_info>
 <files>
-<files_docstring>here are user upload files you can refer to</files_docstring>
+<files_docstring>User-uploaded files. Large spreadsheets only include a bounded manifest — call lobe-workbook inspectWorkbook/querySheet for full data. Never assume the full grid is inlined.</files_docstring>
 <file id="file-1" name="test.pdf" type="application/pdf" size="1024" url="https://example.com/test.pdf"></file>
 </files>
 </files_info>
@@ -97,7 +97,7 @@ describe('filesPrompts', () => {
 <image ref="image_1" name="test image" url="https://example.com/image.jpg"></image>
 </images>
 <files>
-<files_docstring>here are user upload files you can refer to</files_docstring>
+<files_docstring>User-uploaded files. Large spreadsheets only include a bounded manifest — call lobe-workbook inspectWorkbook/querySheet for full data. Never assume the full grid is inlined.</files_docstring>
 <file id="file-1" name="test.pdf" type="application/pdf" size="1024" url="https://example.com/test.pdf"></file>
 </files>
 </files_info>
@@ -187,7 +187,7 @@ describe('filesPrompts', () => {
       <image ref="image_2" name="second image"></image>
       </images>
       <files>
-      <files_docstring>here are user upload files you can refer to</files_docstring>
+      <files_docstring>User-uploaded files. Large spreadsheets only include a bounded manifest — call lobe-workbook inspectWorkbook/querySheet for full data. Never assume the full grid is inlined.</files_docstring>
       <file id="file-1" name="test.pdf" type="application/pdf" size="1024"></file>
       <file id="file-2" name="document.docx" type="application/docx" size="2048"></file>
       </files>
@@ -313,7 +313,7 @@ describe('filesPrompts', () => {
 <image ref="image_1" name="test image" url="https://example.com/image.jpg"></image>
 </images>
 <files>
-<files_docstring>here are user upload files you can refer to</files_docstring>
+<files_docstring>User-uploaded files. Large spreadsheets only include a bounded manifest — call lobe-workbook inspectWorkbook/querySheet for full data. Never assume the full grid is inlined.</files_docstring>
 <file id="file-1" name="test.pdf" type="application/pdf" size="1024" url="https://example.com/test.pdf"></file>
 </files>
 <videos>

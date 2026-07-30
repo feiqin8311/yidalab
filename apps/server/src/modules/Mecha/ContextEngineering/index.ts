@@ -61,6 +61,7 @@ export const serverMessagesEngine = async ({
   model,
   modelDisplayName,
   modelKnowledgeCutoff,
+  contextWindowTokens,
   provider,
   systemRole,
   inputTemplate,
@@ -133,6 +134,7 @@ export const serverMessagesEngine = async ({
     model,
     modelDisplayName,
     modelKnowledgeCutoff,
+    contextWindowTokens,
 
     provider,
     systemRole,

@@ -1,6 +1,8 @@
 export enum AsyncTaskType {
   Chunking = 'chunk',
   Embedding = 'embedding',
+  /** Structured workbook parse (Excel → manifest + sheet assets). */
+  FileParse = 'file_parse',
   ImageGeneration = 'image_generation',
   UserMemoryExtractionWithChatTopic = 'user_memory_extraction:chat_topic',
   VideoGeneration = 'video_generation',

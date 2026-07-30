@@ -29,6 +29,8 @@ export interface ServerCallLlmContextHints {
     isCanUseVideo: (model: string, provider: string) => boolean;
     isCanUseVision: (model: string, provider: string) => boolean;
   };
+  /** Model context window for context budget gate (input budget seed). */
+  contextWindowTokens?: number;
   messagesForContext: UIChatMessage[];
   modelDisplayName?: string;
   modelKnowledgeCutoff?: string;
@@ -159,6 +161,10 @@ export const resolveServerCallLlmContextHints = async ({
     builtinModels.find((item) => item.id === targetModel && item.providerId === targetProvider) ??
     builtinModels.find((item) => item.id === targetModel);
 
+  const contextWindowTokens =
+    modelCard?.contextWindowTokens ??
+    (provider === ModelProvider.LobeHub ? canonicalModelCard?.contextWindowTokens : undefined);
+
   return {
     capabilities: {
       isCanUseAudio: (targetModel, targetProvider) =>
@@ -171,6 +177,7 @@ export const resolveServerCallLlmContextHints = async ({
       isCanUseVision: (targetModel, targetProvider) =>
         findModelInfo(targetModel, targetProvider)?.abilities?.vision ?? false,
     },
+    contextWindowTokens,
     messagesForContext,
     modelDisplayName,
     modelKnowledgeCutoff,
