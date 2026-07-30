@@ -5,11 +5,13 @@ import type { LobeChatDatabase } from '@/database/type';
 
 import {
   appendBotDingpanPreviewLink,
+  scrubFakeUploadProgressNarration,
   shouldEnsureDingpanForBotReply,
 } from './botDingpanDeliveryHeuristic';
 
 export {
   appendBotDingpanPreviewLink,
+  scrubFakeUploadProgressNarration,
   shouldEnsureDingpanForBotReply,
   wrapBotReplyAsHtml,
 } from './botDingpanDeliveryHeuristic';
@@ -19,9 +21,9 @@ const MISSING_REPORT_NOTE_PLAIN =
 
 /**
  * Bot IM cannot render Artifacts.
- * - If this topic already has a successful dingpan upload → always surface preview_url.
- * - If the model skipped upload on a report-class answer → do NOT invent a low-quality
- *   text snapshot as "完整报告"; append an explicit missing-report note instead.
+ * - Scrub fake "正在上传…" loops that never called the tool.
+ * - If this topic already has a successful dingpan upload → surface preview_url.
+ * - If the model skipped upload on a report-class answer → note the gap (no fake HTML).
  */
 export async function ensureBotDingpanDelivery(params: {
   db: LobeChatDatabase;
@@ -32,7 +34,7 @@ export async function ensureBotDingpanDelivery(params: {
   workspaceId?: string | null;
 }): Promise<string> {
   const { db, userId, workspaceId, topicId, plainText = true } = params;
-  const reply = params.reply;
+  const reply = scrubFakeUploadProgressNarration(params.reply);
   if (!topicId || !reply.trim()) return reply;
 
   try {
@@ -53,9 +55,17 @@ export async function ensureBotDingpanDelivery(params: {
       return appendBotDingpanPreviewLink(reply, latestOk.previewUrl, plainText);
     }
 
-    if (!shouldEnsureDingpanForBotReply(reply)) return reply;
+    if (!shouldEnsureDingpanForBotReply(reply) && !/未成功调用 uploadHtmlToDingpan/.test(reply)) {
+      return reply;
+    }
 
-    if (reply.includes('未调用钉盘上传') || reply.includes('uploadHtmlToDingpan')) return reply;
+    if (
+      reply.includes('未调用钉盘上传') ||
+      reply.includes('未成功调用 uploadHtmlToDingpan') ||
+      /uploadHtmlToDingpan/.test(reply)
+    ) {
+      return reply;
+    }
 
     return `${reply.trim()}\n\n${MISSING_REPORT_NOTE_PLAIN}`;
   } catch (error) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   appendBotDingpanPreviewLink,
+  scrubFakeUploadProgressNarration,
   shouldEnsureDingpanForBotReply,
 } from './botDingpanDeliveryHeuristic';
 
@@ -37,5 +38,28 @@ describe('appendBotDingpanPreviewLink', () => {
   it('is idempotent when url already present', () => {
     const once = appendBotDingpanPreviewLink('结论', url, true);
     expect(appendBotDingpanPreviewLink(once, url, true)).toBe(once);
+  });
+});
+
+describe('scrubFakeUploadProgressNarration', () => {
+  it('keeps short normal replies', () => {
+    expect(scrubFakeUploadProgressNarration('旺季在8月，建议现在加广告。')).toContain('8月');
+  });
+
+  it('strips repeated 正在上传 loops and keeps conclusions', () => {
+    const body =
+      '橡皮类核心词旺季7-9月（峰值8月），需立即起量。' +
+      '正在上传 HTML 报告...'.repeat(40) +
+      '上传中。'.repeat(40);
+    const cleaned = scrubFakeUploadProgressNarration(body);
+    expect(cleaned).toContain('8月');
+    expect(cleaned.match(/正在上传/g)?.length ?? 0).toBeLessThan(3);
+  });
+
+  it('replaces pure progress spam', () => {
+    const body = '正在上传 HTML 报告...上传中。'.repeat(50);
+    const cleaned = scrubFakeUploadProgressNarration(body);
+    expect(cleaned).toContain('uploadHtmlToDingpan');
+    expect(cleaned.length).toBeLessThan(body.length / 2);
   });
 });
