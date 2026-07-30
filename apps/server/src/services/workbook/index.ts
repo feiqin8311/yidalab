@@ -396,53 +396,54 @@ export class WorkbookService {
 
     try {
       const build = await buildWorkbookAssetsIsolated(filePath);
-      const manifest: FileWorkbookManifest = {
-        coverage: build.coverage,
-        fileName: file.name,
-        parserVersion: build.parserVersion,
-        sheetCount: build.sheetCount,
-        sheets: build.sheets.map((s) => ({
-          columnCount: s.columnCount,
-          columns: s.columns,
-          name: s.sheetName,
-          rowCount: s.rowCount,
-          sampleRows: s.sampleRows,
-          sheetIndex: s.sheetIndex,
-        })),
-        totalRows: build.totalRows,
-        unrestrictedTokenEstimate: build.unrestrictedTokenEstimate,
-      };
-
-      const [heartbeat] = await this.db
-        .update(fileWorkbooks)
-        .set({ updatedAt: new Date() })
-        .where(
-          and(
-            eq(fileWorkbooks.id, workbookId),
-            eq(fileWorkbooks.status, 'parsing'),
-            eq(fileWorkbooks.generationId, generationId),
-          ),
-        )
-        .returning();
-      if (!heartbeat) {
-        const current = await this.getReadyWorkbook(fileId);
-        return {
-          card: current?.manifest
-            ? this.cardFromWorkbook(current, file)
-            : `Spreadsheet "${file.name}" parse superseded.`,
-          status: (current?.status as FileParseStatus) || 'parsing',
-          workbookId: current?.id,
-        };
-      }
-
-      const previousAssets = await this.db
-        .select()
-        .from(fileSheetAssets)
-        .where(eq(fileSheetAssets.workbookId, workbookId));
-
-      const duckOk = await isDuckDBAvailable();
-
+      // Always dispose isolate temp dir (heartbeat miss, upload fail, or success).
       try {
+        const manifest: FileWorkbookManifest = {
+          coverage: build.coverage,
+          fileName: file.name,
+          parserVersion: build.parserVersion,
+          sheetCount: build.sheetCount,
+          sheets: build.sheets.map((s) => ({
+            columnCount: s.columnCount,
+            columns: s.columns,
+            name: s.sheetName,
+            rowCount: s.rowCount,
+            sampleRows: s.sampleRows,
+            sheetIndex: s.sheetIndex,
+          })),
+          totalRows: build.totalRows,
+          unrestrictedTokenEstimate: build.unrestrictedTokenEstimate,
+        };
+
+        const [heartbeat] = await this.db
+          .update(fileWorkbooks)
+          .set({ updatedAt: new Date() })
+          .where(
+            and(
+              eq(fileWorkbooks.id, workbookId),
+              eq(fileWorkbooks.status, 'parsing'),
+              eq(fileWorkbooks.generationId, generationId),
+            ),
+          )
+          .returning();
+        if (!heartbeat) {
+          const current = await this.getReadyWorkbook(fileId);
+          return {
+            card: current?.manifest
+              ? this.cardFromWorkbook(current, file)
+              : `Spreadsheet "${file.name}" parse superseded.`,
+            status: (current?.status as FileParseStatus) || 'parsing',
+            workbookId: current?.id,
+          };
+        }
+
+        const previousAssets = await this.db
+          .select()
+          .from(fileSheetAssets)
+          .where(eq(fileSheetAssets.workbookId, workbookId));
+
+        const duckOk = await isDuckDBAvailable();
+
         for (const sheet of build.sheets) {
           // Prefer disk path from isolate worker — avoid holding full JSONL in JS heap twice.
           const jsonlBytes = sheet.jsonlPath
@@ -598,8 +599,13 @@ export class WorkbookService {
         );
         return { card, status: 'ready', workbookId };
       } finally {
-        // Drop isolate temp JSONL after upload (or on upload-path failure).
-        if (build.dispose) await build.dispose().catch(() => undefined);
+        if (build.dispose) {
+          try {
+            await build.dispose();
+          } catch (e) {
+            log('dispose isolate temp dir failed fileId=%s: %O', fileId, e);
+          }
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
