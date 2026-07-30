@@ -31,7 +31,7 @@ describe('appendBotDingpanPreviewLink', () => {
 
   it('appends plain url for IM', () => {
     expect(appendBotDingpanPreviewLink('结论', url, true)).toContain(url);
-    expect(appendBotDingpanPreviewLink('结论', url, true)).toContain('完整报告');
+    expect(appendBotDingpanPreviewLink('结论', url, true)).toContain('钉盘报告');
   });
 
   it('is idempotent when url already present', () => {

@@ -31,7 +31,7 @@ export const appendBotDingpanPreviewLink = (
 ) => {
   if (reply.includes(previewUrl)) return reply;
   if (plainText) {
-    return `${reply.trim()}\n\n完整报告：\n${previewUrl}`;
+    return `${reply.trim()}\n\n钉盘报告：\n${previewUrl}`;
   }
   return `${reply.trim()}\n\n[打开钉盘预览](${previewUrl})`;
 };
