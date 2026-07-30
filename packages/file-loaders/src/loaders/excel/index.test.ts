@@ -53,4 +53,12 @@ describe('ExcelLoader', () => {
     expect(pages[0].pageContent).toBeTruthy(); // Should contain header content
     expect(pages).toMatchSnapshot('only_header_pages');
   });
+
+  it('exports row/sheet caps for context safety', async () => {
+    const { EXCEL_MAX_ROWS_PER_SHEET, EXCEL_MAX_SHEETS, EXCEL_MAX_TOTAL_CHARS } =
+      await import('./index');
+    expect(EXCEL_MAX_ROWS_PER_SHEET).toBe(200);
+    expect(EXCEL_MAX_SHEETS).toBe(8);
+    expect(EXCEL_MAX_TOTAL_CHARS).toBe(80_000);
+  });
 });

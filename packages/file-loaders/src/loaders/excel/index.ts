@@ -9,10 +9,21 @@ import { promptTemplate } from './prompt';
 const log = debug('file-loaders:excel');
 
 /**
+ * Hard caps so one workbook cannot alone fill a model context window.
+ * Full sheet dumps of large 词库/竞品表 are for tools, not for inline chat.
+ */
+export const EXCEL_MAX_ROWS_PER_SHEET = 200;
+export const EXCEL_MAX_SHEETS = 8;
+export const EXCEL_MAX_TOTAL_CHARS = 80_000;
+
+/**
  * Converts sheet data (array of objects) to a Markdown table string.
  * Handles empty sheets and escapes pipe characters.
  */
-function sheetToMarkdownTable(jsonData: Record<string, any>[]): string {
+function sheetToMarkdownTable(
+  jsonData: Record<string, any>[],
+  options?: { maxRows?: number; totalRows?: number },
+): string {
   log('Converting sheet data to Markdown table, rows:', jsonData?.length || 0);
   if (!jsonData || jsonData.length === 0) {
     log('Sheet is empty, returning placeholder message');
@@ -27,11 +38,16 @@ function sheetToMarkdownTable(jsonData: Record<string, any>[]): string {
     return '*Sheet has headers but no data.*';
   }
 
+  const maxRows = options?.maxRows ?? EXCEL_MAX_ROWS_PER_SHEET;
+  const totalRows = options?.totalRows ?? jsonData.length;
+  const sliced = jsonData.length > maxRows ? jsonData.slice(0, maxRows) : jsonData;
+  const truncated = totalRows > sliced.length;
+
   const headerRow = `| ${headers.join(' | ')} |`;
   const separatorRow = `| ${headers.map(() => '---').join(' | ')} |`;
 
   log('Building data rows for Markdown table');
-  const dataRows = jsonData
+  const dataRows = sliced
     .map((row) => {
       const cells = headers.map((header) => {
         const value = row[header];
@@ -44,7 +60,10 @@ function sheetToMarkdownTable(jsonData: Record<string, any>[]): string {
     })
     .join('\n');
 
-  const result = `${headerRow}\n${separatorRow}\n${dataRows}`;
+  let result = `${headerRow}\n${separatorRow}\n${dataRows}`;
+  if (truncated) {
+    result += `\n\n*…truncated: showing first ${sliced.length} of ${totalRows} data rows. Ask for specific filters/columns or use analysis tools for the full sheet.*`;
+  }
   log('Markdown table created, length:', result.length);
   return result;
 }
@@ -67,7 +86,22 @@ export class ExcelLoader implements FileLoaderInterface {
       const workbook = xlsx.read(dataBuffer, { type: 'buffer' });
       log('Excel workbook parsed successfully, sheets:', workbook.SheetNames.length);
 
-      for (const sheetName of workbook.SheetNames) {
+      const sheetNames = workbook.SheetNames;
+      const sheetsToLoad = sheetNames.slice(0, EXCEL_MAX_SHEETS);
+      let totalChars = 0;
+
+      for (const sheetName of sheetsToLoad) {
+        if (totalChars >= EXCEL_MAX_TOTAL_CHARS) {
+          log('Stopping sheet load: EXCEL_MAX_TOTAL_CHARS reached');
+          pages.push({
+            charCount: 0,
+            lineCount: 0,
+            metadata: { sheetName: '_truncated', truncated: true },
+            pageContent: `*Further sheets omitted (context budget). Workbook has ${sheetNames.length} sheets; loaded ${pages.filter((p) => p.metadata?.sheetName !== '_truncated').length}.*`,
+          });
+          break;
+        }
+
         log(`Processing sheet: ${sheetName}`);
         const worksheet = workbook.Sheets[sheetName];
         // Use sheet_to_json to get array of objects for our custom markdown function
@@ -78,8 +112,15 @@ export class ExcelLoader implements FileLoaderInterface {
         });
         log(`Sheet ${sheetName} converted to JSON, rows:`, jsonData.length);
 
-        // Convert to markdown using YOUR helper function
-        const tableMarkdown = sheetToMarkdownTable(jsonData);
+        const remaining = Math.max(0, EXCEL_MAX_TOTAL_CHARS - totalChars);
+        // Convert to markdown using YOUR helper function (row-capped)
+        let tableMarkdown = sheetToMarkdownTable(jsonData, {
+          maxRows: EXCEL_MAX_ROWS_PER_SHEET,
+          totalRows: jsonData.length,
+        });
+        if (tableMarkdown.length > remaining) {
+          tableMarkdown = `${tableMarkdown.slice(0, Math.max(0, remaining - 120)).trim()}\n\n*…sheet truncated to fit context budget.*`;
+        }
 
         const lines = tableMarkdown.split('\n');
         const lineCount = lines.length;
@@ -92,10 +133,21 @@ export class ExcelLoader implements FileLoaderInterface {
           lineCount,
           metadata: {
             sheetName,
+            ...(jsonData.length > EXCEL_MAX_ROWS_PER_SHEET ? { truncated: true } : {}),
           },
           pageContent: tableMarkdown.trim(),
         });
+        totalChars += charCount;
         log(`Added sheet ${sheetName} as page`);
+      }
+
+      if (sheetNames.length > sheetsToLoad.length && totalChars < EXCEL_MAX_TOTAL_CHARS) {
+        pages.push({
+          charCount: 0,
+          lineCount: 0,
+          metadata: { sheetName: '_truncated', truncated: true },
+          pageContent: `*…${sheetNames.length - sheetsToLoad.length} additional sheet(s) not inlined (${sheetNames.slice(EXCEL_MAX_SHEETS).join(', ')}). Ask for a specific sheet if needed.*`,
+        });
       }
 
       if (pages.length === 0) {

@@ -71,6 +71,31 @@ describe('countContextTokens', () => {
       expect(r.messages[0].total).toBe(r.messages[0].bySource.content);
     });
 
+    it('counts fileList content injected via filesPrompts (Excel etc.)', () => {
+      const withoutFile = countContextTokens({
+        messages: [mkMsg({ role: 'user', content: 'analyze this' })],
+      });
+      const withFile = countContextTokens({
+        messages: [
+          mkMsg({
+            role: 'user',
+            content: 'analyze this',
+            fileList: [
+              {
+                content: 'keyword,volume\n'.repeat(5000),
+                fileType: 'xlsx',
+                id: 'f1',
+                name: '词库.xlsx',
+                size: 5_000_000,
+                url: '',
+              } as any,
+            ],
+          }),
+        ],
+      });
+      expect(withFile.bySource.content).toBeGreaterThan(withoutFile.bySource.content + 1000);
+    });
+
     it('uses recorded usage.totalOutputTokens for assistant when present', () => {
       const r = countContextTokens({
         messages: [
