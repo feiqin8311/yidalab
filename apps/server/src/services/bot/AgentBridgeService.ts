@@ -1009,7 +1009,8 @@ export class AgentBridgeService {
           ],
           prompt,
           signal,
-          title: '',
+          // Do NOT pass title:'' — empty string overrides prompt-based title and
+          // leaves the Web sidebar topic row blank until (maybe) LLM summarize.
           trigger,
           userInterventionConfig: { approvalMode: 'headless' },
         }),
@@ -1449,7 +1450,8 @@ export class AgentBridgeService {
           ],
           prompt,
           signal,
-          title: '',
+          // Do NOT pass title:'' — empty string overrides prompt-based title and
+          // leaves the Web sidebar topic row blank until (maybe) LLM summarize.
           trigger,
           userInterventionConfig: { approvalMode: 'headless' },
         }),
