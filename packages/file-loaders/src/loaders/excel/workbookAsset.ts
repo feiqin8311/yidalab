@@ -29,7 +29,13 @@ export const WORKBOOK_PARSE_CONCURRENCY = 1;
 export interface WorkbookSheetAssetBuild {
   columnCount: number;
   columns: string[];
+  /**
+   * Full JSONL body when small / in-process. Prefer `jsonlPath` for isolated parse
+   * so the parent does not re-hydrate multi-MB strings until upload.
+   */
   jsonl: string;
+  /** Disk path from parse worker (caller uploads then dispose()). */
+  jsonlPath?: string;
   rowCount: number;
   sampleRows: Record<string, string>[];
   sheetIndex: number;
@@ -44,6 +50,8 @@ export interface WorkbookCoverage {
 
 export interface WorkbookAssetBuild {
   coverage: WorkbookCoverage;
+  /** Clean temp dir from isolated parse (jsonlPath files). */
+  dispose?: () => Promise<void>;
   parserVersion: string;
   sheetCount: number;
   sheets: WorkbookSheetAssetBuild[];

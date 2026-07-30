@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -19,10 +19,11 @@ import {
   buildWorkbookManifestCard,
   isDuckDBAvailable,
   isSpreadsheetFile,
+  jsonlFileToParquetBuffer,
   jsonlToParquetBuffer,
   queryJsonlFile,
   queryJsonlSheet,
-  queryParquetBuffer,
+  queryParquetFile,
   type SheetQueryFilter,
   type SheetQueryInput,
   WORKBOOK_INLINE_JSONL_MAX_BYTES,
@@ -441,143 +442,165 @@ export class WorkbookService {
 
       const duckOk = await isDuckDBAvailable();
 
-      for (const sheet of build.sheets) {
-        const jsonlBytes = Buffer.byteLength(sheet.jsonl, 'utf8');
-        let storageKey: string | null = null;
-        let inlineJsonl: string | null = null;
-        let format: 'jsonl' | 'parquet' = 'jsonl';
+      try {
+        for (const sheet of build.sheets) {
+          // Prefer disk path from isolate worker — avoid holding full JSONL in JS heap twice.
+          const jsonlBytes = sheet.jsonlPath
+            ? Number(
+                (await import('node:fs/promises').then((fs) => fs.stat(sheet.jsonlPath!))).size,
+              )
+            : Buffer.byteLength(sheet.jsonl, 'utf8');
+          let storageKey: string | null = null;
+          let inlineJsonl: string | null = null;
+          let format: 'jsonl' | 'parquet' = 'jsonl';
 
-        if (jsonlBytes <= WORKBOOK_INLINE_JSONL_MAX_BYTES) {
-          inlineJsonl = sheet.jsonl;
-        } else if (duckOk && jsonlBytes >= WORKBOOK_PARQUET_MIN_BYTES) {
-          const parquet = await jsonlToParquetBuffer(sheet.jsonl, sheet.columns);
-          if (parquet) {
-            format = 'parquet';
-            storageKey = `workbooks/${ownerId}/${fileId}/${generationId}/${sheet.sheetIndex}.parquet`;
-            await this.fileService.uploadBuffer(
-              storageKey,
-              parquet,
-              'application/vnd.apache.parquet',
-            );
-            uploadedKeys.push(storageKey);
+          const readJsonlOnce = async (): Promise<Buffer> => {
+            if (sheet.jsonlPath) return readFile(sheet.jsonlPath);
+            return Buffer.from(sheet.jsonl, 'utf8');
+          };
+
+          if (jsonlBytes <= WORKBOOK_INLINE_JSONL_MAX_BYTES) {
+            inlineJsonl = sheet.jsonlPath ? await readFile(sheet.jsonlPath, 'utf8') : sheet.jsonl;
+          } else if (duckOk && jsonlBytes >= WORKBOOK_PARQUET_MIN_BYTES) {
+            const parquet = sheet.jsonlPath
+              ? await jsonlFileToParquetBuffer(sheet.jsonlPath)
+              : await jsonlToParquetBuffer(sheet.jsonl, sheet.columns);
+            if (parquet) {
+              format = 'parquet';
+              storageKey = `workbooks/${ownerId}/${fileId}/${generationId}/${sheet.sheetIndex}.parquet`;
+              await this.fileService.uploadBuffer(
+                storageKey,
+                parquet,
+                'application/vnd.apache.parquet',
+              );
+              uploadedKeys.push(storageKey);
+            } else {
+              storageKey = `workbooks/${ownerId}/${fileId}/${generationId}/${sheet.sheetIndex}.jsonl`;
+              await this.fileService.uploadBuffer(
+                storageKey,
+                await readJsonlOnce(),
+                'application/x-ndjson',
+              );
+              uploadedKeys.push(storageKey);
+            }
           } else {
             storageKey = `workbooks/${ownerId}/${fileId}/${generationId}/${sheet.sheetIndex}.jsonl`;
             await this.fileService.uploadBuffer(
               storageKey,
-              Buffer.from(sheet.jsonl, 'utf8'),
+              await readJsonlOnce(),
               'application/x-ndjson',
             );
             uploadedKeys.push(storageKey);
           }
-        } else {
-          storageKey = `workbooks/${ownerId}/${fileId}/${generationId}/${sheet.sheetIndex}.jsonl`;
-          await this.fileService.uploadBuffer(
+
+          await this.db.insert(fileSheetAssets).values({
+            columnCount: sheet.columnCount,
+            columns: sheet.columns.map((name) => ({ name })),
+            fileId,
+            format,
+            generationId,
+            inlineJsonl,
+            rowCount: sheet.rowCount,
+            sheetIndex: sheet.sheetIndex,
+            sheetName: sheet.sheetName,
             storageKey,
-            Buffer.from(sheet.jsonl, 'utf8'),
-            'application/x-ndjson',
-          );
-          uploadedKeys.push(storageKey);
+            userId: ownerId,
+            workbookId,
+            workspaceId: assetWorkspaceId,
+          });
         }
 
-        await this.db.insert(fileSheetAssets).values({
-          columnCount: sheet.columnCount,
-          columns: sheet.columns.map((name) => ({ name })),
-          fileId,
-          format,
-          generationId,
-          inlineJsonl,
-          rowCount: sheet.rowCount,
-          sheetIndex: sheet.sheetIndex,
-          sheetName: sheet.sheetName,
-          storageKey,
-          userId: ownerId,
-          workbookId,
-          workspaceId: assetWorkspaceId,
-        });
-      }
-
-      const [publishedRow] = await this.db
-        .update(fileWorkbooks)
-        .set({
-          error: null,
-          generationId,
-          manifest,
-          sheetCount: build.sheetCount,
-          status: 'ready',
-          tokenEstimate: build.unrestrictedTokenEstimate,
-          totalRows: build.totalRows,
-          updatedAt: new Date(),
-          userId: ownerId,
-          workspaceId: assetWorkspaceId,
-        })
-        .where(
-          and(
-            eq(fileWorkbooks.id, workbookId),
-            eq(fileWorkbooks.status, 'parsing'),
-            eq(fileWorkbooks.generationId, generationId),
-          ),
-        )
-        .returning();
-
-      if (!publishedRow) {
-        for (const key of uploadedKeys) {
-          try {
-            await this.fileService.deleteFile(key);
-          } catch {
-            /* ignore */
-          }
-        }
-        await this.db
-          .delete(fileSheetAssets)
+        const [publishedRow] = await this.db
+          .update(fileWorkbooks)
+          .set({
+            error: null,
+            generationId,
+            manifest,
+            sheetCount: build.sheetCount,
+            status: 'ready',
+            tokenEstimate: build.unrestrictedTokenEstimate,
+            totalRows: build.totalRows,
+            updatedAt: new Date(),
+            userId: ownerId,
+            workspaceId: assetWorkspaceId,
+          })
           .where(
             and(
-              eq(fileSheetAssets.workbookId, workbookId),
-              eq(fileSheetAssets.generationId, generationId),
+              eq(fileWorkbooks.id, workbookId),
+              eq(fileWorkbooks.status, 'parsing'),
+              eq(fileWorkbooks.generationId, generationId),
             ),
-          );
-        throw new Error('Lost parse lease before publish');
-      }
+          )
+          .returning();
 
-      // Point of no return for current-generation storage keys.
-      published = true;
+        if (!publishedRow) {
+          for (const key of uploadedKeys) {
+            try {
+              await this.fileService.deleteFile(key);
+            } catch {
+              /* ignore */
+            }
+          }
+          await this.db
+            .delete(fileSheetAssets)
+            .where(
+              and(
+                eq(fileSheetAssets.workbookId, workbookId),
+                eq(fileSheetAssets.generationId, generationId),
+              ),
+            );
+          throw new Error('Lost parse lease before publish');
+        }
 
-      // Best-effort previous-generation cleanup (async-safe: never throw into catch delete path).
-      for (const prev of previousAssets) {
-        if (prev.generationId === generationId) continue;
-        if (prev.storageKey) {
+        // Point of no return for current-generation storage keys.
+        published = true;
+
+        // Best-effort previous-generation cleanup (async-safe: never throw into catch delete path).
+        for (const prev of previousAssets) {
+          if (prev.generationId === generationId) continue;
+          if (prev.storageKey) {
+            try {
+              await this.fileService.deleteFile(prev.storageKey);
+            } catch (e) {
+              log('cleanup old asset key failed %s: %O', prev.storageKey, e);
+            }
+          }
           try {
-            await this.fileService.deleteFile(prev.storageKey);
+            await this.db.delete(fileSheetAssets).where(eq(fileSheetAssets.id, prev.id));
           } catch (e) {
-            log('cleanup old asset key failed %s: %O', prev.storageKey, e);
+            log('cleanup old asset row failed %s: %O', prev.id, e);
           }
         }
-        try {
-          await this.db.delete(fileSheetAssets).where(eq(fileSheetAssets.id, prev.id));
-        } catch (e) {
-          log('cleanup old asset row failed %s: %O', prev.id, e);
-        }
-      }
 
-      const card = buildWorkbookManifestCard(build, {
-        fileId: file.id,
-        fileName: file.name,
-        size: file.size,
-      });
-
-      try {
-        await this.fileModel.update(fileId, {
-          parseError: null,
-          parseStatus: 'ready',
-          parsedAt: new Date(),
-          parserVersion: WORKBOOK_PARSER_VERSION,
+        const card = buildWorkbookManifestCard(build, {
+          fileId: file.id,
+          fileName: file.name,
+          size: file.size,
         });
-      } catch (e) {
-        // Workbook is already ready; do not roll back assets.
-        log('post-publish file status update failed fileId=%s: %O', fileId, e);
-      }
 
-      log('parsed workbook fileId=%s sheets=%d rows=%d', fileId, build.sheetCount, build.totalRows);
-      return { card, status: 'ready', workbookId };
+        try {
+          await this.fileModel.update(fileId, {
+            parseError: null,
+            parseStatus: 'ready',
+            parsedAt: new Date(),
+            parserVersion: WORKBOOK_PARSER_VERSION,
+          });
+        } catch (e) {
+          // Workbook is already ready; do not roll back assets.
+          log('post-publish file status update failed fileId=%s: %O', fileId, e);
+        }
+
+        log(
+          'parsed workbook fileId=%s sheets=%d rows=%d',
+          fileId,
+          build.sheetCount,
+          build.totalRows,
+        );
+        return { card, status: 'ready', workbookId };
+      } finally {
+        // Drop isolate temp JSONL after upload (or on upload-path failure).
+        if (build.dispose) await build.dispose().catch(() => undefined);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log('parse failed fileId=%s published=%s: %s', fileId, published, message);
@@ -632,9 +655,7 @@ export class WorkbookService {
       try {
         await this.fileService.downloadToPath(asset.storageKey, localPath);
         if (asset.format === 'parquet') {
-          const { readFile } = await import('node:fs/promises');
-          const buf = await readFile(localPath);
-          const pq = await queryParquetBuffer(buf, input);
+          const pq = await queryParquetFile(localPath, input);
           if (!pq) {
             throw new Error(
               'Sheet is stored as parquet but DuckDB query path is unavailable. Re-parse file or install @duckdb/node-api.',

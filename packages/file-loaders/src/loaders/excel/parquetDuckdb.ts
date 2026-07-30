@@ -72,21 +72,15 @@ async function openDuck(): Promise<DuckInstance | null> {
 }
 
 /**
- * Convert JSONL text → parquet bytes via DuckDB.
- * Returns null if DuckDB unavailable or conversion fails.
+ * Convert a JSONL file on disk → parquet bytes via DuckDB (no full JSONL string in JS).
  */
-export async function jsonlToParquetBuffer(
-  jsonl: string,
-  _columns: string[],
-): Promise<Buffer | null> {
+export async function jsonlFileToParquetBuffer(jsonlPath: string): Promise<Buffer | null> {
   const db = await openDuck();
   if (!db) return null;
 
   const dir = await mkdtemp(path.join(tmpdir(), 'wb-parquet-'));
-  const jsonlPath = path.join(dir, 'sheet.jsonl');
   const parquetPath = path.join(dir, 'sheet.parquet');
   try {
-    await writeFile(jsonlPath, jsonl.endsWith('\n') ? jsonl : `${jsonl}\n`, 'utf8');
     const conn = await Promise.resolve(db.connect());
     const j = jsonlPath.replaceAll("'", "''");
     const p = parquetPath.replaceAll("'", "''");
@@ -103,6 +97,24 @@ export async function jsonlToParquetBuffer(
       /* ignore */
     }
     return null;
+  } finally {
+    await rm(dir, { force: true, recursive: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Convert JSONL text → parquet bytes via DuckDB.
+ * Returns null if DuckDB unavailable or conversion fails.
+ */
+export async function jsonlToParquetBuffer(
+  jsonl: string,
+  _columns: string[],
+): Promise<Buffer | null> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'wb-jsonl-pq-'));
+  const jsonlPath = path.join(dir, 'sheet.jsonl');
+  try {
+    await writeFile(jsonlPath, jsonl.endsWith('\n') ? jsonl : `${jsonl}\n`, 'utf8');
+    return await jsonlFileToParquetBuffer(jsonlPath);
   } finally {
     await rm(dir, { force: true, recursive: true }).catch(() => undefined);
   }
@@ -186,35 +198,25 @@ export async function queryParquetFile(
       return out;
     });
 
-    let page = raw;
-    let truncated = false;
-    while (page.length > 0 && JSON.stringify(page).length > SHEET_QUERY_MAX_CHARS) {
-      if (page.length === 1) {
-        const s = JSON.stringify(page[0]);
-        page = [{ _truncated: s.slice(0, Math.max(0, SHEET_QUERY_MAX_CHARS - 20)) + '…' }];
-        truncated = true;
-        break;
-      }
-      page = page.slice(0, -1);
-      truncated = true;
-    }
-
+    const { rows: page, truncated: charTruncated } = applySheetCharBudget(raw);
     const nextOffset = offset + page.length;
     const more = nextOffset < totalRows && page.length > 0;
     return {
-      nextCursor: more || truncated ? String(offset + page.length) : undefined,
+      nextCursor: more || charTruncated ? String(offset + page.length) : undefined,
       returnedRows: page.length,
       rows: page,
       scannedRows: Math.min(totalRows, SHEET_QUERY_MAX_SCAN, offset + page.length),
       totalRows,
-      truncated: more || truncated,
+      truncated: more || charTruncated,
     };
-  } catch {
+  } catch (err) {
     try {
       db.closeSync?.();
     } catch {
       /* ignore */
     }
+    // Re-throw ReferenceError / programming errors so tests surface them; I/O/SQL → null fallback.
+    if (err instanceof ReferenceError || err instanceof TypeError) throw err;
     return null;
   }
 }

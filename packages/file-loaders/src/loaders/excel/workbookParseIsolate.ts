@@ -1,6 +1,6 @@
 import { type ChildProcess, fork } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,22 +62,25 @@ type WorkerResult = {
   unrestrictedTokenEstimate: number;
 };
 
-const hydrateWorkerResult = async (raw: WorkerResult): Promise<WorkbookAssetBuild> => {
-  const sheets: WorkbookSheetAssetBuild[] = [];
-  for (const s of raw.sheets) {
-    const jsonl = await readFile(s.jsonlPath, 'utf8');
-    sheets.push({
-      columnCount: s.columnCount,
-      columns: s.columns,
-      jsonl,
-      rowCount: s.rowCount,
-      sampleRows: s.sampleRows,
-      sheetIndex: s.sheetIndex,
-      sheetName: s.sheetName,
-    });
-  }
+/**
+ * Map worker meta to asset build WITHOUT reading full JSONL into memory.
+ * Caller must upload from jsonlPath then await dispose().
+ */
+const mapWorkerResult = (raw: WorkerResult, dispose: () => Promise<void>): WorkbookAssetBuild => {
+  const sheets: WorkbookSheetAssetBuild[] = raw.sheets.map((s) => ({
+    columnCount: s.columnCount,
+    columns: s.columns,
+    // Empty string — body lives on disk at jsonlPath until upload.
+    jsonl: '',
+    jsonlPath: s.jsonlPath,
+    rowCount: s.rowCount,
+    sampleRows: s.sampleRows,
+    sheetIndex: s.sheetIndex,
+    sheetName: s.sheetName,
+  }));
   return {
     coverage: raw.coverage,
+    dispose,
     parserVersion: raw.parserVersion,
     sheetCount: raw.sheetCount,
     sheets,
@@ -115,6 +118,9 @@ export async function buildWorkbookAssetsIsolated(
   }
 
   const outDir = await mkdtemp(path.join(tmpdir(), 'wb-parse-'));
+  const dispose = async () => {
+    await rm(outDir, { force: true, recursive: true }).catch(() => undefined);
+  };
 
   try {
     const raw = await new Promise<WorkerResult>((resolve, reject) => {
@@ -194,8 +200,9 @@ export async function buildWorkbookAssetsIsolated(
       });
     });
 
-    return await hydrateWorkerResult(raw);
-  } finally {
-    await rm(outDir, { force: true, recursive: true }).catch(() => undefined);
+    return mapWorkerResult(raw, dispose);
+  } catch (e) {
+    await dispose();
+    throw e;
   }
 }

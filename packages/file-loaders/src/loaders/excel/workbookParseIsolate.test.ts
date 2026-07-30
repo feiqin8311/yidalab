@@ -30,7 +30,15 @@ describe('buildWorkbookAssetsIsolated', () => {
     expect(build.sheetCount).toBe(1);
     expect(build.sheets[0]?.sheetName).toBe('S1');
     expect(build.sheets[0]?.rowCount).toBe(1);
-    expect(build.sheets[0]?.jsonl).toContain('"a"');
+    // Isolated path keeps body on disk — not re-hydrated into jsonl string.
+    if (build.sheets[0]?.jsonlPath) {
+      const { readFile } = await import('node:fs/promises');
+      const body = await readFile(build.sheets[0].jsonlPath, 'utf8');
+      expect(body).toContain('"a"');
+      await build.dispose?.();
+    } else {
+      expect(build.sheets[0]?.jsonl).toContain('"a"');
+    }
   });
 
   it('forceInProcess path works', async () => {

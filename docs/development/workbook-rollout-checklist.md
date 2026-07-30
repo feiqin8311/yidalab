@@ -59,11 +59,12 @@ Read-only audit: `docs/development/sql/workbook_mega_document_audit.sql`
 Automated pipeline (dry-run first):
 
 ```bash
-# plan only
-WORKBOOK_ENQUEUE_USER_ID= scripts/workbook-mega-cleanup.ts < user > bun
+# plan only (set WORKBOOK_ENQUEUE_USER_ID to the owning user id)
+export WORKBOOK_ENQUEUE_USER_ID=user_xxx
+bun scripts/workbook-mega-cleanup.ts
 
 # apply: enqueue spreadsheet parse, wait, replace mega spreadsheet docs with cards, cap other mega docs
-WORKBOOK_ENQUEUE_USER_ID= scripts/workbook-mega-cleanup.ts < user > bun --apply --wait-ms=180000
+bun scripts/workbook-mega-cleanup.ts --apply --wait-ms=180000
 ```
 
 Manual fallback per file:
