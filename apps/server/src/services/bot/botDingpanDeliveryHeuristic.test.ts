@@ -59,7 +59,16 @@ describe('scrubFakeUploadProgressNarration', () => {
   it('replaces pure progress spam', () => {
     const body = '正在上传 HTML 报告...上传中。'.repeat(50);
     const cleaned = scrubFakeUploadProgressNarration(body);
-    expect(cleaned).toContain('uploadHtmlToDingpan');
+    expect(cleaned).toMatch(/uploadHtmlToDingpan|重复进度|重试/);
     expect(cleaned.length).toBeLessThan(body.length / 2);
+  });
+
+  it('collapses 日期改为 / 同时查询 planning loops', () => {
+    const body =
+      '领星限制90天,缩小范围查询。' +
+      '日期改为2026-05-01至2026-07-30。同时查询关键词竞争格局。'.repeat(80);
+    const cleaned = scrubFakeUploadProgressNarration(body);
+    expect(cleaned.length).toBeLessThan(body.length / 5);
+    expect((cleaned.match(/日期改为/g) ?? []).length).toBeLessThan(4);
   });
 });

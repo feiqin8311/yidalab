@@ -36,7 +36,7 @@ const AMAZON_OPS_DESCRIPTION =
   '亚马逊运营路由：ASIN流量诊断、类目大盘、Listing/Rufus、VOC评论、竞品七图、DTC站外调研、推广节奏、领星短查询。按意图 activate 对应 company MCP/skill（SIF/领星/SellerSprite/DTC），输出中文 HTML；交付走 Artifact 或钉盘，勿把 Artifacts/Memory 当业务能力。';
 
 const LINGXING_MCP_DESCRIPTION =
-  '领星广告 MCP（首选查数）。工具：query_campaign_ads(country 用 US/CA/UK…), query_sku_ads, query_asin_ads, query_asin_ad_architecture, query_campaign_querywords, query_negative_rules, get_schema_summary。HARD：单次日期跨度≤90天（近7/14/30 分段查，勿一次拉半年）。失败换 SKU/ASIN 路径，勿重复同一 country 报错参数。调用时必须用 activate 后的完整 MCP 工具名，禁止把 api 名当 identifier。';
+  '领星广告 MCP（首选查数）。工具：query_campaign_ads(country 用 US/CA/UK…), query_sku_ads, query_asin_ads, query_asin_ad_architecture, query_campaign_querywords, query_negative_rules, get_schema_summary。HARD：单次日期跨度≤90天（近7/14/30 分段查）。若报90天错误：立即缩窗重试一次即可，禁止在正文重复「日期改为…」而不调工具。失败换 SKU/ASIN 路径。调用时必须用 activate 后的完整 MCP 工具名。';
 
 const main = async () => {
   if (!process.env.DATABASE_URL) {

@@ -67,6 +67,7 @@ export const formatBotPlatformContext = ({
       '4. Do NOT emit <lobeArtifact> or dump large HTML into the chat body.',
       '5. Binary files still use uploadToDingpan with a local filePath when available.',
       '6. FORBIDDEN: progress-only narration without tools ("正在上传…/上传中…/生成 HTML…"). Either call uploadHtmlToDingpan or say once that upload failed.',
+      '7. FORBIDDEN: repeating the same planning sentence ("日期改为…/同时查询…/缩小范围…") instead of issuing the tool call. Say the plan once, then call tools, then final text.',
       'Skipping uploadHtmlToDingpan while writing long chat text is a delivery failure — the Web topic also lacks the full report if you never called the tool.',
       '</deliverable_surface>',
     );
