@@ -13,28 +13,46 @@ export const WORKBOOK_PARSE_CHILD_TIMEOUT_MS = (60 * 5 - 5) * 1000;
 export const WORKBOOK_PARSE_CHILD_MAX_OLD_SPACE_MB = 512;
 
 /**
- * Resolve worker script path at runtime.
- * Avoid static path.join(cwd, 'packages/...') string forms that Turbopack
- * treats as module imports (breaks next build:docker).
+ * Build worker filename at runtime so Turbopack/Next cannot constant-fold it
+ * into a static module resolution of `./ROOT/workbookParseWorker.cjs`.
+ */
+const workerFileName = (): string => ['workbook', 'Parse', 'Worker', '.', 'cjs'].join('');
+
+/**
+ * Resolve worker script path at runtime only.
+ * Never use static string literals that look like module paths to Turbopack.
  */
 const resolveWorkerPath = (): string => {
-  // Docker production: copied to fixed path next to startServer.js
-  const dockerStable = path.join(process.cwd(), 'workbookParseWorker.cjs');
+  const name = workerFileName();
+  const cwd = process.cwd();
+
+  // Optional override for ops/tests
+  const fromEnv = process.env.WORKBOOK_PARSE_WORKER_PATH;
+  if (fromEnv && existsSync(/* turbopackIgnore: true */ fromEnv)) return fromEnv;
+
+  // Docker production: /app/workbookParseWorker.cjs (see Dockerfile COPY)
+  const dockerStable = path.join(cwd, name);
   if (existsSync(/* turbopackIgnore: true */ dockerStable)) return dockerStable;
 
+  // Same directory as this module (dev / monorepo package source)
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const local = path.join(here, 'workbookParseWorker.cjs');
-  // turbopackIgnore: do not trace whole project from dynamic existsSync
+  const local = path.join(here, name);
   if (existsSync(/* turbopackIgnore: true */ local)) return local;
 
-  const cwd = process.cwd();
-  // Build segments at runtime so Turbopack cannot constant-fold to ROOT imports
-  const monorepoSegs = ['packages', 'file-loaders', 'src', 'loaders', 'excel'];
-  const monorepo = path.join(cwd, ...monorepoSegs, 'workbookParseWorker.cjs');
+  // monorepo root layout
+  const monorepo = path.join(cwd, 'packages', 'file-loaders', 'src', 'loaders', 'excel', name);
   if (existsSync(/* turbopackIgnore: true */ monorepo)) return monorepo;
 
-  const pkgSegs = ['node_modules', '@lobechat', 'file-loaders', 'src', 'loaders', 'excel'];
-  const fromPkg = path.join(cwd, ...pkgSegs, 'workbookParseWorker.cjs');
+  const fromPkg = path.join(
+    cwd,
+    'node_modules',
+    '@lobechat',
+    'file-loaders',
+    'src',
+    'loaders',
+    'excel',
+    name,
+  );
   if (existsSync(/* turbopackIgnore: true */ fromPkg)) return fromPkg;
 
   return local;
@@ -82,7 +100,6 @@ const mapWorkerResult = (raw: WorkerResult, dispose: () => Promise<void>): Workb
   const sheets: WorkbookSheetAssetBuild[] = raw.sheets.map((s) => ({
     columnCount: s.columnCount,
     columns: s.columns,
-    // Empty string — body lives on disk at jsonlPath until upload.
     jsonl: '',
     jsonlPath: s.jsonlPath,
     rowCount: s.rowCount,
@@ -138,6 +155,7 @@ export async function buildWorkbookAssetsIsolated(
     const raw = await new Promise<WorkerResult>((resolve, reject) => {
       let child: ChildProcess;
       try {
+        // fork first arg must be a runtime string — never a static import path
         child = fork(workerPath, [filePath, outDir], {
           execArgv: [`--max-old-space-size=${heapMb}`],
           serialization: 'json',
