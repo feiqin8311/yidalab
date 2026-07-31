@@ -35,25 +35,54 @@ export interface ResolvedAttachments {
 }
 
 interface ResolveArgs {
+  /** Cap concurrent non-media resolves (default 4). */
+  concurrency?: number;
   db: LobeChatDatabase;
   fileIds: string[];
   userId: string;
   workspaceId?: string;
+  /**
+   * `never` for client prompt hydrate (no DocumentService write / workbook enqueue).
+   * Default `allow` preserves gateway behavior for persistent resources.
+   */
+  writeMode?: 'allow' | 'never';
 }
 
 const dedupe = (ids: string[]) => Array.from(new Set(ids));
 
+/** Exported for concurrency unit tests. */
+export const mapPool = async <T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, concurrency);
+  const results = Array.from({ length: items.length }) as R[];
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await mapper(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+};
+
 /**
  * Resolve fileIds into image/video/file lists for the LLM prompt layer.
  *
- * Uses ContextResourceResolver for non-media files so chat attachments never
- * write documents/chunks via DocumentService.parseFile.
+ * Uses ContextResourceResolver for non-media files. Pass writeMode='never' so
+ * prompt-time hydrate never writes documents/chunks via DocumentService.parseFile.
  */
 export const resolveAttachmentsByFileIds = async ({
   db,
   fileIds,
   userId,
   workspaceId,
+  writeMode = 'allow',
+  concurrency = 4,
 }: ResolveArgs): Promise<ResolvedAttachments> => {
   const result: ResolvedAttachments = {
     audioList: [],
@@ -69,7 +98,8 @@ export const resolveAttachmentsByFileIds = async ({
   const dedupedFileIds = dedupe(fileIds);
   const fileModel = new FileModel(db, userId, workspaceId);
   const fileService = new FileService(db, userId, workspaceId);
-  const fileRecords = await fileModel.findByIds(dedupedFileIds);
+  // Grant-aware batch (same ACL as findById); access context loaded once.
+  const fileRecords = await fileModel.findReadableByIds(dedupedFileIds);
   if (fileRecords.length === 0) {
     log('no file records found for fileIds=%O', dedupedFileIds);
     return result;
@@ -78,46 +108,58 @@ export const resolveAttachmentsByFileIds = async ({
   const resolver = new ContextResourceResolver(db, userId, workspaceId);
   const recordById = new Map(fileRecords.map((f) => [f.id, f]));
 
-  const resolved = await Promise.all(
-    dedupedFileIds.map(async (id) => {
-      const file = recordById.get(id);
-      if (!file) {
-        return { id, missing: true as const };
-      }
-      const resolvedUrl = (await fileService.getFullFileUrl(file.url)) || file.url;
-      const fileType = file.fileType || '';
-      if (
-        fileType.startsWith('image') ||
-        fileType.startsWith('video') ||
-        fileType.startsWith('audio')
-      ) {
-        return { file, fileType, id, resolvedUrl };
-      }
+  const resolved = await mapPool(dedupedFileIds, concurrency, async (id) => {
+    const file = recordById.get(id);
+    if (!file) {
+      return { id, missing: true as const };
+    }
+    const resolvedUrl = (await fileService.getFullFileUrl(file.url)) || file.url;
+    const fileType = file.fileType || '';
+    if (
+      fileType.startsWith('image') ||
+      fileType.startsWith('video') ||
+      fileType.startsWith('audio')
+    ) {
+      return { file, fileType, id, resolvedUrl };
+    }
 
-      try {
-        const ctx = await resolver.resolveForPrompt(file.id);
-        return {
-          content: ctx.content,
-          diagnostic: ctx.diagnostic,
-          file,
-          fileType,
-          id,
-          parseStatus: ctx.parseStatus,
-          resolvedUrl,
-          resolveStatus: ctx.status,
-          warnings: ctx.warnings,
-        };
-      } catch (error) {
-        return {
-          file,
-          fileType,
-          id,
-          parseError: error,
-          resolvedUrl,
-        };
-      }
-    }),
-  );
+    try {
+      const ctx = await resolver.resolveForPrompt(
+        file.id,
+        {},
+        {
+          file: {
+            fileType: file.fileType || '',
+            id: file.id,
+            name: file.name || 'file',
+            processingPolicy: (file as { processingPolicy?: string | null }).processingPolicy,
+            size: file.size ?? null,
+            url: file.url,
+          },
+          ...(writeMode === 'never' ? { writeMode: 'never' as const } : {}),
+        },
+      );
+      return {
+        content: ctx.content,
+        diagnostic: ctx.diagnostic,
+        file,
+        fileType,
+        id,
+        parseStatus: ctx.parseStatus,
+        resolvedUrl,
+        resolveStatus: ctx.status,
+        warnings: ctx.warnings,
+      };
+    } catch (error) {
+      return {
+        file,
+        fileType,
+        id,
+        parseError: error,
+        resolvedUrl,
+      };
+    }
+  });
 
   let cardBudget = ALL_FILE_CARDS_MAX_CHARS;
 

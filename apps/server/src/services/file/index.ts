@@ -473,10 +473,16 @@ export class FileService {
     return { fileId: createdId, key, url };
   }
 
+  /**
+   * Download a file to a temp path. Pass a preloaded, already-authorized `file`
+   * record to skip FileModel.findById (prompt-time multi-file resolve).
+   */
   async downloadFileToLocal(
     fileId: string,
+    fileRecord?: Pick<FileItem, 'id' | 'name' | 'url'> | null,
   ): Promise<{ cleanup: () => void; file: FileItem; filePath: string }> {
-    const file = await this.fileModel.findById(fileId);
+    const file =
+      fileRecord?.id === fileId ? (fileRecord as FileItem) : await this.fileModel.findById(fileId);
     if (!file) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'File not found' });
     }

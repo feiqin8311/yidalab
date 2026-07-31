@@ -167,6 +167,19 @@ describe('FileService', () => {
 
       expect(mockTempManager.writeTempFile).toHaveBeenCalledWith(mockContent, mockFile.name);
     });
+
+    it('uses a preloaded file record and skips findById', async () => {
+      const mockContent = new Uint8Array([9]);
+      const mockFilePath = '/tmp/preloaded.txt';
+      mockTempManager.writeTempFile.mockResolvedValue(mockFilePath);
+      vi.mocked(service['impl'].getFileByteArray).mockResolvedValue(mockContent);
+
+      const result = await service.downloadFileToLocal('test-file-id', mockFile);
+
+      expect(mockFileModel.findById).not.toHaveBeenCalled();
+      expect(result.filePath).toBe(mockFilePath);
+      expect(mockTempManager.writeTempFile).toHaveBeenCalledWith(mockContent, mockFile.name);
+    });
   });
 
   it('should delegate deleteFile to implementation', async () => {

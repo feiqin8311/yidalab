@@ -29,6 +29,7 @@ const routerMocks = vi.hoisted(() => {
     businessFileTransferStorageCheck: vi.fn(),
     hasWorkspaceScopedPermission: vi.fn(),
     getMyCompany: vi.fn().mockResolvedValue({ id: 'default-company' }),
+    resolveAttachmentsByFileIds: vi.fn(),
     serverDB: {
       select: vi.fn(() => chain()),
       query: {
@@ -42,6 +43,11 @@ const routerMocks = vi.hoisted(() => {
     transactionClient,
   };
 });
+
+vi.mock('@/server/services/file/resolveAttachments', () => ({
+  resolveAttachmentsByFileIds: routerMocks.resolveAttachmentsByFileIds,
+  resolveAttachmentMetadata: vi.fn(),
+}));
 
 vi.mock('@/database/models/company', () => ({
   CompanyModel: vi.fn(() => ({
@@ -751,6 +757,42 @@ describe('fileRouter', () => {
       const result = await caller.findById({ id: 'test-id' });
 
       expect(result.url).toBe('https://lobehub.com/f/test-id');
+    });
+  });
+
+  describe('resolveAttachmentsForPrompt', () => {
+    it('delegates with writeMode=never and bounded concurrency', async () => {
+      const resolved = {
+        audioList: [],
+        diagnostics: [],
+        fileList: [
+          {
+            content: 'listing body',
+            fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            id: 'file_docx',
+            name: 'listing.docx',
+            size: 10,
+            url: 'https://example.com/listing.docx',
+          },
+        ],
+        imageList: [],
+        orderedFileIds: ['file_docx'],
+        videoList: [],
+        warnings: [],
+      };
+      routerMocks.resolveAttachmentsByFileIds.mockResolvedValue(resolved);
+
+      const result = await caller.resolveAttachmentsForPrompt({ fileIds: ['file_docx'] });
+
+      expect(routerMocks.resolveAttachmentsByFileIds).toHaveBeenCalledWith({
+        concurrency: 3,
+        db: ctx.serverDB,
+        fileIds: ['file_docx'],
+        userId: 'test-user',
+        workspaceId: 'default-company',
+        writeMode: 'never',
+      });
+      expect(result).toEqual(resolved);
     });
   });
 

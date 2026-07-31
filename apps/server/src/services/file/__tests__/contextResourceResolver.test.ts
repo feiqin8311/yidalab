@@ -7,12 +7,19 @@ const mockDownloadFileToLocal = vi.fn();
 const mockLoadFile = vi.fn();
 const mockInspectWorkbook = vi.fn();
 const mockParseFile = vi.fn();
+const mockDocumentFindByFileId = vi.fn();
 const mockIsSpreadsheetFile = vi.fn();
 const mockShouldInlineParsedText = vi.fn();
 
 vi.mock('@/database/models/file', () => ({
   FileModel: vi.fn(() => ({
     findById: mockFindById,
+  })),
+}));
+
+vi.mock('@/database/models/document', () => ({
+  DocumentModel: vi.fn(() => ({
+    findByFileId: mockDocumentFindByFileId,
   })),
 }));
 
@@ -194,5 +201,73 @@ describe('ContextResourceResolver', () => {
     expect(result.status).toBe('ready');
     expect(result.content).toBe('Workbook card');
     expect(mockInspectWorkbook).toHaveBeenCalledWith('f4');
+  });
+
+  it('writeMode=never reads stored document only and never calls parseFile', async () => {
+    mockFindById.mockResolvedValue({
+      id: 'f-persist',
+      name: 'doc.pdf',
+      fileType: 'application/pdf',
+      size: 100,
+      processingPolicy: 'persistent',
+      url: 's3://x',
+    });
+    mockDocumentFindByFileId.mockResolvedValue({
+      content: 'already indexed body',
+      id: 'docs_1',
+    });
+
+    const result = await resolver.resolveForPrompt('f-persist', {}, { writeMode: 'never' });
+
+    expect(result.status).toBe('ready');
+    expect(result.content).toBe('already indexed body');
+    expect(mockParseFile).not.toHaveBeenCalled();
+    expect(mockInspectWorkbook).not.toHaveBeenCalled();
+    expect(mockDownloadFileToLocal).not.toHaveBeenCalled();
+  });
+
+  it('writeMode=never fails closed when persistent document row is missing', async () => {
+    mockFindById.mockResolvedValue({
+      id: 'f-missing-doc',
+      name: 'doc.pdf',
+      fileType: 'application/pdf',
+      size: 100,
+      processingPolicy: 'persistent',
+      url: 's3://x',
+    });
+    mockDocumentFindByFileId.mockResolvedValue(null);
+
+    const result = await resolver.resolveForPrompt('f-missing-doc', {}, { writeMode: 'never' });
+
+    expect(result.status).toBe('failed');
+    expect(result.warnings.join(' ')).toContain('no stored document body');
+    expect(mockParseFile).not.toHaveBeenCalled();
+  });
+
+  it('uses options.file and skips FileModel.findById; passes record to download', async () => {
+    mockDownloadFileToLocal.mockResolvedValue({
+      cleanup,
+      filePath: '/tmp/a.md',
+      file: { name: 'a.md' },
+    });
+    mockLoadFile.mockResolvedValue({ content: 'from preloaded row', metadata: {} });
+
+    const preloaded = {
+      id: 'f-pre',
+      name: 'a.md',
+      fileType: 'text/markdown',
+      size: 10,
+      processingPolicy: 'on_demand' as const,
+      url: 's3://x',
+    };
+    const result = await resolver.resolveForPrompt('f-pre', {}, { file: preloaded });
+
+    expect(result.content).toBe('from preloaded row');
+    expect(mockFindById).not.toHaveBeenCalled();
+    expect(mockDownloadFileToLocal).toHaveBeenCalledWith('f-pre', {
+      id: 'f-pre',
+      name: 'a.md',
+      url: 's3://x',
+    });
   });
 });

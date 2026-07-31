@@ -24,6 +24,7 @@ import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
+import { resolveAttachmentsByFileIds } from '@/server/services/file/resolveAttachments';
 import { hasWorkspaceScopedPermission } from '@/server/services/workspacePermission';
 import { AsyncTaskStatus, AsyncTaskType, type IAsyncTaskError } from '@/types/asyncTask';
 import type { FileListItem, KnowledgeItemStatus } from '@/types/files';
@@ -372,6 +373,28 @@ export const fileRouter = router({
         url: await ctx.fileService.getFileAccessUrl(item),
         userId: item.userId,
       };
+    }),
+
+  /**
+   * Prompt-time attachment text for client agent runtime.
+   * writeMode=never: pure read / on_demand extract only — no documents write.
+   */
+  resolveAttachmentsForPrompt: fileProcedure
+    .use(withScopedPermission('file:read'))
+    .input(
+      z.object({
+        fileIds: z.array(z.string()).max(20),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      return resolveAttachmentsByFileIds({
+        concurrency: 3,
+        db: ctx.serverDB,
+        fileIds: input.fileIds,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId ?? undefined,
+        writeMode: 'never',
+      });
     }),
 
   getFileItemById: fileProcedure

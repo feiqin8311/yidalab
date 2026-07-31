@@ -425,28 +425,33 @@ export class FileModel {
     });
   };
 
-  findById = async (id: string, trx?: Transaction) => {
+  /**
+   * Batch read with the same ACL as findById (owner / public / grant / admin).
+   * Loads workspace access context once — use for prompt-time multi-file resolve.
+   */
+  findReadableByIds = async (ids: string[], trx?: Transaction) => {
+    if (ids.length === 0) return [];
+    const uniqueIds = [...new Set(ids)];
     const database = trx || this.db;
 
-    // Personal mode: creator-only.
+    // Personal mode: creator-only (same as findById).
     if (!this.workspaceId) {
-      return database.query.files.findFirst({
-        where: and(eq(files.id, id), this.ownership()),
+      return database.query.files.findMany({
+        where: and(inArray(files.id, uniqueIds), this.ownership()),
       });
     }
 
-    // Workspace: creator / public / grant / admin can read.
     const { loadResourceAccessContext } = await import('../utils/resource-access');
     const accessCtx = await loadResourceAccessContext(
       database as LobeChatDatabase,
       this.userId,
       this.workspaceId,
     );
-    if (!accessCtx) return undefined;
+    if (!accessCtx) return [];
 
     if (accessCtx.isAdmin) {
-      return database.query.files.findFirst({
-        where: and(eq(files.id, id), eq(files.workspaceId, this.workspaceId)),
+      return database.query.files.findMany({
+        where: and(inArray(files.id, uniqueIds), eq(files.workspaceId, this.workspaceId)),
       });
     }
 
@@ -459,9 +464,9 @@ export class FileModel {
             OR (g.grantee_type = 'department' AND g.grantee_id = ${accessCtx.departmentId})
           )`;
 
-    return database.query.files.findFirst({
+    return database.query.files.findMany({
       where: and(
-        eq(files.id, id),
+        inArray(files.id, uniqueIds),
         eq(files.workspaceId, this.workspaceId),
         or(
           sql`${files.visibility} IS NULL`,
@@ -480,6 +485,11 @@ export class FileModel {
         ),
       ),
     });
+  };
+
+  findById = async (id: string, trx?: Transaction) => {
+    const rows = await this.findReadableByIds([id], trx);
+    return rows[0];
   };
 
   /**

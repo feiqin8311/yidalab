@@ -9,6 +9,7 @@ import {
 import type { ChatFileParseStatus, RuntimeDiagnostic } from '@lobechat/types';
 import debug from 'debug';
 
+import { DocumentModel } from '@/database/models/document';
 import { FileModel } from '@/database/models/file';
 import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
@@ -33,8 +34,31 @@ export interface PromptResourceBudget {
 }
 
 /**
+ * `allow` (default): persistent files may call DocumentService.parseFile / workbook
+ * inspect (can write or enqueue). Gateway run path.
+ * `never`: pure read for prompt-time client hydrate — existing document/workbook
+ * rows only; missing content fails closed without parse/write/enqueue.
+ */
+export type ContextResourceWriteMode = 'allow' | 'never';
+
+export type PromptFileRecord = {
+  fileType: string;
+  id: string;
+  name: string;
+  processingPolicy?: string | null;
+  size: number | null;
+  url: string;
+};
+
+export interface ResolveForPromptOptions {
+  /** Skip FileModel.findById when caller already loaded a grant-aware row. */
+  file?: PromptFileRecord;
+  writeMode?: ContextResourceWriteMode;
+}
+
+/**
  * On-demand prompt content for message attachments.
- * NEVER writes documents / chunks / embeddings / workbook manifests.
+ * writeMode=never guarantees no documents / chunks / workbook enqueue.
  */
 export class ContextResourceResolver {
   private readonly db: LobeChatDatabase;
@@ -54,9 +78,14 @@ export class ContextResourceResolver {
   resolveForPrompt = async (
     fileId: string,
     budget: PromptResourceBudget = {},
+    options: ResolveForPromptOptions = {},
   ): Promise<ContextResourceResult> => {
     const maxChars = budget.maxChars ?? LEGACY_CONTENT_HARD_CAP;
-    const file = await this.fileModel.findById(fileId);
+    const writeMode = options.writeMode ?? 'allow';
+    const file =
+      options.file?.id === fileId
+        ? options.file
+        : ((await this.fileModel.findById(fileId)) as PromptFileRecord | undefined);
     if (!file) {
       return {
         status: 'failed',
@@ -64,15 +93,66 @@ export class ContextResourceResolver {
       };
     }
 
-    const policy = (file as { processingPolicy?: string }).processingPolicy ?? 'on_demand';
+    const policy = file.processingPolicy ?? 'on_demand';
     const fileType = file.fileType || '';
 
     // Persistent + already-parsed: prefer long-lived document / workbook assets.
     if (policy === 'persistent') {
-      return this.resolvePersistent(fileId, file, fileType, maxChars);
+      return this.resolvePersistent(fileId, file, fileType, maxChars, writeMode);
     }
 
     return this.resolveOnDemand(fileId, file, fileType, maxChars);
+  };
+
+  private capContent = (
+    fileId: string,
+    file: { name: string; size: number | null },
+    content: string | undefined,
+    maxChars: number,
+  ): ContextResourceResult => {
+    let body = content;
+    let status: ContextResourceResult['status'] = 'ready';
+    const warnings: string[] = [];
+
+    if (body && body.length > maxChars) {
+      body = `${body.slice(0, maxChars)}\n\n…[document body capped at ${maxChars} chars; re-export a smaller extract or use lobe-workbook querySheet if this is a spreadsheet resource]`;
+      status = 'partial';
+      warnings.push(`Content truncated to ${maxChars} chars.`);
+    }
+    if (body && !shouldInlineParsedText({ content: body, size: file.size ?? 0 })) {
+      body = `File id=${fileId} name="${file.name}" size=${file.size} is too large to inline (token budget). Upload via Resources for full indexing, or re-export a smaller extract. Do not use cloud sandbox.`;
+      status = 'partial';
+    }
+
+    if (!body?.trim()) {
+      return {
+        status: 'failed',
+        warnings: warnings.length
+          ? warnings
+          : [`File "${file.name}" has no stored extractable text yet.`],
+      };
+    }
+
+    return { content: body, status, warnings };
+  };
+
+  private resolvePersistentReadOnly = async (
+    fileId: string,
+    file: { name: string; size: number | null; fileType: string },
+    maxChars: number,
+  ): Promise<ContextResourceResult> => {
+    const documentModel = new DocumentModel(this.db, this.userId, this.workspaceId);
+    const existing = await documentModel.findByFileId(fileId);
+    const content = (existing as { content?: string | null } | undefined)?.content ?? undefined;
+    if (!content?.trim()) {
+      return {
+        status: 'failed',
+        warnings: [
+          `File "${file.name}" is persistent but has no stored document body yet. Wait for resource ingestion or re-upload via Resources.`,
+        ],
+      };
+    }
+    return this.capContent(fileId, file, content, maxChars);
   };
 
   private resolvePersistent = async (
@@ -80,7 +160,12 @@ export class ContextResourceResolver {
     file: { name: string; size: number | null; fileType: string },
     fileType: string,
     maxChars: number,
+    writeMode: ContextResourceWriteMode,
   ): Promise<ContextResourceResult> => {
+    if (writeMode === 'never') {
+      return this.resolvePersistentReadOnly(fileId, file, maxChars);
+    }
+
     if (isSpreadsheetFile(fileType, file.name)) {
       try {
         const workbookService = new WorkbookService(this.db, this.userId, this.workspaceId);
@@ -115,21 +200,7 @@ export class ContextResourceResolver {
       const documentService = new DocumentService(this.db, this.userId, this.workspaceId);
       // parseFile is gated by processingPolicy; for persistent files it may write.
       const document = await documentService.parseFile(fileId);
-      let content = document.content ?? undefined;
-      let status: ContextResourceResult['status'] = 'ready';
-      const warnings: string[] = [];
-
-      if (content && content.length > maxChars) {
-        content = `${content.slice(0, maxChars)}\n\n…[document body capped at ${maxChars} chars; re-export a smaller extract or use lobe-workbook querySheet if this is a spreadsheet resource]`;
-        status = 'partial';
-        warnings.push(`Content truncated to ${maxChars} chars.`);
-      }
-      if (content && !shouldInlineParsedText({ content, size: file.size ?? 0 })) {
-        content = `File id=${fileId} name="${file.name}" size=${file.size} is too large to inline (token budget). Upload via Resources for full indexing, or re-export a smaller extract. Do not use cloud sandbox.`;
-        status = 'partial';
-      }
-
-      return { content, status, warnings };
+      return this.capContent(fileId, file, document.content ?? undefined, maxChars);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log('persistent resolve failed for %s: %O', fileId, error);
@@ -152,7 +223,12 @@ export class ContextResourceResolver {
 
     let cleanup: (() => void) | undefined;
     try {
-      const downloaded = await this.fileService.downloadFileToLocal(fileId);
+      // Pass preloaded row so download skips a second grant-aware findById.
+      const downloaded = await this.fileService.downloadFileToLocal(fileId, {
+        id: fileId,
+        name: file.name,
+        url: file.url,
+      });
       cleanup = downloaded.cleanup;
 
       const fileDocument = await loadFile(downloaded.filePath);

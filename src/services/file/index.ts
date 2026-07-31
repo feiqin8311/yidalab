@@ -126,6 +126,25 @@ export class FileService {
     return lambdaClient.file.checkFileHash.mutate({ hash });
   };
 
+  /**
+   * Prompt-time extract for chat on_demand attachments (client agent path).
+   * Does not write documents/chunks.
+   */
+  resolveAttachmentsForPrompt = async (fileIds: string[]) => {
+    if (fileIds.length === 0) {
+      return {
+        audioList: [],
+        diagnostics: [],
+        fileList: [],
+        imageList: [],
+        orderedFileIds: [],
+        videoList: [],
+        warnings: [],
+      };
+    }
+    return lambdaClient.file.resolveAttachmentsForPrompt.query({ fileIds });
+  };
+
   removeFileAsyncTask = async (id: string, type: 'embedding' | 'chunk') => {
     return lambdaClient.file.removeFileAsyncTask.mutate({ id, type });
   };
