@@ -1,5 +1,7 @@
+import type { Message } from 'chat';
 import debug from 'debug';
 
+import type { AttachmentSource } from '@/server/services/aiAgent/ingestAttachment';
 import {
   BOT_RUNTIME_STATUSES,
   getRuntimeStatusErrorMessage,
@@ -11,14 +13,19 @@ import {
   type BotPlatformRuntimeContext,
   type BotProviderConfig,
   ClientFactory,
+  type ExtractFilesResult,
   type PlatformClient,
   type PlatformMessenger,
   type UsageStats,
   type ValidationResult,
 } from '../types';
 import { formatUsageStats } from '../utils';
-import { DingTalkAdapter } from './adapter';
-import { dingTalkMessageEmotion } from './api';
+import { collectDingTalkDownloadables, type DingTalkRobotMessage } from './adapter';
+import {
+  DINGTALK_MAX_ROBOT_FILE_BYTES,
+  dingTalkMessageEmotion,
+  downloadDingTalkRobotFile,
+} from './api';
 import { DingTalkStreamConnection } from './gateway';
 
 const log = debug('bot-platform:dingtalk');
@@ -138,6 +145,78 @@ export class DingTalkClient implements PlatformClient {
     return stats && this.config.settings.showUsageStats
       ? `${body}\n\n${formatUsageStats(stats)}`
       : body;
+  }
+
+  /**
+   * Re-download media via OpenAPI using downloadCode from message.raw
+   * (Message.toJSON strips buffers; codes survive Redis round-trip).
+   */
+  async extractFiles(message: Message): Promise<ExtractFilesResult | undefined> {
+    const clientSecret = this.config.credentials.clientSecret;
+    if (!clientSecret) {
+      log('extractFiles: missing clientSecret');
+      return undefined;
+    }
+
+    const raw = message.raw as DingTalkRobotMessage | undefined;
+    const downloadables = raw ? collectDingTalkDownloadables(raw) : [];
+    // Fallback: attachment.raw.downloadCode from parseMessage metadata
+    if (downloadables.length === 0 && Array.isArray(message.attachments)) {
+      for (const att of message.attachments) {
+        const code = (att as { raw?: { downloadCode?: string } }).raw?.downloadCode;
+        if (!code) continue;
+        downloadables.push({
+          downloadCode: code,
+          mimeType: att.mimeType,
+          name: att.name,
+          size: att.size,
+          type: (att.type as 'file' | 'image' | 'audio' | 'video') || 'file',
+        });
+      }
+    }
+
+    if (downloadables.length === 0) return undefined;
+
+    const files: AttachmentSource[] = [];
+    const warnings: string[] = [];
+
+    for (const item of downloadables) {
+      const declared = item.size ?? 0;
+      if (declared > DINGTALK_MAX_ROBOT_FILE_BYTES) {
+        warnings.push(
+          `附件「${item.name || 'file'}」声明大小 ${Math.round(declared / 1024 / 1024)}MB 超过 ${DINGTALK_MAX_ROBOT_FILE_BYTES / 1024 / 1024}MB 上限，已跳过。`,
+        );
+        continue;
+      }
+      try {
+        const buffer = await downloadDingTalkRobotFile({
+          clientId: this.applicationId,
+          clientSecret,
+          downloadCode: item.downloadCode,
+          maxBytes: DINGTALK_MAX_ROBOT_FILE_BYTES,
+          robotCode: this.applicationId,
+        });
+        files.push({
+          buffer,
+          mimeType: item.mimeType,
+          name: item.name,
+          size: buffer.length,
+        });
+        log(
+          'extractFiles: downloaded %s (%d bytes) type=%s',
+          item.name ?? item.downloadCode.slice(0, 8),
+          buffer.length,
+          item.type,
+        );
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        log('extractFiles: failed for %s: %O', item.name ?? item.downloadCode, error);
+        warnings.push(`附件「${item.name || 'file'}」下载失败：${msg.slice(0, 120)}`);
+      }
+    }
+
+    if (files.length === 0 && warnings.length === 0) return undefined;
+    return { files: files.length > 0 ? files : undefined, warnings };
   }
 }
 

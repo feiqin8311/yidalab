@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { DingTalkAdapter, toDingTalkPlainText } from './adapter';
+import {
+  collectDingTalkDownloadables,
+  DingTalkAdapter,
+  isDingTalkInboundAcceptable,
+  toDingTalkPlainText,
+} from './adapter';
 
 describe('DingTalkAdapter', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -104,5 +109,94 @@ describe('DingTalkAdapter', () => {
     const message = await processMessage.mock.calls[0][2]();
     expect(message.author.userId).toBe('17331048354297047');
     expect(message.author.userName).toBe('柯鹏翔');
+  });
+
+  it('accepts file messages and parses downloadCode metadata', async () => {
+    const processMessage = vi.fn();
+    const adapter = new DingTalkAdapter('app-1');
+    await adapter.initialize({ processMessage } as any);
+
+    await adapter.handleWebhook(
+      new Request('https://example.com', {
+        body: JSON.stringify({
+          content: {
+            downloadCode: 'CODE-XLSX',
+            fileName: '词库.xlsx',
+            fileSize: 1024,
+          },
+          conversationId: 'cid-file',
+          conversationType: '1',
+          msgId: 'msg-file',
+          msgtype: 'file',
+          senderId: 'user-1',
+          sessionWebhook: 'https://dingtalk.example/reply',
+        }),
+        method: 'POST',
+      }),
+    );
+
+    expect(processMessage).toHaveBeenCalledOnce();
+    const message = await processMessage.mock.calls[0][2]();
+    expect(message.attachments).toHaveLength(1);
+    expect(message.attachments[0].name).toBe('词库.xlsx');
+    expect(message.attachments[0].raw).toEqual({
+      downloadCode: 'CODE-XLSX',
+      type: 'file',
+    });
+    expect(message.text).toContain('词库.xlsx');
+  });
+
+  it('ignores file messages without downloadCode', async () => {
+    const processMessage = vi.fn();
+    const adapter = new DingTalkAdapter('app-1');
+    await adapter.initialize({ processMessage } as any);
+
+    await adapter.handleWebhook(
+      new Request('https://example.com', {
+        body: JSON.stringify({
+          conversationId: 'cid-1',
+          conversationType: '1',
+          msgId: 'msg-x',
+          msgtype: 'file',
+          senderId: 'user-1',
+          sessionWebhook: 'https://dingtalk.example/reply',
+        }),
+        method: 'POST',
+      }),
+    );
+
+    expect(processMessage).not.toHaveBeenCalled();
+  });
+
+  it('collectDingTalkDownloadables dedupes codes from nested attachments', () => {
+    const items = collectDingTalkDownloadables({
+      attachments: [
+        { downloadCode: 'A', fileName: 'a.xlsx' },
+        { downloadCode: 'A', fileName: 'dup.xlsx' },
+        { downloadCode: 'B', fileName: 'b.pdf' },
+      ],
+      conversationId: 'c',
+      conversationType: '1',
+      msgId: 'm',
+      msgtype: 'file',
+      senderId: 'u',
+      sessionWebhook: 'https://x',
+      content: { downloadCode: 'A', fileName: 'a.xlsx' },
+    });
+    expect(items.map((i) => i.downloadCode).sort()).toEqual(['A', 'B']);
+  });
+
+  it('isDingTalkInboundAcceptable for picture', () => {
+    expect(
+      isDingTalkInboundAcceptable({
+        conversationId: 'c',
+        conversationType: '1',
+        msgId: 'm',
+        msgtype: 'picture',
+        picture: { downloadCode: 'PIC' },
+        senderId: 'u',
+        sessionWebhook: 'https://x',
+      }),
+    ).toBe(true);
   });
 });

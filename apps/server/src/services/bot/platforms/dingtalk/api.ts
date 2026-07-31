@@ -4,6 +4,10 @@ const log = debug('bot-platform:dingtalk:api');
 
 const TOKEN_URL = 'https://api.dingtalk.com/v1.0/oauth2/accessToken';
 const EMOTION_BASE = 'https://api.dingtalk.com/v1.0/robot/emotion';
+const MESSAGE_FILE_DOWNLOAD = 'https://api.dingtalk.com/v1.0/robot/messageFiles/download';
+
+/** Align with workbook parse hard cap — refuse larger robot downloads. */
+export const DINGTALK_MAX_ROBOT_FILE_BYTES = 20 * 1024 * 1024;
 
 /** Native "thinking" text-emotion used by DingTalk robot emotion API. */
 const ACK_EMOTION = {
@@ -100,4 +104,90 @@ export async function dingTalkMessageEmotion(params: {
     const detail = await response.text().catch(() => '');
     throw new Error(`DingTalk emotion ${action} failed: HTTP ${response.status} ${detail}`);
   }
+}
+
+/**
+ * Resolve robot inbound file downloadCode → temporary HTTPS URL, then fetch bytes.
+ * @see https://open.dingtalk.com/document/orgapp/download-the-file-content-of-the-robot-receiving-message
+ */
+export async function downloadDingTalkRobotFile(params: {
+  clientId: string;
+  clientSecret: string;
+  downloadCode: string;
+  /** Max bytes to accept after download (default DINGTALK_MAX_ROBOT_FILE_BYTES). */
+  maxBytes?: number;
+  robotCode?: string;
+}): Promise<Buffer> {
+  const {
+    clientId,
+    clientSecret,
+    downloadCode,
+    maxBytes = DINGTALK_MAX_ROBOT_FILE_BYTES,
+    robotCode = clientId,
+  } = params;
+  if (!downloadCode?.trim()) throw new Error('DingTalk downloadCode is required');
+
+  const token = await getDingTalkAccessToken(clientId, clientSecret);
+  const postDownload = async (body: Record<string, string>) => {
+    const response = await fetch(MESSAGE_FILE_DOWNLOAD, {
+      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-acs-dingtalk-access-token': token,
+      },
+      method: 'POST',
+    });
+    const text = await response.text().catch(() => '');
+    if (!response.ok) {
+      throw new Error(`DingTalk messageFiles/download failed: HTTP ${response.status} ${text}`);
+    }
+    try {
+      return JSON.parse(text) as {
+        downloadUrl?: string;
+        download_url?: string;
+      };
+    } catch {
+      throw new Error(`DingTalk messageFiles/download returned non-JSON: ${text.slice(0, 200)}`);
+    }
+  };
+
+  let result: { downloadUrl?: string; download_url?: string };
+  try {
+    result = await postDownload({ downloadCode, robotCode });
+  } catch (err) {
+    // Some tenants reject robotCode; retry with downloadCode only (cp_bot pattern).
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('robotCode') || msg.includes('invalidParameter')) {
+      log('retry messageFiles/download without robotCode: %s', msg.slice(0, 120));
+      result = await postDownload({ downloadCode });
+    } else {
+      throw err;
+    }
+  }
+
+  const downloadUrl = result.downloadUrl || result.download_url;
+  if (!downloadUrl) {
+    throw new Error('DingTalk messageFiles/download missing downloadUrl');
+  }
+
+  const fileResponse = await fetch(downloadUrl);
+  if (!fileResponse.ok) {
+    throw new Error(`DingTalk file URL fetch failed: HTTP ${fileResponse.status}`);
+  }
+
+  const contentLength = Number(fileResponse.headers.get('content-length') || 0);
+  if (contentLength > maxBytes) {
+    throw new Error(
+      `DingTalk file too large: Content-Length ${contentLength} exceeds ${maxBytes} bytes`,
+    );
+  }
+
+  const arrayBuffer = await fileResponse.arrayBuffer();
+  if (arrayBuffer.byteLength > maxBytes) {
+    throw new Error(
+      `DingTalk file too large: downloaded ${arrayBuffer.byteLength} exceeds ${maxBytes} bytes`,
+    );
+  }
+
+  return Buffer.from(arrayBuffer);
 }
