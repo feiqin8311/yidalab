@@ -104,6 +104,21 @@ export class KnowledgeBaseModel {
         return [];
       }
 
+      // Drop foreign fileIds (own KB + victim fileId IDOR). Upgrade/insert only owned rows.
+      const ownedFiles = await tx
+        .select({ id: files.id })
+        .from(files)
+        .where(
+          and(
+            inArray(files.id, resolvedFileIds),
+            buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, files),
+          ),
+        );
+      resolvedFileIds = ownedFiles.map((row) => row.id);
+      if (resolvedFileIds.length === 0) {
+        return [];
+      }
+
       // Linking into a KB is a persistent placement: upgrade chat/on_demand files so
       // they remain listable and can be parsed. Idempotent for already-persistent.
       const upgraded = await tx

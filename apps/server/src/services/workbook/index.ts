@@ -82,6 +82,21 @@ export class WorkbookService {
 
   private ownerUserId = (file: { userId: string }) => file.userId;
 
+  /** Long-lived workbook assets only for persistent placement (resource/KB/document). */
+  private isPersistentFile = (file: { processingPolicy?: string | null }) =>
+    file.processingPolicy === 'persistent';
+
+  private rejectNonPersistent = (
+    fileId: string,
+    file: { name: string; processingPolicy?: string | null },
+  ) => {
+    const policy = file.processingPolicy ?? 'null';
+    throw new Error(
+      `Workbook parse is only for persistent resources (fileId=${fileId} name="${file.name}" processingPolicy=${policy}). ` +
+        `Chat on_demand attachments use prompt-time preview only; upload via Resources to build Workbook assets.`,
+    );
+  };
+
   getReadyWorkbook = async (fileId: string): Promise<FileWorkbookItem | undefined> => {
     const [row] = await this.db
       .select()
@@ -232,12 +247,22 @@ export class WorkbookService {
             name: known.name,
             parseStatus: undefined as string | undefined,
             parseTaskId: null as string | null,
+            processingPolicy: undefined as string | undefined,
             userId: known.userId || this.userId,
             workspaceId: known.workspaceId ?? this.workspaceId,
           }
         : await this.fileModel.findById(fileId);
     if (!file) return;
     if (!isSpreadsheetFile(file.fileType, file.name)) return;
+    // Chat on_demand must never create file_workbooks / parse tasks.
+    // When known omits policy, load from DB; createFile persistent path always sets policy first.
+    const policy =
+      (file as { processingPolicy?: string | null }).processingPolicy ??
+      (await this.fileModel.findById(fileId))?.processingPolicy;
+    if (policy !== 'persistent') {
+      log('skip enqueue non-persistent file=%s policy=%s', fileId, policy);
+      return;
+    }
     // Only skip when ready. queued/parsing may mean a dead fire-and-forget worker —
     // re-enqueue is idempotent via claim lease.
     if (skipExist && file.parseStatus === 'ready') {
@@ -693,6 +718,19 @@ export class WorkbookService {
    */
   inspectWorkbook = async (fileId: string) => {
     const file = await this.ownershipFile(fileId);
+    if (!this.isPersistentFile(file as { processingPolicy?: string | null })) {
+      // Do not enqueue. Surface a clear card so agents use on-demand preview instead.
+      const promptCard =
+        `Spreadsheet fileId=${fileId} name="${file.name}" is chat on_demand (processingPolicy=${(file as any).processingPolicy ?? 'null'}). ` +
+        `No long-lived Workbook assets. Use prompt-time preview or upload via Resources for lobe-workbook query.`;
+      return {
+        fileId,
+        fileVersion: WORKBOOK_PARSER_VERSION,
+        parseStatus: 'unsupported' as FileParseStatus,
+        promptCard: promptCard.slice(0, ALL_FILE_CARDS_MAX_CHARS),
+      };
+    }
+
     let workbook = await this.getReadyWorkbook(fileId);
 
     if (workbook?.status === 'ready' && workbook.manifest) {
@@ -748,7 +786,10 @@ export class WorkbookService {
    * enqueues async work and throws a clear "not ready" error when assets missing.
    */
   querySheet = async (args: WorkbookQueryArgs) => {
-    await this.ownershipFile(args.fileId);
+    const file = await this.ownershipFile(args.fileId);
+    if (!this.isPersistentFile(file as { processingPolicy?: string | null })) {
+      this.rejectNonPersistent(args.fileId, file as any);
+    }
     const assets = await this.listSheetAssets(args.fileId);
     const asset =
       assets.find((a) => a.sheetName === args.sheet) ||

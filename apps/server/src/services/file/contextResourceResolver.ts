@@ -120,12 +120,12 @@ export class ContextResourceResolver {
       const warnings: string[] = [];
 
       if (content && content.length > maxChars) {
-        content = `${content.slice(0, maxChars)}\n\n…[document body capped at ${maxChars} chars; use tools for full coverage]`;
+        content = `${content.slice(0, maxChars)}\n\n…[document body capped at ${maxChars} chars; re-export a smaller extract or use lobe-workbook querySheet if this is a spreadsheet resource]`;
         status = 'partial';
         warnings.push(`Content truncated to ${maxChars} chars.`);
       }
       if (content && !shouldInlineParsedText({ content, size: file.size ?? 0 })) {
-        content = `File id=${fileId} name="${file.name}" size=${file.size} is too large to inline (token budget). Prefer tools or re-export a smaller extract.`;
+        content = `File id=${fileId} name="${file.name}" size=${file.size} is too large to inline (token budget). Upload via Resources for full indexing, or re-export a smaller extract. Do not use cloud sandbox.`;
         status = 'partial';
       }
 
@@ -185,7 +185,7 @@ export class ContextResourceResolver {
       // Spreadsheets already use a hard char cap for preview; do not re-check raw
       // file size (xlsx often >200KB even when the extracted card is small).
       if (!isSheet && content && !shouldInlineParsedText({ content, size: file.size ?? 0 })) {
-        content = `File id=${fileId} name="${file.name}" size=${file.size} is too large to inline (token budget). Upload via Resources or use sandbox tools for full coverage.`;
+        content = `File id=${fileId} name="${file.name}" size=${file.size} is too large to inline (token budget). Upload via Resources for full indexing, or re-export a smaller extract. Cloud sandbox is not available — do not call lobe-cloud-sandbox.`;
         status = 'partial';
       }
 

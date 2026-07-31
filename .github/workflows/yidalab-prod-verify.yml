@@ -53,7 +53,7 @@ jobs:
           echo "http_code=$code"
 
           echo "=== recent migrate logs ==="
-          docker compose logs lobe --tail 300 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|error|Database' | tail -50 || true
+          docker compose logs lobe --tail 300 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|0127|processing_policy|error|Database' | tail -50 || true
 
           echo "=== db schema check ==="
           docker compose exec -T lobe node -e '
@@ -72,14 +72,29 @@ jobs:
                 exists(
                   select 1 from information_schema.columns
                   where table_name = '"'"'file_workbooks'"'"' and column_name = '"'"'generation_id'"'"'
-                ) as has_generation_id
+                ) as has_generation_id,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'files'"'"' and column_name = '"'"'processing_policy'"'"'
+                ) as has_processing_policy,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'files'"'"' and column_name = '"'"'persist_reason'"'"'
+                ) as has_persist_reason,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'files'"'"' and column_name = '"'"'processing_requested_at'"'"'
+                ) as has_processing_requested_at
             `);
             console.log(JSON.stringify(r.rows[0]));
             const ok =
               r.rows[0].file_workbooks &&
               r.rows[0].file_sheet_assets &&
               r.rows[0].has_parse_status &&
-              r.rows[0].has_generation_id;
+              r.rows[0].has_generation_id &&
+              r.rows[0].has_processing_policy &&
+              r.rows[0].has_persist_reason &&
+              r.rows[0].has_processing_requested_at;
             await c.end();
             if (!ok) process.exit(3);
           })().catch((e) => {

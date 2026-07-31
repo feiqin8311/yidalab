@@ -47,7 +47,8 @@ export const workbookRouter = router({
       }
 
       try {
-        return await fn(input.args ?? {});
+        // Detached method extract drops `this`; re-bind so fail/toOutput work.
+        return await fn.call(runtime, input.args ?? {});
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error('[workbook.execute] %s failed: %O', input.apiName, error);

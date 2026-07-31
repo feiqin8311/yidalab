@@ -347,10 +347,14 @@ describe('useSignIn', () => {
       expect(mockMessageError).not.toHaveBeenCalled();
     });
 
-    it('should redirect to verify-email on 403', async () => {
+    it('should redirect to verify-email on EMAIL_NOT_VERIFIED', async () => {
       mockSignInEmail.mockImplementation(async (_data: any, opts: any) => {
-        opts.onError({ error: { status: 403 } });
-        return { error: { message: 'Email not verified', status: 403 } };
+        opts.onError({
+          error: { code: 'EMAIL_NOT_VERIFIED', message: 'Email not verified', status: 403 },
+        });
+        return {
+          error: { code: 'EMAIL_NOT_VERIFIED', message: 'Email not verified', status: 403 },
+        };
       });
 
       mockFetch.mockResolvedValueOnce({
@@ -371,6 +375,35 @@ describe('useSignIn', () => {
       expect(mockNavigate).toHaveBeenCalledWith(
         expect.stringContaining('/verify-email?email=user%40example.com'),
       );
+    });
+
+    it('should not redirect to verify-email on other 403 (e.g. invalid origin)', async () => {
+      mockSignInEmail.mockImplementation(async (_data: any, opts: any) => {
+        opts.onError({
+          error: { code: 'INVALID_ORIGIN', message: 'Invalid origin', status: 403 },
+        });
+        return { error: { code: 'INVALID_ORIGIN', message: 'Invalid origin', status: 403 } };
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        json: async () => ({ exists: true, hasPassword: true }),
+        ok: true,
+      });
+
+      const { result } = renderHook(() => useSignIn());
+
+      await act(async () => {
+        await result.current.handleCheckUser({ email: 'user@example.com' });
+      });
+
+      await act(async () => {
+        await result.current.handleSignIn({ password: 'password' });
+      });
+
+      expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining('/verify-email'));
+      expect(mockSetFields).toHaveBeenCalledWith([
+        { errors: ['Invalid origin'], name: 'password' },
+      ]);
     });
   });
 

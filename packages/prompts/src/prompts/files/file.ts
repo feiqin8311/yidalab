@@ -12,7 +12,7 @@ export const ALL_FILE_CARDS_PROMPT_MAX_CHARS = 48_000;
 const truncateFileContent = (content: string, name: string, maxChars: number): string => {
   if (content.length <= maxChars) return content;
   const head = content.slice(0, maxChars);
-  return `${head}\n\n…[truncated: inlined first ${maxChars} of ${content.length} chars from "${name}". Use tools for full coverage.]`;
+  return `${head}\n\n…[truncated: inlined first ${maxChars} of ${content.length} chars from "${name}". Upload via Resources for full indexing; do not use cloud sandbox.]`;
 };
 
 const filePrompt = (item: ChatFileItem, addUrl: boolean, maxChars: number) => {
@@ -32,7 +32,7 @@ export const filePrompts = (fileList: ChatFileItem[], addUrl: boolean) => {
   for (const item of fileList) {
     if (remaining <= 0) {
       parts.push(
-        `<file id="${item.id}" name="${item.name}" type="${item.fileType}" size="${item.size}">…omitted: attachment card budget exhausted. Use lobe-workbook tools with this fileId.</file>`,
+        `<file id="${item.id}" name="${item.name}" type="${item.fileType}" size="${item.size}">…omitted: attachment card budget exhausted. Upload via Resources for full indexing (spreadsheet resources: lobe-workbook). Do not use cloud sandbox.</file>`,
       );
       continue;
     }
@@ -43,7 +43,7 @@ export const filePrompts = (fileList: ChatFileItem[], addUrl: boolean) => {
   }
 
   const prompt = `<files>
-<files_docstring>User-uploaded files. Large spreadsheets only include a bounded manifest — call lobe-workbook inspectWorkbook/querySheet for full data. Never assume the full grid is inlined.</files_docstring>
+<files_docstring>User-uploaded files. Chat attachments are preview-only. Persistent spreadsheet resources: lobe-workbook inspectWorkbook/querySheet for full data. Cloud sandbox is not available — never call lobe-cloud-sandbox for file content. Never assume the full grid is inlined.</files_docstring>
 ${parts.join('\n')}
 </files>`;
 

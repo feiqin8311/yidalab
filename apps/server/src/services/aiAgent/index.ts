@@ -2692,21 +2692,22 @@ export class AiAgentService {
         activeDeviceId ?? 'none',
         activeDeviceScope ?? 'none',
       );
-      // A device-targeted run that could not be routed silently degrades exec
-      // (lobe-skills runCommand/execScript) to the cloud sandbox. Surface it as
-      // a structured warn — `bound-device-offline` with a requestedDeviceId is
-      // the desktop "local device" pick whose gateway connection dropped, and
-      // this log is the breadcrumb for diagnosing WHY the device was judged
-      // offline (lazy WS connect vs getScopedOnlineDevices failing silently).
+      // Device-targeted run could not be routed. Upstream may degrade exec to
+      // cloud sandbox when that product is enabled; YidaLab has sandbox off —
+      // shell work needs an online device (or fails). Breadcrumb for offline
+      // diagnosis (lazy WS connect vs getScopedOnlineDevices).
       if (executionPlan.kind === 'device-unrouted') {
-        console.warn('[AiAgentService] device-unrouted: exec degrades to cloud sandbox', {
-          boundDeviceId,
-          onlineDeviceCount: onlineDevices.length,
-          reason: executionPlan.reason,
-          requestedDeviceId,
-          topicId,
-          userId: this.userId,
-        });
+        console.warn(
+          '[AiAgentService] device-unrouted: no device for exec (sandbox off = no cloud fallback)',
+          {
+            boundDeviceId,
+            onlineDeviceCount: onlineDevices.length,
+            reason: executionPlan.reason,
+            requestedDeviceId,
+            topicId,
+            userId: this.userId,
+          },
+        );
       }
 
       // Resolve the operation's group context ONCE here and snapshot it into op

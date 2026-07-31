@@ -419,6 +419,49 @@ describe('KnowledgeBaseModel', () => {
       expect(kbFiles).toHaveLength(0);
     });
 
+    it("should NOT allow linking another user's file into own knowledge base (IDOR)", async () => {
+      await serverDB.insert(globalFiles).values([
+        {
+          hashId: 'hash_victim_file',
+          url: 'https://example.com/victim-secret.pdf',
+          size: 2000,
+          fileType: 'application/pdf',
+          creator: 'user2',
+        },
+      ]);
+      await serverDB.insert(files).values([
+        {
+          id: 'file_victim',
+          name: 'victim-secret.pdf',
+          url: 'https://example.com/victim-secret.pdf',
+          fileHash: 'hash_victim_file',
+          size: 2000,
+          fileType: 'application/pdf',
+          userId: 'user2',
+          processingPolicy: 'on_demand',
+        },
+      ]);
+
+      const { id: attackerKbId } = await knowledgeBaseModel.create({ name: 'Attacker KB' });
+      const result = await knowledgeBaseModel.addFilesToKnowledgeBase(attackerKbId, [
+        'file_victim',
+      ]);
+
+      expect(result).toHaveLength(0);
+      expect((result as { upgradedFileIds?: string[] }).upgradedFileIds ?? []).toEqual([]);
+
+      const kbFiles = await serverDB.query.knowledgeBaseFiles.findMany({
+        where: eq(knowledgeBaseFiles.knowledgeBaseId, attackerKbId),
+      });
+      expect(kbFiles).toHaveLength(0);
+
+      const victimFile = await serverDB.query.files.findFirst({
+        where: eq(files.id, 'file_victim'),
+      });
+      expect(victimFile?.processingPolicy).toBe('on_demand');
+      expect(victimFile?.userId).toBe('user2');
+    });
+
     it("should NOT allow adding documents to another user's knowledge base (IDOR)", async () => {
       // Setup: victim creates a knowledge base
       const victimModel = new KnowledgeBaseModel(serverDB, 'user2');

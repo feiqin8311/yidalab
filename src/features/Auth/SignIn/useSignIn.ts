@@ -17,6 +17,21 @@ import { EMAIL_REGEX, USERNAME_REGEX } from './SignInEmailStep';
 
 const LAST_AUTH_PROVIDER_KEY = 'lobehub:auth:last-provider:v1';
 
+/** better-auth EMAIL_NOT_VERIFIED (and only that) maps to the verify-email page. */
+const isEmailNotVerifiedError = (error: {
+  code?: string | null;
+  message?: string | null;
+  status?: number | null;
+}): boolean => {
+  if (error.code === 'EMAIL_NOT_VERIFIED') return true;
+  // Older clients may only surface the message without a stable code.
+  return (
+    error.status === 403 &&
+    typeof error.message === 'string' &&
+    /email not verified/i.test(error.message)
+  );
+};
+
 type Step = 'email' | 'password' | 'emailSent';
 
 type SentEmailType = 'magicLink' | 'resetPassword';
@@ -211,7 +226,11 @@ export const useSignIn = () => {
         {
           onError: (ctx) => {
             console.error('Sign in error:', ctx.error);
-            if (ctx.error.status === 403) {
+            // Only EMAIL_NOT_VERIFIED should land on verify-email. Other 403s
+            // (INVALID_ORIGIN / CSRF / callback URL) share the same status and
+            // must stay on the password step — otherwise existing users see a
+            // false "verify your email" page on the first attempt.
+            if (isEmailNotVerifiedError(ctx.error)) {
               navigate(
                 `/verify-email?email=${encodeURIComponent(email)}&callbackUrl=${encodeURIComponent(callbackUrl)}`,
               );
@@ -224,10 +243,10 @@ export const useSignIn = () => {
         },
       );
 
-      if (result.error && result.error.status !== 403) {
-        // Wrong password is the most common sign-in failure. Keep the error
-        // pinned inline on the field (persistent, with retry context) rather
-        // than a toast that vanishes in 3s (ux Read §1.1 / Same-Page Error).
+      if (result.error && !isEmailNotVerifiedError(result.error)) {
+        // Wrong password / origin / CSRF / etc. Keep the error pinned inline on
+        // the field (persistent, with retry context) rather than a toast that
+        // vanishes in 3s (ux Read §1.1 / Same-Page Error).
         form.setFields([
           {
             errors: [result.error.message || t('betterAuth.signin.error')],

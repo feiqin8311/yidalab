@@ -403,9 +403,8 @@ describe('skillsRuntime', () => {
       expect(mocks.sandboxService.callTool).not.toHaveBeenCalled();
     });
 
-    // Version-skew window: an old client build replies with the dispatcher's
-    // deterministic unknown-method error — the ONE prepare failure that falls
-    // back to the sandbox, with an explicit disclosure note for the model.
+    // Version-skew: old client unknown-method — sandbox fallback only when product
+    // gate is on; when sandbox is off, fail without calling cloud sandbox.
     it('falls back to the sandbox (with a disclosure note) when the client predates the RPC', async () => {
       mocks.prepareSkillDirectory.mockResolvedValue({
         error: 'Unknown device RPC method: prepareSkillDirectory',
@@ -435,6 +434,41 @@ describe('skillsRuntime', () => {
         'execScript',
         expect.objectContaining({ command: 'python scripts/run.py' }),
       );
+    });
+
+    it('does not fall back to cloud sandbox when product gate is off (legacy device client)', async () => {
+      const prev = process.env.ENABLE_CLOUD_SANDBOX;
+      process.env.ENABLE_CLOUD_SANDBOX = '0';
+      try {
+        mocks.prepareSkillDirectory.mockResolvedValue({
+          error: 'Unknown device RPC method: prepareSkillDirectory',
+          success: false,
+        });
+
+        const { skillsRuntime } = await import('../skills');
+        const runtime = await skillsRuntime.factory({
+          activeDeviceId: 'device-1',
+          serverDB: {} as never,
+          toolManifestMap: {},
+          topicId: 'topic-1',
+          userId: 'user-1',
+        });
+
+        const result = await runtime.execScript({
+          activatedSkills: [{ id: 'user-skill-id', name: 'user-skill' }],
+          command: 'python scripts/run.py',
+          description: 'Run skill script',
+        });
+
+        expect(result.success).toBe(false);
+        expect(String(result.content || result.stderr || '')).toMatch(
+          /Cloud sandbox is disabled|update the LobeHub app|do not call lobe-cloud-sandbox/i,
+        );
+        expect(mocks.sandboxService.callTool).not.toHaveBeenCalled();
+      } finally {
+        if (prev === undefined) delete process.env.ENABLE_CLOUD_SANDBOX;
+        else process.env.ENABLE_CLOUD_SANDBOX = prev;
+      }
     });
 
     it('runs without a skill dir (workingDirectory cwd) when no archive exists', async () => {

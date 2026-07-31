@@ -157,7 +157,7 @@ jobs:
           echo "http_code=$code"
 
           echo "=== migrate logs ==="
-          docker compose logs lobe --tail 400 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|Database migrate|error' | tail -60 || true
+          docker compose logs lobe --tail 400 2>/dev/null | grep -iE 'migrate|migration|drizzle|file_workbook|0125|0126|0127|processing_policy|Database migrate|error' | tail -60 || true
 
           echo "=== db schema ==="
           # Image keeps pg under /app (not always resolvable from bare node -e cwd).
@@ -180,11 +180,30 @@ jobs:
                     exists(
                       select 1 from information_schema.columns
                       where table_name = '"'"'file_workbooks'"'"' and column_name = '"'"'generation_id'"'"'
-                    ) as has_generation_id
+                    ) as has_generation_id,
+                    exists(
+                      select 1 from information_schema.columns
+                      where table_name = '"'"'files'"'"' and column_name = '"'"'processing_policy'"'"'
+                    ) as has_processing_policy,
+                    exists(
+                      select 1 from information_schema.columns
+                      where table_name = '"'"'files'"'"' and column_name = '"'"'persist_reason'"'"'
+                    ) as has_persist_reason,
+                    exists(
+                      select 1 from information_schema.columns
+                      where table_name = '"'"'files'"'"' and column_name = '"'"'processing_requested_at'"'"'
+                    ) as has_processing_requested_at
                 \`);
                 console.log(JSON.stringify(r.rows[0]));
                 const row = r.rows[0];
-                const ok = row.file_workbooks && row.file_sheet_assets && row.has_parse_status && row.has_generation_id;
+                const ok =
+                  row.file_workbooks &&
+                  row.file_sheet_assets &&
+                  row.has_parse_status &&
+                  row.has_generation_id &&
+                  row.has_processing_policy &&
+                  row.has_persist_reason &&
+                  row.has_processing_requested_at;
                 await c.end();
                 if (!ok) process.exit(3);
               })().catch((e) => { console.error(\"db_check_failed\", e.message); process.exit(3); });
