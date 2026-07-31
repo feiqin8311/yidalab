@@ -106,8 +106,58 @@ export async function dingTalkMessageEmotion(params: {
   }
 }
 
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/** Stream response body with a hard byte cap (cancel reader when exceeded). */
+export async function readResponseBodyWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<Buffer> {
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > maxBytes) {
+    throw new Error(
+      `DingTalk file too large: Content-Length ${contentLength} exceeds ${maxBytes} bytes`,
+    );
+  }
+
+  if (!response.body) {
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > maxBytes) {
+      throw new Error(
+        `DingTalk file too large: downloaded ${arrayBuffer.byteLength} exceeds ${maxBytes} bytes`,
+      );
+    }
+    return Buffer.from(arrayBuffer);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`DingTalk file too large: streamed ${total} exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* ignore */
+    }
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+}
+
 /**
  * Resolve robot inbound file downloadCode → temporary HTTPS URL, then fetch bytes.
+ * robotCode is required by the OpenAPI and must match the robot that received the message.
  * @see https://open.dingtalk.com/document/orgapp/download-the-file-content-of-the-robot-receiving-message
  */
 export async function downloadDingTalkRobotFile(params: {
@@ -116,53 +166,53 @@ export async function downloadDingTalkRobotFile(params: {
   downloadCode: string;
   /** Max bytes to accept after download (default DINGTALK_MAX_ROBOT_FILE_BYTES). */
   maxBytes?: number;
-  robotCode?: string;
+  /** Required — robot that received the inbound message (callback robotCode). */
+  robotCode: string;
+  timeoutMs?: number;
 }): Promise<Buffer> {
   const {
     clientId,
     clientSecret,
     downloadCode,
     maxBytes = DINGTALK_MAX_ROBOT_FILE_BYTES,
-    robotCode = clientId,
+    robotCode,
+    timeoutMs = DEFAULT_DOWNLOAD_TIMEOUT_MS,
   } = params;
   if (!downloadCode?.trim()) throw new Error('DingTalk downloadCode is required');
+  if (!robotCode?.trim()) throw new Error('DingTalk robotCode is required');
 
   const token = await getDingTalkAccessToken(clientId, clientSecret);
-  const postDownload = async (body: Record<string, string>) => {
+  const resolveCtrl = new AbortController();
+  const resolveTimer = setTimeout(() => resolveCtrl.abort(), timeoutMs);
+  let result: { downloadUrl?: string; download_url?: string };
+  try {
     const response = await fetch(MESSAGE_FILE_DOWNLOAD, {
-      body: JSON.stringify(body),
+      body: JSON.stringify({ downloadCode, robotCode }),
       headers: {
         'Content-Type': 'application/json',
         'x-acs-dingtalk-access-token': token,
       },
       method: 'POST',
+      signal: resolveCtrl.signal,
     });
     const text = await response.text().catch(() => '');
     if (!response.ok) {
       throw new Error(`DingTalk messageFiles/download failed: HTTP ${response.status} ${text}`);
     }
     try {
-      return JSON.parse(text) as {
-        downloadUrl?: string;
-        download_url?: string;
-      };
+      result = JSON.parse(text) as { downloadUrl?: string; download_url?: string };
     } catch {
       throw new Error(`DingTalk messageFiles/download returned non-JSON: ${text.slice(0, 200)}`);
     }
-  };
-
-  let result: { downloadUrl?: string; download_url?: string };
-  try {
-    result = await postDownload({ downloadCode, robotCode });
   } catch (err) {
-    // Some tenants reject robotCode; retry with downloadCode only (cp_bot pattern).
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('robotCode') || msg.includes('invalidParameter')) {
-      log('retry messageFiles/download without robotCode: %s', msg.slice(0, 120));
-      result = await postDownload({ downloadCode });
-    } else {
-      throw err;
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`DingTalk messageFiles/download timed out after ${timeoutMs}ms`, {
+        cause: err,
+      });
     }
+    throw err;
+  } finally {
+    clearTimeout(resolveTimer);
   }
 
   const downloadUrl = result.downloadUrl || result.download_url;
@@ -170,24 +220,20 @@ export async function downloadDingTalkRobotFile(params: {
     throw new Error('DingTalk messageFiles/download missing downloadUrl');
   }
 
-  const fileResponse = await fetch(downloadUrl);
-  if (!fileResponse.ok) {
-    throw new Error(`DingTalk file URL fetch failed: HTTP ${fileResponse.status}`);
+  const fileCtrl = new AbortController();
+  const fileTimer = setTimeout(() => fileCtrl.abort(), timeoutMs);
+  try {
+    const fileResponse = await fetch(downloadUrl, { signal: fileCtrl.signal });
+    if (!fileResponse.ok) {
+      throw new Error(`DingTalk file URL fetch failed: HTTP ${fileResponse.status}`);
+    }
+    return await readResponseBodyWithLimit(fileResponse, maxBytes);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`DingTalk file download timed out after ${timeoutMs}ms`, { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(fileTimer);
   }
-
-  const contentLength = Number(fileResponse.headers.get('content-length') || 0);
-  if (contentLength > maxBytes) {
-    throw new Error(
-      `DingTalk file too large: Content-Length ${contentLength} exceeds ${maxBytes} bytes`,
-    );
-  }
-
-  const arrayBuffer = await fileResponse.arrayBuffer();
-  if (arrayBuffer.byteLength > maxBytes) {
-    throw new Error(
-      `DingTalk file too large: downloaded ${arrayBuffer.byteLength} exceeds ${maxBytes} bytes`,
-    );
-  }
-
-  return Buffer.from(arrayBuffer);
 }

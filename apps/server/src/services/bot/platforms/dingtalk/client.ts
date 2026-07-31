@@ -20,7 +20,11 @@ import {
   type ValidationResult,
 } from '../types';
 import { formatUsageStats } from '../utils';
-import { collectDingTalkDownloadables, type DingTalkRobotMessage } from './adapter';
+import {
+  collectDingTalkDownloadables,
+  DingTalkAdapter,
+  type DingTalkRobotMessage,
+} from './adapter';
 import {
   DINGTALK_MAX_ROBOT_FILE_BYTES,
   dingTalkMessageEmotion,
@@ -189,12 +193,14 @@ export class DingTalkClient implements PlatformClient {
         continue;
       }
       try {
+        // Official API requires robotCode matching the robot that received the message.
+        const robotCode = raw?.robotCode?.trim() || this.applicationId;
         const buffer = await downloadDingTalkRobotFile({
           clientId: this.applicationId,
           clientSecret,
           downloadCode: item.downloadCode,
           maxBytes: DINGTALK_MAX_ROBOT_FILE_BYTES,
-          robotCode: this.applicationId,
+          robotCode,
         });
         files.push({
           buffer,

@@ -199,4 +199,17 @@ describe('DingTalkAdapter', () => {
       }),
     ).toBe(true);
   });
+
+  it('collects downloadCode from richText picture segments', () => {
+    const items = collectDingTalkDownloadables({
+      conversationId: 'c',
+      conversationType: '1',
+      msgId: 'm',
+      msgtype: 'richText',
+      richText: [{ text: 'see' }, { picture: { downloadCode: 'RICH-PIC' } }],
+      senderId: 'u',
+      sessionWebhook: 'https://x',
+    });
+    expect(items.some((i) => i.downloadCode === 'RICH-PIC')).toBe(true);
+  });
 });

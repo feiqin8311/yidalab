@@ -6,7 +6,7 @@ import { DingTalkClient } from './client';
 const downloadDingTalkRobotFile = vi.hoisted(() => vi.fn());
 
 vi.mock('./api', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual: any = await importOriginal();
   return {
     ...actual,
     downloadDingTalkRobotFile,
@@ -68,7 +68,7 @@ describe('DingTalkClient.extractFiles', () => {
       expect.objectContaining({
         clientId: 'robot-app',
         downloadCode: 'CODE-1',
-        robotCode: 'robot-app',
+        robotCode: 'robot-app', // fallback when raw.robotCode missing
       }),
     );
     expect(result?.files).toHaveLength(1);
@@ -112,5 +112,27 @@ describe('DingTalkClient.extractFiles', () => {
     const client = makeClient();
     const result = await client.extractFiles!(makeFileMessage({ msgtype: 'text', text: {} }));
     expect(result).toBeUndefined();
+  });
+
+  it('prefers raw.robotCode over applicationId for download', async () => {
+    downloadDingTalkRobotFile.mockResolvedValue(Buffer.from('x'));
+    const client = makeClient();
+    await client.extractFiles!(
+      makeFileMessage({
+        content: { downloadCode: 'C', fileName: 'a.xlsx' },
+        msgtype: 'file',
+        robotCode: 'robot-from-callback',
+      }),
+    );
+    expect(downloadDingTalkRobotFile).toHaveBeenCalledWith(
+      expect.objectContaining({ robotCode: 'robot-from-callback' }),
+    );
+  });
+
+  it('createAdapter returns DingTalkAdapter instance', () => {
+    const client = makeClient();
+    const adapters = client.createAdapter();
+    expect(adapters.dingtalk).toBeDefined();
+    expect(adapters.dingtalk.name).toBe('dingtalk');
   });
 });

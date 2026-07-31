@@ -35,7 +35,13 @@ export interface DingTalkRobotMessage {
   msgId: string;
   msgtype: string;
   picture?: { downloadCode?: string };
+  /** Official rich-text payload (array of text/picture segments). */
   richText?: unknown;
+  /**
+   * Robot code that received the message — required for messageFiles/download
+   * to match downloadCode. Prefer over applicationId when present.
+   */
+  robotCode?: string;
   /**
    * Encrypted sender id from DingTalk. Always present, but **not** the
    * enterprise `userid` operators copy from the admin console / free-login.
@@ -197,6 +203,43 @@ export function collectDingTalkDownloadables(raw: DingTalkRobotMessage): DingTal
       size: parseSize(att.fileSize),
       type: t,
     });
+  }
+
+  // Official richText: array of segments with picture.downloadCode or downloadCode
+  const rich =
+    raw.richText ??
+    (raw.content as { richText?: unknown } | undefined)?.richText ??
+    (typeof raw.content === 'object' && Array.isArray(raw.content) ? raw.content : undefined);
+  if (rich && typeof rich === 'object') {
+    const walk = (node: unknown, depth = 0) => {
+      if (!node || depth > 8) return;
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item, depth + 1);
+        return;
+      }
+      if (typeof node !== 'object') return;
+      const o = node as Record<string, unknown>;
+      const pic = o.picture as { downloadCode?: string } | undefined;
+      const code =
+        (typeof o.downloadCode === 'string' && o.downloadCode) ||
+        (typeof pic?.downloadCode === 'string' && pic.downloadCode) ||
+        undefined;
+      if (code) {
+        const name =
+          (typeof o.fileName === 'string' && o.fileName) || (pic ? 'image.jpg' : 'attachment');
+        push({
+          downloadCode: code,
+          mimeType: guessMime(name, pic ? 'image' : 'file'),
+          name,
+          size: parseSize(o.fileSize),
+          type: pic || msgtype === 'picture' ? 'image' : 'file',
+        });
+      }
+      for (const v of Object.values(o)) {
+        if (v && typeof v === 'object') walk(v, depth + 1);
+      }
+    };
+    walk(rich);
   }
 
   // content-only downloadCode without matching msgtype (defensive)

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadDingTalkRobotFile, getDingTalkAccessToken } from './api';
+import {
+  downloadDingTalkRobotFile,
+  getDingTalkAccessToken,
+  readResponseBodyWithLimit,
+} from './api';
 
 describe('downloadDingTalkRobotFile', () => {
   afterEach(() => {
@@ -8,20 +12,17 @@ describe('downloadDingTalkRobotFile', () => {
     vi.restoreAllMocks();
   });
 
-  it('resolves downloadUrl then fetches bytes', async () => {
+  it('resolves downloadUrl then fetches bytes with required robotCode', async () => {
     const fetch = vi
       .fn()
-      // token
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ accessToken: 'tok', expireIn: 7200 }), { status: 200 }),
       )
-      // messageFiles/download
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ downloadUrl: 'https://cdn.example/f.xlsx' }), {
           status: 200,
         }),
       )
-      // file bytes
       .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
 
     vi.stubGlobal('fetch', fetch);
@@ -30,6 +31,7 @@ describe('downloadDingTalkRobotFile', () => {
       clientId: 'app',
       clientSecret: 'sec',
       downloadCode: 'CODE',
+      robotCode: 'robot-from-callback',
     });
 
     expect(buf.equals(Buffer.from([1, 2, 3]))).toBe(true);
@@ -38,12 +40,11 @@ describe('downloadDingTalkRobotFile', () => {
     expect(downloadCall[0]).toContain('messageFiles/download');
     expect(JSON.parse(downloadCall[1].body as string)).toEqual({
       downloadCode: 'CODE',
-      robotCode: 'app',
+      robotCode: 'robot-from-callback',
     });
   });
 
   it('rejects when content-length exceeds max', async () => {
-    // prime token cache via getDingTalkAccessToken path inside download
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(
@@ -66,8 +67,43 @@ describe('downloadDingTalkRobotFile', () => {
         clientSecret: 'sec',
         downloadCode: 'BIG',
         maxBytes: 1024,
+        robotCode: 'robot-big',
       }),
     ).rejects.toThrow(/too large/);
+  });
+
+  it('rejects stream without content-length when body exceeds max', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ accessToken: 'tok3', expireIn: 7200 }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ downloadUrl: 'https://cdn.example/stream' }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array(5000), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      downloadDingTalkRobotFile({
+        clientId: 'app-stream',
+        clientSecret: 'sec',
+        downloadCode: 'STREAM',
+        maxBytes: 100,
+        robotCode: 'robot-stream',
+      }),
+    ).rejects.toThrow(/too large/);
+  });
+});
+
+describe('readResponseBodyWithLimit', () => {
+  it('streams and stops when over max without content-length', async () => {
+    const body = new Uint8Array(200);
+    body.fill(7);
+    const response = new Response(body, { status: 200 });
+    await expect(readResponseBodyWithLimit(response, 50)).rejects.toThrow(/streamed/);
   });
 });
 
