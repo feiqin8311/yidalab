@@ -4,14 +4,18 @@
  * Product invariant: report-class bot answers must end with a real 钉盘
  * preview_url (or an explicit failure). Models may skip uploadHtmlToDingpan;
  * forceFinish used to strip all tools. This module uploads a deterministic
- * HTML wrap of the final reply when the topic has no successful upload yet.
+ * HTML wrap of the final reply when the topic has no successful upload yet,
+ * and persists a message-level tool Artifact (arguments.html) for Web preview.
  */
 
 import { type DeliveryClaimMessage, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
+import { DingpanApiName, DingpanIdentifier } from '@lobechat/builtin-tool-dingpan';
 import {
   type DingpanDocumentBridge,
   DingpanExecutionRuntime,
 } from '@lobechat/builtin-tool-dingpan/executionRuntime';
+import { createNanoId } from '@lobechat/database';
+import type { ChatToolPayload } from '@lobechat/types';
 
 import { MessageModel } from '@/database/models/message';
 import { UserModel } from '@/database/models/user';
@@ -29,22 +33,6 @@ const createDocumentBridge = (
   const documentService = new DocumentService(serverDB, userId, workspaceId ?? undefined);
 
   return {
-    createDeliverableDocument: async ({ content, title, topicId }) => {
-      const doc = await documentService.createDocument({
-        content,
-        editorData: {},
-        fileType: 'text/html',
-        metadata: {
-          deliverable: true,
-          source: 'bot-system-dingpan',
-          ...(topicId ? { topicId } : {}),
-        },
-        title,
-        visibility: 'private',
-      });
-      return { id: doc.id };
-    },
-
     getDeliverableHtml: async (documentId) => {
       const doc = await documentService.getDocumentById(documentId);
       if (!doc?.content?.trim()) return null;
@@ -108,6 +96,64 @@ const latestSuccessfulPreview = async (params: {
     })),
   );
   return [...outcomes].reverse().find((o) => o.success && o.previewUrl)?.previewUrl;
+};
+
+/**
+ * Persist system fallback upload as a dual-form tool message so Web history can
+ * preview HTML from arguments.html (same surface as model uploadHtmlToDingpan).
+ * Non-fatal: upload already succeeded for IM; missing parent spine skips quietly.
+ */
+const persistBotDingpanToolMessage = async (params: {
+  db: LobeChatDatabase;
+  html: string;
+  previewUrl: string;
+  resultContent: string;
+  resultState?: Record<string, unknown>;
+  title: string;
+  topicId: string;
+  userId: string;
+  workspaceId?: string | null;
+}): Promise<void> => {
+  const messageModel = new MessageModel(params.db, params.userId, params.workspaceId ?? undefined);
+  const parentId = await messageModel.getLastMainThreadSpineMessageId(params.topicId);
+  if (!parentId) return;
+
+  const toolCallId = `call_bot_dingpan_${createNanoId(12)()}`;
+  const toolPayload: ChatToolPayload = {
+    apiName: DingpanApiName.uploadHtmlToDingpan,
+    arguments: JSON.stringify({
+      html: params.html,
+      taskType: 'Bot报告',
+      title: params.title,
+    }),
+    id: toolCallId,
+    identifier: DingpanIdentifier,
+    type: 'builtin',
+  };
+
+  await messageModel.create({
+    content: params.resultContent,
+    metadata: {
+      source: 'bot-system-dingpan',
+      systemInjected: true,
+    },
+    parentId,
+    plugin: toolPayload as any,
+    pluginState: params.resultState ?? {
+      name: params.title,
+      previewUrl: params.previewUrl,
+      success: true,
+    },
+    role: 'tool',
+    tool_call_id: toolCallId,
+    topicId: params.topicId,
+  });
+
+  const parent = await messageModel.findById(parentId);
+  const existingTools = (Array.isArray(parent?.tools) ? parent.tools : []) as ChatToolPayload[];
+  await messageModel.update(parentId, {
+    tools: [...existingTools, toolPayload],
+  });
 };
 
 export type EnsureDingpanDeliverableResult = {
@@ -182,6 +228,29 @@ export async function ensureDingpanDeliverable(params: {
 
     if (!previewUrl) {
       return { error: 'upload succeeded but preview_url missing', uploaded: false };
+    }
+
+    // Message-level Artifact for Web history; never write resource library.
+    try {
+      await persistBotDingpanToolMessage({
+        db,
+        html,
+        previewUrl,
+        resultContent:
+          typeof result.content === 'string'
+            ? result.content
+            : JSON.stringify({ preview_url: previewUrl, success: true }),
+        resultState:
+          result.state && typeof result.state === 'object'
+            ? (result.state as Record<string, unknown>)
+            : undefined,
+        title,
+        topicId,
+        userId,
+        workspaceId,
+      });
+    } catch (error) {
+      console.error('[ensureDingpanDeliverable] persist tool message non-fatal:', error);
     }
 
     return { previewUrl, uploaded: true };

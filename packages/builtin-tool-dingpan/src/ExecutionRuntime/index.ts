@@ -14,19 +14,10 @@ import {
 } from './uploadCore';
 
 /**
- * Optional hooks so the server runtime can persist deliverables per-user
- * (documents table) without coupling this package to the database layer.
+ * Optional hooks for explicit documentId uploads (existing resource only).
+ * Does not create resource-library documents — HTML delivery is message-level.
  */
 export interface DingpanDocumentBridge {
-  /**
-   * Create a private deliverable document for the current user/topic.
-   * Returns the new document id.
-   */
-  createDeliverableDocument: (input: {
-    content: string;
-    title: string;
-    topicId?: string;
-  }) => Promise<{ id: string }>;
   /** Load HTML content for a document owned by the current user. */
   getDeliverableHtml: (documentId: string) => Promise<{ content: string; title?: string } | null>;
   /** Patch dingpan metadata after a successful upload (ownership already checked). */
@@ -102,12 +93,16 @@ export class DingpanExecutionRuntime {
   }
 
   /**
-   * Persist (optional) + upload HTML string to Dingpan.
-   * Prefer documentId when the deliverable was already saved; otherwise html is required.
+   * Upload HTML to Dingpan. Delivery is dual-surface:
+   * - Message artifact: tool call keeps `arguments.html` for in-chat preview
+   * - Dingpan: shareable preview_url
+   *
+   * Does **not** auto-create a resource-library document. Pass `documentId` only
+   * when uploading an existing resource the user already owns.
    */
   async uploadHtmlToDingpan(args: UploadHtmlToDingpanParams): Promise<BuiltinServerRuntimeOutput> {
     try {
-      let documentId = args.documentId?.trim() || undefined;
+      const documentId = args.documentId?.trim() || undefined;
       let html = args.html?.trim() || '';
       let title = args.title?.trim() || args.uploadName?.trim() || '';
 
@@ -140,23 +135,8 @@ export class DingpanExecutionRuntime {
         };
       }
 
-      // Optional audit doc — never block dingpan upload if document write hangs/fails.
-      if (!documentId && this.documentBridge) {
-        try {
-          const stamp = new Date()
-            .toISOString()
-            .replaceAll(/[-:TZ.]/g, '')
-            .slice(0, 14);
-          const created = await this.documentBridge.createDeliverableDocument({
-            content: html,
-            title: title || `report-${stamp}`,
-            topicId: args.topicId,
-          });
-          documentId = created.id;
-        } catch (error) {
-          console.error('[Dingpan] createDeliverableDocument failed; continue upload', error);
-        }
-      }
+      // html path = message artifact only (tool arguments.html). Never write
+      // resource library here — clearing resources must not break chat previews.
 
       const result = await uploadHtmlBytes({
         asin: args.asin,
@@ -183,6 +163,7 @@ export class DingpanExecutionRuntime {
         };
       }
 
+      // Only patch metadata when the caller explicitly uploaded an existing resource.
       if (documentId && this.documentBridge) {
         try {
           await this.documentBridge.patchDingpanMetadata(documentId, {
@@ -196,7 +177,7 @@ export class DingpanExecutionRuntime {
       }
 
       const state: UploadToDingpanState = {
-        documentId,
+        ...(documentId ? { documentId } : {}),
         fileId: result.fileId,
         name: result.name,
         previewUrl: result.previewUrl,
@@ -206,7 +187,7 @@ export class DingpanExecutionRuntime {
       return {
         content: JSON.stringify(
           {
-            document_id: documentId,
+            ...(documentId ? { document_id: documentId } : {}),
             file_id: result.fileId,
             name: result.name,
             preview_url: result.previewUrl,

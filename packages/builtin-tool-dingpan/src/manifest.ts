@@ -10,22 +10,25 @@ export const DingpanDeliveryManifest: BuiltinToolManifest = {
     {
       defaultTimeoutMs: 180_000,
       description:
-        "Upload an HTML report to DingTalk Drive under today's date folder and return preview_url. Prefer structured naming fields (asin/site/taskType); server fills userName.",
+        "Upload an HTML report to DingTalk Drive under today's date folder and return preview_url. HTML stays on the tool message for in-chat preview (not the resource library). Prefer structured naming fields (asin/site/taskType); server fills userName.",
       name: DingpanApiName.uploadHtmlToDingpan,
       parameters: {
         additionalProperties: false,
         properties: {
           asin: { description: 'ASIN for the remote filename', type: 'string' },
           html: {
-            description: 'Full HTML document string (required).',
+            description:
+              'Full HTML document string (required). Kept on the message as an artifact for chat preview; does not create a resource document.',
             type: 'string',
           },
           keyword: { description: 'Keyword segment for the filename', type: 'string' },
           productName: { description: 'Short product name for the filename', type: 'string' },
           site: { description: 'Market/site label, e.g. 日本 / US / CA', type: 'string' },
           taskType: { description: 'Task short label, e.g. 推广复盘', type: 'string' },
-          title: { description: 'Title for the persisted document', type: 'string' },
-          topicId: { description: 'Topic id for the deliverable document', type: 'string' },
+          title: {
+            description: 'Optional display title (does not create a resource document)',
+            type: 'string',
+          },
           uploadName: { description: 'Optional full remote file name override', type: 'string' },
         },
         required: ['html'],
@@ -36,7 +39,8 @@ export const DingpanDeliveryManifest: BuiltinToolManifest = {
   identifier: DingpanIdentifier,
   meta: {
     avatar: '📎',
-    description: 'Force-finish delivery: upload HTML report to 钉盘 only.',
+    description:
+      'Force-finish delivery: upload HTML to 钉盘; preview from message HTML (no auto resource).',
     title: 'Dingpan',
   },
   systemRole: systemPrompt,
@@ -84,7 +88,7 @@ export const DingpanManifest: BuiltinToolManifest = {
     {
       defaultTimeoutMs: 180_000,
       description:
-        "Upload an HTML report to DingTalk Drive under today's date folder and return preview_url. Prefer structured naming fields (asin/site/taskType); server fills userName. Example name: B0GVDTV1J6_日本_推广复盘_柯鹏翔_20260723.html",
+        "Upload an HTML report to DingTalk Drive under today's date folder and return preview_url. HTML is kept on the tool message for in-chat preview (message artifact) — does not auto-create a resource document. Prefer structured naming (asin/site/taskType). Example: B0GVDTV1J6_日本_推广复盘_柯鹏翔_20260723.html",
       name: DingpanApiName.uploadHtmlToDingpan,
       parameters: {
         additionalProperties: false,
@@ -95,7 +99,7 @@ export const DingpanManifest: BuiltinToolManifest = {
           },
           documentId: {
             description:
-              'Optional documents.id owned by the current user. When set, HTML is loaded from the document and dingpan metadata is written back.',
+              'Optional existing documents.id owned by the current user. Only for uploading an already-created resource; HTML is loaded from that document and dingpan metadata is written back. Do not invent this id for new reports — use html instead.',
             type: 'string',
           },
           folderId: {
@@ -108,7 +112,7 @@ export const DingpanManifest: BuiltinToolManifest = {
           },
           html: {
             description:
-              'Full HTML document string. Required when documentId is omitted; also used when creating a new deliverable document.',
+              'Full HTML document string. Preferred for new reports. Stored on the tool message as a chat artifact for preview; does not create a resource-library document.',
             type: 'string',
           },
           keyword: {
@@ -132,11 +136,11 @@ export const DingpanManifest: BuiltinToolManifest = {
             type: 'string',
           },
           title: {
-            description: 'Title for the persisted document (defaults from uploadName).',
+            description: 'Optional display title (does not create a resource document).',
             type: 'string',
           },
           topicId: {
-            description: 'Topic id to associate a newly created deliverable document with.',
+            description: 'Optional topic id (legacy; not used to create resource documents).',
             type: 'string',
           },
           uploadName: {
@@ -169,7 +173,7 @@ export const DingpanManifest: BuiltinToolManifest = {
   meta: {
     avatar: '📎',
     description:
-      'Deliver files and HTML reports to DingTalk Drive (钉盘) with preview_url. HTML can be persisted per-user then uploaded; chat can still use Artifacts when the user chooses in-app preview.',
+      'Deliver files and HTML reports to DingTalk Drive (钉盘) with preview_url. HTML delivery keeps content on the message for chat preview (no auto resource document); use documentId only for existing resources.',
     title: 'Dingpan',
   },
   systemRole: systemPrompt,

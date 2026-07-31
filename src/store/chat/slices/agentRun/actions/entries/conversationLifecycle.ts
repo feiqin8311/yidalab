@@ -1447,14 +1447,9 @@ export class ConversationLifecycleActionImpl {
           });
         }
 
-        const userFiles = dbMessageSelectors
-          .dbUserFiles(this.#get())
-          .map((f) => f?.id)
-          .filter(Boolean) as string[];
-
-        if (userFiles.length > 0) {
-          await getAgentStoreState().addFilesToAgent(userFiles, false);
-        }
+        // Chat attachments stay on messages_files only (processing_policy=on_demand).
+        // Never auto-mount them onto agents_files — that polluted the paperclip
+        // knowledge menu and survived topic delete (no cascade to agents_files).
       } catch (e) {
         console.error(e);
       } finally {
