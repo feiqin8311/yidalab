@@ -102,7 +102,10 @@ RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
     mkdir -p /deps && \
     cd /deps && \
     echo '{"name":"deps","private":true}' > package.json && \
-    pnpm add --ignore-workspace pg drizzle-orm
+    pnpm add --ignore-workspace \
+      pg \
+      drizzle-orm \
+      xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
 COPY . .
 
@@ -134,12 +137,19 @@ COPY --from=builder /app/scripts/migrateServerDB/errorHint.js /app/errorHint.js
 COPY --from=builder /deps/node_modules/.pnpm /app/node_modules/.pnpm
 COPY --from=builder /deps/node_modules/pg /app/node_modules/pg
 COPY --from=builder /deps/node_modules/drizzle-orm /app/node_modules/drizzle-orm
+COPY --from=builder /deps/node_modules/xlsx /app/node_modules/xlsx
 
 # Copy server launcher and shared scripts
 COPY --from=builder /app/scripts/serverLauncher/startServer.js /app/startServer.js
 COPY --from=builder /app/scripts/_shared /app/scripts/_shared
+# Stable path for Excel child process (standalone tracing may omit monorepo package layout)
+COPY --from=builder /app/packages/file-loaders/src/loaders/excel/workbookParseWorker.cjs /app/workbookParseWorker.cjs
 
+# Fail the image build if Excel parse worker cannot resolve xlsx at runtime.
 RUN set -e && \
+    cd /app && \
+    node -e "require.resolve('xlsx')" && \
+    test -f /app/workbookParseWorker.cjs && \
     addgroup -S -g 1001 nodejs && \
     adduser -D -G nodejs -H -S -h /app -u 1001 nextjs && \
     chown -R nextjs:nodejs /app /etc/proxychains4.conf

@@ -49,15 +49,24 @@ const estimateSheetCells = (worksheet, xlsx) => {
 };
 
 const resolveXlsx = () => {
-  try {
-    return require('xlsx');
-  } catch {
+  const candidates = [
+    () => require('xlsx'),
+    // Docker standalone: deps copied to /app/node_modules/xlsx
+    () => require('/app/node_modules/xlsx'),
+    () => require(path.join(process.cwd(), 'node_modules', 'xlsx')),
+    // monorepo dev: next to this worker under packages/file-loaders
+    () =>
+      require(path.join(path.dirname(__filename), '..', '..', '..', '..', 'node_modules', 'xlsx')),
+  ];
+  const errors = [];
+  for (const load of candidates) {
     try {
-      return require(path.join(process.cwd(), 'node_modules/xlsx'));
-    } catch {
-      throw new Error('xlsx module not found in parse worker');
+      return load();
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
     }
   }
+  throw new Error(`xlsx module not found in parse worker: ${errors.join(' | ')}`);
 };
 
 /** Wait until IPC flush completes (or stdout write for non-IPC). */

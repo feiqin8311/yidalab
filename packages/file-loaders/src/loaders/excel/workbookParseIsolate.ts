@@ -18,6 +18,10 @@ export const WORKBOOK_PARSE_CHILD_MAX_OLD_SPACE_MB = 512;
  * treats as module imports (breaks next build:docker).
  */
 const resolveWorkerPath = (): string => {
+  // Docker production: copied to fixed path next to startServer.js
+  const dockerStable = path.join(process.cwd(), 'workbookParseWorker.cjs');
+  if (existsSync(/* turbopackIgnore: true */ dockerStable)) return dockerStable;
+
   const here = path.dirname(fileURLToPath(import.meta.url));
   const local = path.join(here, 'workbookParseWorker.cjs');
   // turbopackIgnore: do not trace whole project from dynamic existsSync
