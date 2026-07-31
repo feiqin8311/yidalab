@@ -11,18 +11,30 @@ const buildMockFileAccessUrl = ({ id }: { id: string }) => `https://lobehub.com/
 const routerMocks = vi.hoisted(() => {
   const transactionClient = {};
 
+  // Chainable query builder used by workspace middleware. Terminal methods
+  // return a Promise (no custom `then` on the chain — unicorn/no-thenable).
+  const chain = (): any => {
+    const result = Promise.resolve([{ role: 'member' }]);
+    const api: any = {};
+    api.from = vi.fn(() => api);
+    api.innerJoin = vi.fn(() => api);
+    api.leftJoin = vi.fn(() => api);
+    api.where = vi.fn(() => result);
+    api.limit = vi.fn(() => result);
+    return api;
+  };
+
   return {
     businessFileUploadCheck: vi.fn(),
     businessFileTransferStorageCheck: vi.fn(),
     hasWorkspaceScopedPermission: vi.fn(),
+    getMyCompany: vi.fn().mockResolvedValue({ id: 'default-company' }),
     serverDB: {
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            limit: vi.fn().mockResolvedValue([{ role: 'member' }]),
-          })),
-        })),
-      })),
+      select: vi.fn(() => chain()),
+      query: {
+        files: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+        workspaces: { findFirst: vi.fn() },
+      },
       transaction: vi.fn(async (callback: (trx: unknown) => unknown) =>
         callback(transactionClient),
       ),
@@ -30,6 +42,12 @@ const routerMocks = vi.hoisted(() => {
     transactionClient,
   };
 });
+
+vi.mock('@/database/models/company', () => ({
+  CompanyModel: vi.fn(() => ({
+    getMyCompany: routerMocks.getMyCompany,
+  })),
+}));
 
 // Patch: Use actual router context middleware to inject the correct models/services
 function createCallerWithCtx(partialCtx: any = {}) {
@@ -80,15 +98,7 @@ function createCallerWithCtx(partialCtx: any = {}) {
   };
 
   const ctx = {
-    serverDB: {
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            limit: vi.fn().mockResolvedValue([{ role: 'member' }]),
-          })),
-        })),
-      })),
-    } as any,
+    serverDB: routerMocks.serverDB as any,
     userId: 'test-user',
     asyncTaskModel,
     chunkModel,
@@ -221,9 +231,15 @@ vi.mock('@/server/services/document', () => ({
   })),
 }));
 
-vi.mock('@/server/services/workbook', () => ({
-  WorkbookService: vi.fn(() => ({
-    asyncEnqueueParse: vi.fn().mockResolvedValue(undefined),
+const mockRequestProcessing = vi.fn().mockResolvedValue({
+  fileId: 'x',
+  processingPolicy: 'persistent',
+  taskIds: {},
+});
+
+vi.mock('@/server/services/resourceIngestion', () => ({
+  ResourceIngestionService: vi.fn(() => ({
+    requestProcessing: mockRequestProcessing,
   })),
 }));
 
@@ -348,6 +364,138 @@ describe('fileRouter', () => {
         id: 'new-file-id',
         url: 'https://lobehub.com/f/new-file-id',
       });
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ processingPolicy: 'on_demand' }),
+        true,
+        routerMocks.transactionClient,
+      );
+    });
+
+    it('should default chat-like createFile to on_demand and skip ingestion', async () => {
+      mockFileModelCheckHash.mockResolvedValue({ isExist: false });
+      mockFileModelCreate.mockResolvedValue({ id: 'xlsx-chat' });
+      mockRequestProcessing.mockClear();
+
+      await caller.createFile({
+        hash: 'h1',
+        fileType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        name: 'sheet.xlsx',
+        size: 100,
+        url: 'files/sheet.xlsx',
+        metadata: {},
+        processingPolicy: 'on_demand',
+        placementType: 'message_attachment',
+      });
+
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ processingPolicy: 'on_demand' }),
+        true,
+        routerMocks.transactionClient,
+      );
+      expect(mockRequestProcessing).not.toHaveBeenCalled();
+    });
+
+    it('should request processing for persistent resource_library uploads', async () => {
+      mockFileModelCheckHash.mockResolvedValue({ isExist: false });
+      mockFileModelCreate.mockResolvedValue({ id: 'xlsx-lib' });
+      mockRequestProcessing.mockClear();
+
+      await caller.createFile({
+        hash: 'h2',
+        fileType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        name: 'sheet.xlsx',
+        size: 100,
+        url: 'files/sheet.xlsx',
+        metadata: {},
+        processingPolicy: 'persistent',
+        placementType: 'resource_library',
+      });
+
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processingPolicy: 'persistent',
+          persistReason: 'resource_upload',
+        }),
+        true,
+        routerMocks.transactionClient,
+      );
+      expect(mockRequestProcessing).toHaveBeenCalledWith('xlsx-lib', 'resource_upload');
+    });
+
+    it('should ignore forged persistent policy on message_attachment', async () => {
+      mockFileModelCheckHash.mockResolvedValue({ isExist: false });
+      mockFileModelCreate.mockResolvedValue({ id: 'forged' });
+      mockRequestProcessing.mockClear();
+
+      await caller.createFile({
+        hash: 'h-forged',
+        fileType: 'application/pdf',
+        name: 'a.pdf',
+        size: 10,
+        url: 'files/a.pdf',
+        metadata: {},
+        processingPolicy: 'persistent',
+        placementType: 'message_attachment',
+      });
+
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ processingPolicy: 'on_demand' }),
+        true,
+        routerMocks.transactionClient,
+      );
+      expect(mockRequestProcessing).not.toHaveBeenCalled();
+    });
+
+    it('should treat document_asset placement as persistent', async () => {
+      mockFileModelCheckHash.mockResolvedValue({ isExist: false });
+      mockFileModelCreate.mockResolvedValue({ id: 'doc-import' });
+      mockRequestProcessing.mockClear();
+
+      await caller.createFile({
+        hash: 'h-doc',
+        fileType: 'application/pdf',
+        name: 'import.pdf',
+        size: 10,
+        url: 'files/import.pdf',
+        metadata: {},
+        placementType: 'document_asset',
+      });
+
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processingPolicy: 'persistent',
+          persistReason: 'document_import',
+        }),
+        true,
+        routerMocks.transactionClient,
+      );
+      expect(mockRequestProcessing).toHaveBeenCalledWith('doc-import', 'document_import');
+    });
+
+    it('should treat knowledgeBaseId as persistent and request processing', async () => {
+      mockFileModelCheckHash.mockResolvedValue({ isExist: false });
+      mockFileModelCreate.mockResolvedValue({ id: 'kb-file' });
+      mockRequestProcessing.mockClear();
+
+      await caller.createFile({
+        hash: 'h3',
+        fileType: 'text/plain',
+        name: 'a.txt',
+        size: 10,
+        url: 'files/a.txt',
+        metadata: {},
+        knowledgeBaseId: 'kb-1',
+      });
+
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processingPolicy: 'persistent',
+          persistReason: 'knowledge_base',
+        }),
+        true,
+        routerMocks.transactionClient,
+      );
+      expect(mockRequestProcessing).toHaveBeenCalledWith('kb-file', 'knowledge_base');
     });
 
     it('should refresh global file metadata when an existing hash points to a missing object', async () => {
@@ -444,7 +592,9 @@ describe('fileRouter', () => {
     });
 
     it('should pass workspace context into business upload check', async () => {
-      ({ caller } = createCallerWithCtx({ workspaceId: 'workspace-1' }));
+      // wsCompatProcedure sets workspaceId from company (not createCaller partial).
+      routerMocks.getMyCompany.mockResolvedValueOnce({ id: 'workspace-1' });
+      ({ caller } = createCallerWithCtx());
       mockFileModelCheckHash.mockResolvedValue({ isExist: false });
       mockFileModelCreate.mockResolvedValue({ id: 'new-file-id' });
 
@@ -648,7 +798,8 @@ describe('fileRouter', () => {
 
   describe('getKnowledgeItems', () => {
     it('should pass workspace context to the knowledge repository', async () => {
-      ({ caller } = createCallerWithCtx({ workspaceId: 'workspace-1' }));
+      routerMocks.getMyCompany.mockResolvedValueOnce({ id: 'workspace-1' });
+      ({ caller } = createCallerWithCtx());
 
       await caller.getKnowledgeItems({});
 
@@ -810,7 +961,8 @@ describe('fileRouter', () => {
 
   describe('transferEntity', () => {
     it('should transfer document resources via documentModel', async () => {
-      ctx.workspaceId = 'workspace-active';
+      routerMocks.getMyCompany.mockResolvedValueOnce({ id: 'workspace-active' });
+      ({ ctx, caller } = createCallerWithCtx());
       mockDocumentModelFindById.mockResolvedValue({ id: 'doc-1' });
       mockDocumentModelCountFileUsageInSubtree.mockResolvedValue(4096);
       mockDocumentModelTransferTo.mockResolvedValue({ id: 'doc-1' });

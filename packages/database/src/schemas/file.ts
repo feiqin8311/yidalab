@@ -16,7 +16,7 @@ import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
 import type { LobeDocumentPage } from '@/types/document';
-import type { FileSource } from '@/types/files';
+import type { FileSource, ResourcePersistReason, ResourceProcessingPolicy } from '@/types/files';
 
 import { idGenerator, randomSlug } from '../utils/idGenerator';
 import { accessedAt, createdAt, timestamps, timestamptz } from './_helpers';
@@ -224,6 +224,18 @@ export const files = pgTable(
     }),
     parsedAt: timestamptz('parsed_at'),
 
+    /**
+     * Content processing policy. Authoritative gate for long-lived documents /
+     * chunks / embeddings / workbook assets. Chat attachments use `on_demand`.
+     * Null = legacy rows (treated as listable in the resource browser until
+     * backfilled); createFile always writes an explicit value for new rows.
+     */
+    processingPolicy: text('processing_policy').$type<ResourceProcessingPolicy>(),
+    /** Why persistent processing was requested (audit). */
+    persistReason: text('persist_reason').$type<ResourcePersistReason>(),
+    /** First time persistent processing was requested. */
+    processingRequestedAt: timestamptz('processing_requested_at'),
+
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     /**
@@ -248,6 +260,11 @@ export const files = pgTable(
       embeddingTaskIdIdx: index('files_embedding_task_id_idx').on(table.embeddingTaskId),
       parseStatusIdx: index('files_parse_status_idx').on(table.parseStatus),
       parseTaskIdIdx: index('files_parse_task_id_idx').on(table.parseTaskId),
+      processingPolicyIdx: index('files_processing_policy_idx').on(table.processingPolicy),
+      processingPolicyParseStatusIdx: index('files_processing_policy_parse_status_idx').on(
+        table.processingPolicy,
+        table.parseStatus,
+      ),
       clientIdUnique: uniqueIndex('files_client_id_user_id_unique').on(
         table.clientId,
         table.userId,

@@ -20,6 +20,19 @@ export enum FileSource {
   VideoGeneration = 'video_generation',
 }
 
+/** How the server may process content for a file node. */
+export type ResourceProcessingPolicy = 'none' | 'on_demand' | 'persistent';
+
+/** Why a node entered persistent processing (audit / UI). */
+export type ResourcePersistReason = 'resource_upload' | 'document_import' | 'knowledge_base';
+
+export type ResourcePlacementType =
+  | 'message_attachment'
+  | 'resource_library'
+  | 'knowledge_base'
+  | 'document_asset'
+  | 'agent_knowledge';
+
 export interface FileItem {
   content?: string;
   createdAt: Date;

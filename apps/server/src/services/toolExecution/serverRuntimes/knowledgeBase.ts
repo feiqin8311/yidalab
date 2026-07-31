@@ -8,6 +8,7 @@ import { KnowledgeRepo } from '@/database/repositories/knowledge';
 import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
 import { KnowledgeBaseSearchService } from '@/server/services/knowledgeBase';
+import { ResourceIngestionService } from '@/server/services/resourceIngestion';
 
 import { type ServerRuntimeRegistration } from './types';
 
@@ -29,6 +30,7 @@ export const knowledgeBaseRuntime: ServerRuntimeRegistration = {
       workspaceId,
       agentVisibility,
     );
+    const resourceIngestion = new ResourceIngestionService(serverDB, userId, workspaceId);
     const agentModel = agentId ? new AgentModel(serverDB, userId, workspaceId) : null;
 
     const resolveAgentKnowledgeBaseIds = async (override?: string[]): Promise<string[]> => {
@@ -59,7 +61,7 @@ export const knowledgeBaseRuntime: ServerRuntimeRegistration = {
       {
         addFilesToKnowledgeBase: async (knowledgeBaseId, ids) => {
           try {
-            return await knowledgeBaseModel.addFilesToKnowledgeBase(knowledgeBaseId, ids);
+            return await resourceIngestion.addFilesToKnowledgeBase(knowledgeBaseId, ids);
           } catch (e: any) {
             // PG unique-constraint violation on (knowledge_base_id, file_id).
             // Re-throw with a friendly message so the ExecutionRuntime's

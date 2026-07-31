@@ -205,10 +205,12 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
           const tempPageId = createOptimisticPage(fileName);
 
           try {
-            // Upload file to server
+            // Upload as a document-import asset so parseDocument may persist.
             const uploadResult = await useFileStore.getState().uploadWithProgress({
               file,
               knowledgeBaseId,
+              placementType: knowledgeBaseId ? 'knowledge_base' : 'document_asset',
+              processingPolicy: 'persistent',
             });
 
             if (!uploadResult) {

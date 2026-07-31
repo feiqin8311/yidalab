@@ -1,9 +1,5 @@
 import type { LobeChatDatabase } from '@lobechat/database';
-import {
-  ALL_FILE_CARDS_MAX_CHARS,
-  isSpreadsheetFile,
-  shouldInlineParsedText,
-} from '@lobechat/file-loaders';
+import { ALL_FILE_CARDS_MAX_CHARS } from '@lobechat/file-loaders';
 import type {
   ChatAudioItem,
   ChatFileItem,
@@ -15,9 +11,8 @@ import type {
 import debug from 'debug';
 
 import { FileModel } from '@/database/models/file';
-import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
-import { WorkbookService } from '@/server/services/workbook';
+import { ContextResourceResolver } from '@/server/services/file/contextResourceResolver';
 
 const log = debug('lobe-server:resolveAttachments');
 
@@ -48,14 +43,11 @@ interface ResolveArgs {
 
 const dedupe = (ids: string[]) => Array.from(new Set(ids));
 
-const LEGACY_CONTENT_HARD_CAP = 80_000;
-
 /**
  * Resolve fileIds into image/video/file lists for the LLM prompt layer.
  *
- * Spreadsheets use structured workbook manifests (never full grid dumps).
- * Other non-media files may still use DocumentService.parseFile, but content
- * is budgeted and legacy mega-documents are capped before prompt injection.
+ * Uses ContextResourceResolver for non-media files so chat attachments never
+ * write documents/chunks via DocumentService.parseFile.
  */
 export const resolveAttachmentsByFileIds = async ({
   db,
@@ -83,8 +75,7 @@ export const resolveAttachmentsByFileIds = async ({
     return result;
   }
 
-  const documentService = new DocumentService(db, userId, workspaceId);
-  const workbookService = new WorkbookService(db, userId, workspaceId);
+  const resolver = new ContextResourceResolver(db, userId, workspaceId);
   const recordById = new Map(fileRecords.map((f) => [f.id, f]));
 
   const resolved = await Promise.all(
@@ -103,61 +94,28 @@ export const resolveAttachmentsByFileIds = async ({
         return { file, fileType, id, resolvedUrl };
       }
 
-      // Spreadsheets → structured workbook path (no full markdown dump)
-      if (isSpreadsheetFile(fileType, file.name)) {
-        try {
-          const inspect = await workbookService.inspectWorkbook(file.id);
-          return {
-            content: inspect.promptCard,
-            file,
-            fileType,
-            id,
-            parseStatus: inspect.parseStatus as ChatFileParseStatus,
-            resolvedUrl,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          return {
-            content: `Spreadsheet "${file.name}" is not query-ready yet (${message}). Retry inspectWorkbook later. Other attachments remain available.`,
-            diagnostic: {
-              code: 'workbook_parse_failed',
-              fileId: file.id,
-              message,
-              recoverable: true,
-              severity: 'warning' as const,
-              source: 'file_parser' as const,
-            },
-            file,
-            fileType,
-            id,
-            parseError: error,
-            parseStatus: 'failed' as ChatFileParseStatus,
-            resolvedUrl,
-          };
-        }
-      }
-
-      let content: string | undefined;
-      let parseError: unknown;
       try {
-        const document = await documentService.parseFile(file.id);
-        content = document.content ?? undefined;
-        if (content && content.length > LEGACY_CONTENT_HARD_CAP) {
-          content = `${content.slice(0, LEGACY_CONTENT_HARD_CAP)}\n\n…[legacy document body capped at ${LEGACY_CONTENT_HARD_CAP} chars; re-upload or use tools for full coverage]`;
-        }
-        if (
-          content &&
-          !shouldInlineParsedText({
-            content,
-            size: file.size ?? 0,
-          })
-        ) {
-          content = `File id=${file.id} name="${file.name}" size=${file.size} is too large to inline (token budget). Prefer cloud-sandbox or re-export a smaller extract.`;
-        }
+        const ctx = await resolver.resolveForPrompt(file.id);
+        return {
+          content: ctx.content,
+          diagnostic: ctx.diagnostic,
+          file,
+          fileType,
+          id,
+          parseStatus: ctx.parseStatus,
+          resolvedUrl,
+          resolveStatus: ctx.status,
+          warnings: ctx.warnings,
+        };
       } catch (error) {
-        parseError = error;
+        return {
+          file,
+          fileType,
+          id,
+          parseError: error,
+          resolvedUrl,
+        };
       }
-      return { content, file, fileType, id, parseError, resolvedUrl };
     }),
   );
 
@@ -170,6 +128,9 @@ export const resolveAttachmentsByFileIds = async ({
     }
     if ('diagnostic' in entry && entry.diagnostic) {
       result.diagnostics.push(entry.diagnostic);
+    }
+    if ('warnings' in entry && entry.warnings?.length) {
+      result.warnings.push(...entry.warnings);
     }
     const { file, fileType, resolvedUrl } = entry;
     result.orderedFileIds.push(file.id);
@@ -186,7 +147,7 @@ export const resolveAttachmentsByFileIds = async ({
       continue;
     }
     if (entry.parseError && !entry.content) {
-      log('parseFile failed for %s (id=%s): %O', file.name, file.id, entry.parseError);
+      log('resolve failed for %s (id=%s): %O', file.name, file.id, entry.parseError);
       result.warnings.push(
         `File "${file.name || 'unknown'}" was attached but its contents could not be extracted.`,
       );
@@ -203,7 +164,7 @@ export const resolveAttachmentsByFileIds = async ({
       fileType: fileType || 'application/octet-stream',
       id: file.id,
       name: file.name || 'file',
-      parseStatus: entry.parseStatus,
+      parseStatus: entry.parseStatus as ChatFileParseStatus | undefined,
       size: file.size ?? 0,
       url: resolvedUrl,
     });
@@ -223,7 +184,7 @@ export const resolveAttachmentsByFileIds = async ({
 
 /**
  * Metadata-only resolver for UI rendering (CommentCard, TaskInstruction) and
- * prompt rendering (buildTaskPrompt). Skips `DocumentService.parseFile` so it
+ * prompt rendering (buildTaskPrompt). Skips content extraction so it
  * stays fast and does not block on large PDFs. Items returned in caller order;
  * missing files are dropped.
  *

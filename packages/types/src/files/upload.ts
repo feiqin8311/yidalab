@@ -15,12 +15,7 @@ export interface FileUploadState {
 }
 
 export type FileUploadStatus =
-  | 'pending'
-  | 'uploading'
-  | 'processing'
-  | 'success'
-  | 'error'
-  | 'cancelled';
+  'pending' | 'uploading' | 'processing' | 'success' | 'error' | 'cancelled';
 
 export type FileProcessStatus = 'pending' | 'chunking' | 'embedding' | 'success' | 'error';
 
@@ -83,6 +78,8 @@ export const FileMetadataSchema = z.object({
 
 export type FileMetadata = z.infer<typeof FileMetadataSchema>;
 
+export const ResourceProcessingPolicySchema = z.enum(['none', 'on_demand', 'persistent']);
+
 export const UploadFileSchema = z.object({
   /**
    * file type
@@ -103,11 +100,6 @@ export const UploadFileSchema = z.object({
   name: z.string(),
 
   /**
-   * the mode database save the file
-   * local mean save the raw file into data
-   * url mean upload the file to a cdn and then save the url
-   */
-  /**
    * file size
    */
   size: z.number(),
@@ -116,6 +108,26 @@ export const UploadFileSchema = z.object({
    * file source
    */
   source: z.string().optional(),
+
+  /**
+   * Server processing policy. Chat attachments should send `on_demand`;
+   * resource/library/KB uploads should send `persistent`.
+   * When omitted, the server derives a conservative default.
+   */
+  processingPolicy: ResourceProcessingPolicySchema.optional(),
+
+  /**
+   * Optional placement intent (message vs library). Used with processingPolicy.
+   */
+  placementType: z
+    .enum([
+      'message_attachment',
+      'resource_library',
+      'knowledge_base',
+      'document_asset',
+      'agent_knowledge',
+    ])
+    .optional(),
 
   /**
    * file url if saveMode is url

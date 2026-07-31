@@ -789,8 +789,11 @@ export class DocumentService {
   }
 
   /**
-   * Parse file content
+   * Parse file content into a long-lived documents row.
    *
+   * Only allowed for files with processingPolicy=persistent (resource library /
+   * knowledge base / document import). Chat on-demand attachments must use
+   * ContextResourceResolver instead — this method writes to the database.
    */
   async parseFile(fileId: string): Promise<LobeDocument> {
     // Idempotent: return existing document if already parsed
@@ -804,6 +807,24 @@ export class DocumentService {
         return existingDoc as LobeDocument;
       }
       // Mega legacy dump: only rebuild if spreadsheet; otherwise return capped.
+    }
+
+    // Gate: refuse to create new documents for non-persistent files.
+    // Existing documents (above) may still be returned for legacy chat files.
+    const fileRecord = await this.fileModel.findById(fileId);
+    if (!fileRecord) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: `File not found: ${fileId}` });
+    }
+    const policy =
+      (fileRecord as { processingPolicy?: string | null }).processingPolicy ?? 'on_demand';
+    if (policy !== 'persistent') {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message:
+          `File "${fileRecord.name}" has processingPolicy=${policy}. ` +
+          `Persistent document parse requires processingPolicy=persistent. ` +
+          `Use ContextResourceResolver for on-demand chat attachments, or upload via Resources / Document import.`,
+      });
     }
 
     const { filePath, file, cleanup } = await this.fileService.downloadFileToLocal(fileId);

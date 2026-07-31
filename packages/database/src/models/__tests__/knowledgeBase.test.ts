@@ -205,6 +205,80 @@ describe('KnowledgeBaseModel', () => {
       expect(addedFiles).toHaveLength(2);
     });
 
+    it('upgrades on_demand files to persistent with knowledge_base reason', async () => {
+      await serverDB.insert(globalFiles).values([
+        {
+          hashId: 'hash_on_demand',
+          url: 'https://example.com/chat.pdf',
+          size: 1000,
+          fileType: 'application/pdf',
+          creator: userId,
+        },
+      ]);
+      await serverDB.insert(files).values({
+        id: 'file-on-demand',
+        name: 'chat.pdf',
+        url: 'https://example.com/chat.pdf',
+        fileHash: 'hash_on_demand',
+        size: 1000,
+        fileType: 'application/pdf',
+        userId,
+        processingPolicy: 'on_demand',
+        persistReason: null,
+      });
+
+      const { id: knowledgeBaseId } = await knowledgeBaseModel.create({ name: 'KB Upgrade' });
+      const result = await knowledgeBaseModel.addFilesToKnowledgeBase(knowledgeBaseId, [
+        'file-on-demand',
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect((result as { upgradedFileIds?: string[] }).upgradedFileIds).toEqual([
+        'file-on-demand',
+      ]);
+
+      const file = await serverDB.query.files.findFirst({
+        where: eq(files.id, 'file-on-demand'),
+      });
+      expect(file?.processingPolicy).toBe('persistent');
+      expect(file?.persistReason).toBe('knowledge_base');
+      expect(file?.processingRequestedAt).toBeTruthy();
+    });
+
+    it('does not re-upgrade already-persistent files', async () => {
+      await serverDB.insert(globalFiles).values([
+        {
+          hashId: 'hash_persistent',
+          url: 'https://example.com/res.pdf',
+          size: 1000,
+          fileType: 'application/pdf',
+          creator: userId,
+        },
+      ]);
+      await serverDB.insert(files).values({
+        id: 'file-persistent',
+        name: 'res.pdf',
+        url: 'https://example.com/res.pdf',
+        fileHash: 'hash_persistent',
+        size: 1000,
+        fileType: 'application/pdf',
+        userId,
+        processingPolicy: 'persistent',
+        persistReason: 'resource_upload',
+      });
+
+      const { id: knowledgeBaseId } = await knowledgeBaseModel.create({ name: 'KB Persist' });
+      const result = await knowledgeBaseModel.addFilesToKnowledgeBase(knowledgeBaseId, [
+        'file-persistent',
+      ]);
+
+      expect((result as { upgradedFileIds?: string[] }).upgradedFileIds).toEqual([]);
+      const file = await serverDB.query.files.findFirst({
+        where: eq(files.id, 'file-persistent'),
+      });
+      expect(file?.persistReason).toBe('resource_upload');
+    });
+
     it('should add documents (with docs_ prefix) to a knowledge base by resolving to file IDs', async () => {
       await serverDB.insert(globalFiles).values([
         {

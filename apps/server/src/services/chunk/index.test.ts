@@ -166,6 +166,12 @@ describe('ChunkService', () => {
     });
 
     it('should create task, update file, and trigger chunk parsing successfully', async () => {
+      mockFileModelFindById.mockResolvedValue({
+        id: 'file-1',
+        name: 'a.pdf',
+        processingPolicy: 'persistent',
+      });
+
       const taskId = await service.asyncParseFileToChunks('file-1');
 
       expect(taskId).toBe('task-1');
@@ -179,7 +185,26 @@ describe('ChunkService', () => {
       expect(mockAsyncTaskModelUpdate).not.toHaveBeenCalled();
     });
 
+    it('should reject chunking on_demand (chat) attachments', async () => {
+      mockFileModelFindById.mockResolvedValue({
+        id: 'file-1',
+        name: 'chat.pdf',
+        processingPolicy: 'on_demand',
+      });
+
+      await expect(service.asyncParseFileToChunks('file-1')).rejects.toThrow(
+        /Only files uploaded via Resources/,
+      );
+      expect(mockAsyncTaskModelCreate).not.toHaveBeenCalled();
+      expect(mockFileModelUpdate).not.toHaveBeenCalled();
+    });
+
     it('should mark task as error when parse trigger fails asynchronously', async () => {
+      mockFileModelFindById.mockResolvedValue({
+        id: 'file-1',
+        name: 'a.pdf',
+        processingPolicy: 'persistent',
+      });
       const triggerError = new Error('parse trigger failed');
       mockParseFileToChunks.mockRejectedValue(triggerError);
 

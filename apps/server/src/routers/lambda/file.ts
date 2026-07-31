@@ -223,6 +223,37 @@ export const fileRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'File size cannot be negative' });
       }
 
+      // Placement is the authority for lifecycle — not client-supplied policy alone.
+      // Persistent placements cannot be downgraded; message_attachment cannot be upgraded
+      // by a forged processingPolicy=persistent.
+      const placementType = input.placementType;
+      const isPersistentPlacement =
+        placementType === 'resource_library' ||
+        placementType === 'knowledge_base' ||
+        placementType === 'document_asset' ||
+        placementType === 'agent_knowledge' ||
+        Boolean(input.knowledgeBaseId) ||
+        Boolean(resolvedParentId);
+
+      const processingPolicy: 'none' | 'on_demand' | 'persistent' = isPersistentPlacement
+        ? 'persistent'
+        : placementType === 'message_attachment'
+          ? 'on_demand'
+          : input.processingPolicy === 'persistent' && !placementType
+            ? // Legacy clients without placementType: only honor persistent when
+              // structural signals exist (already covered above). Otherwise on_demand.
+              'on_demand'
+            : (input.processingPolicy ?? 'on_demand');
+
+      const persistReason =
+        processingPolicy === 'persistent'
+          ? input.knowledgeBaseId || placementType === 'knowledge_base'
+            ? 'knowledge_base'
+            : placementType === 'document_asset'
+              ? 'document_import'
+              : 'resource_upload'
+          : undefined;
+
       const { id } = await ctx.serverDB.transaction(async (trx) => {
         await businessFileUploadCheck({
           actualSize,
@@ -264,7 +295,12 @@ export const fileRouter = router({
             metadata: input.metadata,
             name: input.name,
             parentId: resolvedParentId,
+            processingPolicy,
+            ...(persistReason ? { persistReason } : {}),
+            ...(processingPolicy === 'persistent' ? { processingRequestedAt: new Date() } : {}),
             size: actualSize,
+            // Persist source attribution (was previously accepted but dropped).
+            ...(input.source ? { source: input.source as any } : {}),
             url: input.url,
             ...(resolvedVisibility ? { visibility: resolvedVisibility } : {}),
           },
@@ -274,26 +310,37 @@ export const fileRouter = router({
         );
       });
 
-      // Spreadsheets: enqueue async structured parse (never parse on upload thread).
-      // Dynamic imports keep lambda module graph light for unit tests.
-      try {
-        const { isSpreadsheetFile } = await import('@lobechat/file-loaders');
-        if (isSpreadsheetFile(input.fileType, input.name)) {
-          const { WorkbookService } = await import('@/server/services/workbook');
-          const workbookService = new WorkbookService(
+      // Persistent resources (resource page / KB / document import): start ingestion.
+      // Chat on_demand attachments skip this — prompt-time uses ContextResourceResolver.
+      // Upload still succeeds if enqueue fails, but parseStatus is marked failed so UI can show it.
+      if (processingPolicy === 'persistent') {
+        try {
+          const { ResourceIngestionService } = await import('@/server/services/resourceIngestion');
+          const ingestion = new ResourceIngestionService(
             ctx.serverDB,
             ctx.userId,
             ctx.workspaceId ?? undefined,
           );
-          await workbookService.asyncEnqueueParse(id, true, {
-            fileType: input.fileType,
-            name: input.name,
-            userId: ctx.userId,
-            workspaceId: ctx.workspaceId,
-          });
+          await ingestion.requestProcessing(
+            id,
+            (persistReason as 'resource_upload' | 'knowledge_base' | 'document_import') ??
+              'resource_upload',
+          );
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          console.error('[createFile] resource ingestion enqueue failed:', e);
+          try {
+            await ctx.fileModel.update(id, {
+              parseError: `Ingestion enqueue failed: ${message}`,
+              parseStatus: 'failed',
+            } as any);
+          } catch (updateError) {
+            console.error(
+              '[createFile] failed to mark parseStatus after ingestion error:',
+              updateError,
+            );
+          }
         }
-      } catch (e) {
-        console.error('[createFile] workbook enqueue failed:', e);
       }
 
       return { id, url: await ctx.fileService.getFileAccessUrl({ id, url: input.url }) };

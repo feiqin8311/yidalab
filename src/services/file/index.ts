@@ -28,6 +28,8 @@ export class FileService {
        * children inherit their parent document). Personal mode ignores this.
        */
       visibility?: 'private' | 'public';
+      placementType?: UploadFileParams['placementType'];
+      processingPolicy?: UploadFileParams['processingPolicy'];
     },
     knowledgeBaseId?: string,
   ): Promise<{ id: string; url: string }> => {

@@ -954,12 +954,14 @@ table file_sheet_assets {
   columns jsonb [not null, default: `[]`]
   storage_key text
   inline_jsonl text
+  format text [not null, default: 'jsonl']
+  generation_id text
   accessed_at "timestamp with time zone" [not null, default: `now()`]
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
-    (workbook_id, sheet_name) [name: 'file_sheet_assets_workbook_sheet_unique', unique]
+    (workbook_id, sheet_name, generation_id) [name: 'file_sheet_assets_workbook_sheet_gen_unique', unique]
     file_id [name: 'file_sheet_assets_file_id_idx']
     workbook_id [name: 'file_sheet_assets_workbook_id_idx']
     user_id [name: 'file_sheet_assets_user_id_idx']
@@ -972,6 +974,7 @@ table file_workbooks {
   user_id text [not null]
   workspace_id text
   parser_version text [not null]
+  generation_id text
   status text [not null, default: 'ready']
   sheet_count integer [not null, default: 0]
   total_rows integer [not null, default: 0]
@@ -1010,6 +1013,9 @@ table files {
   parser_version text
   parse_task_id uuid
   parsed_at "timestamp with time zone"
+  processing_policy text [default: 'on_demand']
+  persist_reason text
+  processing_requested_at "timestamp with time zone"
   workspace_id text
   visibility text [not null, default: 'public']
   accessed_at "timestamp with time zone" [not null, default: `now()`]
@@ -1024,6 +1030,8 @@ table files {
     embedding_task_id [name: 'files_embedding_task_id_idx']
     parse_status [name: 'files_parse_status_idx']
     parse_task_id [name: 'files_parse_task_id_idx']
+    processing_policy [name: 'files_processing_policy_idx']
+    (processing_policy, parse_status) [name: 'files_processing_policy_parse_status_idx']
     (client_id, user_id) [name: 'files_client_id_user_id_unique', unique]
     workspace_id [name: 'files_workspace_id_idx']
     (workspace_id, visibility, user_id) [name: 'files_workspace_visibility_idx']
