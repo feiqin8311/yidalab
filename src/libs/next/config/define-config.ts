@@ -50,6 +50,13 @@ export function defineConfig(config: CustomNextConfig) {
               // `@napi-rs/canvas` is loaded via dynamic `require()` (see packages/file-loaders),
               // which may not be picked up by Next.js output tracing.
               ...dockerCanvasTracingIncludes,
+              // Office parsers used via dynamic import in @lobechat/file-loaders
+              // (docx→mammoth, doc→word-extractor). External package + lazy chunk
+              // often drops them from standalone; Dockerfile also copies /deps.
+              'node_modules/mammoth/**/*',
+              'node_modules/.pnpm/mammoth@*/**/*',
+              'node_modules/word-extractor/**/*',
+              'node_modules/.pnpm/word-extractor@*/**/*',
             ]
           : []),
       ],

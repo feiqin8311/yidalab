@@ -159,6 +159,18 @@ export const resolveAttachmentsByFileIds = async ({
     }
     if (content) cardBudget = Math.max(0, cardBudget - content.length);
 
+    // Explicit empty body so the model does not treat a bare file URL as crawlable text.
+    if (!content) {
+      const reason =
+        entry.warnings?.join('; ') ||
+        (entry.parseError instanceof Error ? entry.parseError.message : undefined) ||
+        'no extractable text';
+      content = `Attachment "${file.name || file.id}" could not provide inline text (${reason}). Do not download/crawl the file URL (binary). Ask for pasted text or .txt/.md, or upload via Resources.`;
+      result.warnings.push(
+        `File "${file.name || 'unknown'}" had no extractable text for the prompt.`,
+      );
+    }
+
     result.fileList.push({
       content,
       fileType: fileType || 'application/octet-stream',

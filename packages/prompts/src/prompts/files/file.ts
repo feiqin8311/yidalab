@@ -16,9 +16,14 @@ const truncateFileContent = (content: string, name: string, maxChars: number): s
 };
 
 const filePrompt = (item: ChatFileItem, addUrl: boolean, maxChars: number) => {
-  const content = truncateFileContent(item.content || '', item.name || item.id, maxChars);
+  const raw = item.content?.trim() ? item.content : '';
+  // Empty body: never hand a download URL (docx/xlsx URLs are binary — models crawl them).
+  const content = raw
+    ? truncateFileContent(raw, item.name || item.id, maxChars)
+    : `No extractable text for this attachment (id=${item.id}, name="${item.name}", type=${item.fileType}). Do not fetch the file URL (binary). Ask the user to paste text or re-upload as .txt/.md, or upload via Resources for indexing.`;
   const statusAttr = item.parseStatus ? ` parseStatus="${item.parseStatus}"` : '';
-  return addUrl
+  const includeUrl = addUrl && Boolean(raw);
+  return includeUrl
     ? `<file id="${item.id}" name="${item.name}" type="${item.fileType}" size="${item.size}" url="${item.url}"${statusAttr}>${content}</file>`
     : `<file id="${item.id}" name="${item.name}" type="${item.fileType}" size="${item.size}"${statusAttr}>${content}</file>`;
 };

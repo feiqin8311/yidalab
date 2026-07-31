@@ -105,6 +105,8 @@ RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
     pnpm add --ignore-workspace \
       pg \
       drizzle-orm \
+      mammoth@^1.12.0 \
+      word-extractor@^1.0.4 \
       xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
 COPY . .
@@ -138,6 +140,10 @@ COPY --from=builder /deps/node_modules/.pnpm /app/node_modules/.pnpm
 COPY --from=builder /deps/node_modules/pg /app/node_modules/pg
 COPY --from=builder /deps/node_modules/drizzle-orm /app/node_modules/drizzle-orm
 COPY --from=builder /deps/node_modules/xlsx /app/node_modules/xlsx
+# docx/doc parsers — @lobechat/file-loaders is serverExternal + dynamic import; standalone
+# tracing may omit these (same class of bug as xlsx before WORKBOOK_PARSE_WORKER_PATH).
+COPY --from=builder /deps/node_modules/mammoth /app/node_modules/mammoth
+COPY --from=builder /deps/node_modules/word-extractor /app/node_modules/word-extractor
 
 # Copy server launcher and shared scripts
 COPY --from=builder /app/scripts/serverLauncher/startServer.js /app/startServer.js
@@ -145,10 +151,12 @@ COPY --from=builder /app/scripts/_shared /app/scripts/_shared
 # Stable path for Excel child process (standalone tracing may omit monorepo package layout)
 COPY --from=builder /app/packages/file-loaders/src/loaders/excel/workbookParseWorker.cjs /app/workbookParseWorker.cjs
 
-# Fail the image build if Excel parse worker cannot resolve xlsx at runtime.
+# Fail the image build if office parsers cannot resolve at runtime.
 RUN set -e && \
     cd /app && \
     node -e "require.resolve('xlsx')" && \
+    node -e "require.resolve('mammoth')" && \
+    node -e "require.resolve('word-extractor')" && \
     test -f /app/workbookParseWorker.cjs && \
     addgroup -S -g 1001 nodejs && \
     adduser -D -G nodejs -H -S -h /app -u 1001 nextjs && \
