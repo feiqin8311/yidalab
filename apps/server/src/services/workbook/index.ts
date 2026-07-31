@@ -238,12 +238,9 @@ export class WorkbookService {
         : await this.fileModel.findById(fileId);
     if (!file) return;
     if (!isSpreadsheetFile(file.fileType, file.name)) return;
-    if (
-      skipExist &&
-      (file.parseStatus === 'ready' ||
-        file.parseStatus === 'queued' ||
-        file.parseStatus === 'parsing')
-    ) {
+    // Only skip when ready. queued/parsing may mean a dead fire-and-forget worker —
+    // re-enqueue is idempotent via claim lease.
+    if (skipExist && file.parseStatus === 'ready') {
       return file.parseTaskId ?? undefined;
     }
 
@@ -710,13 +707,20 @@ export class WorkbookService {
       };
     }
 
+    // Re-enqueue when missing, uploaded, failed-after-cooldown, or stale parsing lease.
+    const parsingStale =
+      workbook?.status === 'parsing' &&
+      Date.now() - new Date(workbook.updatedAt).getTime() >= PARSE_LEASE_MS;
     if (
       !workbook ||
       workbook.status === 'uploaded' ||
+      workbook.status === 'queued' ||
+      parsingStale ||
       (workbook.status === 'failed' &&
         Date.now() - new Date(workbook.updatedAt).getTime() >= FAIL_COOLDOWN_MS)
     ) {
-      await this.asyncEnqueueParse(fileId, false);
+      // Force re-queue when lease expired (skipExist would otherwise no-op on parsing).
+      await this.asyncEnqueueParse(fileId, !parsingStale && workbook?.status !== 'queued');
       workbook = await this.getReadyWorkbook(fileId);
     }
 
@@ -724,7 +728,10 @@ export class WorkbookService {
     const promptCard =
       `Spreadsheet fileId=${fileId} name="${file.name}" parseStatus=${status}. ` +
       `Full grid is NOT inlined. Wait for parse ready, then use lobe-workbook querySheet. ` +
-      (workbook?.error ? `Last error: ${workbook.error}` : '');
+      (workbook?.error ? `Last error: ${workbook.error}` : '') +
+      (status === 'parsing' || status === 'queued'
+        ? ' Parse is in progress; retry inspectWorkbook shortly.'
+        : '');
 
     return {
       fileId,

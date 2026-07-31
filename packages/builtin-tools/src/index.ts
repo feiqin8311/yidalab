@@ -125,6 +125,8 @@ export const chatModeAllowedToolIds = [
   KnowledgeBaseManifest.identifier,
   MemoryManifest.identifier,
   WebBrowsingManifest.identifier,
+  // Excel attachments: inspect/query without requiring full agent mode
+  WorkbookManifest.identifier,
 ];
 
 /**
