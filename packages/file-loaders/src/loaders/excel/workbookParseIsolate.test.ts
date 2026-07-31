@@ -2,12 +2,19 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import * as xlsx from 'xlsx';
 
 import { buildWorkbookAssetsIsolated } from './workbookParseIsolate';
 
 const dirs: string[] = [];
+
+beforeAll(() => {
+  process.env.WORKBOOK_PARSE_WORKER_PATH = path.resolve(
+    process.cwd(),
+    'src/loaders/excel/workbookParseWorker.cjs',
+  );
+});
 
 afterEach(async () => {
   const { rm } = await import('node:fs/promises');

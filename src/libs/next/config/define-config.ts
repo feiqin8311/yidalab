@@ -364,6 +364,8 @@ export function defineConfig(config: CustomNextConfig) {
       'oidc-provider',
       '@duckdb/node-api',
       '@duckdb/node-bindings',
+      // Child fork of workbookParseWorker.cjs — keep off Turbopack graph
+      '@lobechat/file-loaders',
     ],
 
     transpilePackages: ['mermaid'],

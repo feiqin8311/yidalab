@@ -164,7 +164,8 @@ ENV NODE_ENV="production" \
     NODE_OPTIONS="--dns-result-order=ipv4first --use-openssl-ca" \
     NODE_EXTRA_CA_CERTS="" \
     NODE_TLS_REJECT_UNAUTHORIZED="" \
-    SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+    SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt" \
+    WORKBOOK_PARSE_WORKER_PATH="/app/workbookParseWorker.cjs"
 
 # Make the middleware rewrite through local as default
 # refs: https://github.com/lobehub/lobehub/issues/5876

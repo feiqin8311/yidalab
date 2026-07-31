@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import type { WorkbookAssetBuild, WorkbookSheetAssetBuild } from './workbookAsset';
 
@@ -13,49 +12,20 @@ export const WORKBOOK_PARSE_CHILD_TIMEOUT_MS = (60 * 5 - 5) * 1000;
 export const WORKBOOK_PARSE_CHILD_MAX_OLD_SPACE_MB = 512;
 
 /**
- * Build worker filename at runtime so Turbopack/Next cannot constant-fold it
- * into a static module resolution of `./ROOT/workbookParseWorker.cjs`.
- */
-const workerFileName = (): string => ['workbook', 'Parse', 'Worker', '.', 'cjs'].join('');
-
-/**
- * Resolve worker script path at runtime only.
- * Never use static string literals that look like module paths to Turbopack.
+ * Worker script path comes ONLY from WORKBOOK_PARSE_WORKER_PATH.
+ * Turbopack treats path.join(cwd, …) / fork(staticPath) as module resolution and
+ * fails the Next docker build — do not construct filesystem paths here.
+ *
+ * Production: Dockerfile sets WORKBOOK_PARSE_WORKER_PATH=/app/workbookParseWorker.cjs
+ * Local tests: set the env to the absolute path of workbookParseWorker.cjs
+ * Debug: WORKBOOK_PARSE_IN_PROCESS=1 skips the child entirely
  */
 const resolveWorkerPath = (): string => {
-  const name = workerFileName();
-  const cwd = process.cwd();
-
-  // Optional override for ops/tests
   const fromEnv = process.env.WORKBOOK_PARSE_WORKER_PATH;
-  if (fromEnv && existsSync(/* turbopackIgnore: true */ fromEnv)) return fromEnv;
-
-  // Docker production: /app/workbookParseWorker.cjs (see Dockerfile COPY)
-  const dockerStable = path.join(cwd, name);
-  if (existsSync(/* turbopackIgnore: true */ dockerStable)) return dockerStable;
-
-  // Same directory as this module (dev / monorepo package source)
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const local = path.join(here, name);
-  if (existsSync(/* turbopackIgnore: true */ local)) return local;
-
-  // monorepo root layout
-  const monorepo = path.join(cwd, 'packages', 'file-loaders', 'src', 'loaders', 'excel', name);
-  if (existsSync(/* turbopackIgnore: true */ monorepo)) return monorepo;
-
-  const fromPkg = path.join(
-    cwd,
-    'node_modules',
-    '@lobechat',
-    'file-loaders',
-    'src',
-    'loaders',
-    'excel',
-    name,
+  if (typeof fromEnv === 'string' && fromEnv.length > 0) return fromEnv;
+  throw new Error(
+    'WORKBOOK_PARSE_WORKER_PATH is not set. Point it at workbookParseWorker.cjs, or set WORKBOOK_PARSE_IN_PROCESS=1 for local debug.',
   );
-  if (existsSync(/* turbopackIgnore: true */ fromPkg)) return fromPkg;
-
-  return local;
 };
 
 export interface IsolatedParseOptions {
@@ -155,7 +125,6 @@ export async function buildWorkbookAssetsIsolated(
     const raw = await new Promise<WorkerResult>((resolve, reject) => {
       let child: ChildProcess;
       try {
-        // fork first arg must be a runtime string — never a static import path
         child = fork(workerPath, [filePath, outDir], {
           execArgv: [`--max-old-space-size=${heapMb}`],
           serialization: 'json',
