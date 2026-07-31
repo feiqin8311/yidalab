@@ -1,6 +1,19 @@
 import type { QueryFileListParams } from '@lobechat/types';
 import { FilesTabs, SortType } from '@lobechat/types';
-import { and, asc, count, desc, eq, ilike, inArray, like, notExists, or, sum } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  like,
+  notExists,
+  or,
+  sql,
+  sum,
+} from 'drizzle-orm';
 import type { PgTransaction } from 'drizzle-orm/pg-core';
 
 import type { FileItem, NewFile, NewGlobalFile } from '../schemas';
@@ -311,10 +324,13 @@ export class FileModel {
     visibility?: 'private' | 'public';
   } = {}) => {
     // 1. Build where clause
+    // Chat attachments (processingPolicy=on_demand) must not appear in resource /
+    // library file lists. Legacy null policy rows stay listable.
     let whereClause = and(
       q ? ilike(files.name, `%${q}%`) : undefined,
       this.ownership(callerAgentVisibility),
       visibility ? eq(files.visibility, visibility) : undefined,
+      sql`${files.processingPolicy} IS DISTINCT FROM ${'on_demand'}`,
     );
     if (category && category !== FilesTabs.All && category !== FilesTabs.Home) {
       const fileTypePrefix = this.getFileTypePrefix(category as FilesTabs);

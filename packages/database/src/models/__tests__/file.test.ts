@@ -589,6 +589,41 @@ describe('FileModel', () => {
       expect(filteredFiles[0].name).toBe('document.pdf');
     });
 
+    it('excludes on_demand chat attachments from resource file list', async () => {
+      await serverDB.insert(files).values([
+        {
+          name: 'library.pdf',
+          url: 'https://example.com/library.pdf',
+          size: 100,
+          fileType: 'application/pdf',
+          userId,
+          processingPolicy: 'persistent',
+        },
+        {
+          name: 'chat-attach.docx',
+          url: 'https://example.com/chat.docx',
+          size: 200,
+          fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          userId,
+          processingPolicy: 'on_demand',
+        },
+        {
+          name: 'legacy-null.pdf',
+          url: 'https://example.com/legacy.pdf',
+          size: 300,
+          fileType: 'application/pdf',
+          userId,
+          // processingPolicy null = pre-migration row, still listable
+        },
+      ]);
+
+      const listed = await fileModel.query();
+      const names = listed.map((f) => f.name).sort();
+      expect(names).toContain('library.pdf');
+      expect(names).toContain('legacy-null.pdf');
+      expect(names).not.toContain('chat-attach.docx');
+    });
+
     it('should filter files by category', async () => {
       await serverDB.insert(files).values(sharedFileList);
 
