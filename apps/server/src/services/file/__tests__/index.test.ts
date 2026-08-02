@@ -414,6 +414,21 @@ describe('FileService', () => {
       );
     });
 
+    it('should pass processingPolicy through to createFileRecord', async () => {
+      const content = Buffer.from('bot chat attachment');
+
+      await service.uploadFromBuffer(content, 'text/plain', 'files/test-user/abc/chat.txt', {
+        processingPolicy: 'on_demand',
+      });
+
+      expect(mockFileModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processingPolicy: 'on_demand',
+        }),
+        expect.any(Boolean),
+      );
+    });
+
     it('should compute hash for deduplication', async () => {
       const content = Buffer.from('test content');
 

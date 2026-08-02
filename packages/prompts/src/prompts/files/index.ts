@@ -15,12 +15,18 @@ export const filesPrompts = ({
   audioList,
   addUrl = true,
   messageId,
+  forHeterogeneousRuntime,
+  perFileMaxChars,
+  allCardsMaxChars,
 }: {
   addUrl?: boolean;
+  allCardsMaxChars?: number;
   audioList?: ChatAudioItem[];
   fileList?: ChatFileItem[];
+  forHeterogeneousRuntime?: boolean;
   imageList?: ChatImageItem[];
   messageId?: string;
+  perFileMaxChars?: number;
   videoList?: ChatVideoItem[];
 }) => {
   const hasImages = (imageList || []).length > 0;
@@ -32,7 +38,13 @@ export const filesPrompts = ({
 
   const contentParts = [
     hasImages ? imagesPrompts(imageList!, addUrl, messageId) : '',
-    hasFiles ? filePrompts(fileList!, addUrl) : '',
+    hasFiles
+      ? filePrompts(fileList!, addUrl, {
+          allCardsMaxChars,
+          forHeterogeneousRuntime,
+          perFileMaxChars,
+        })
+      : '',
     hasVideos ? videosPrompts(videoList!, addUrl, messageId) : '',
     hasAudios ? audiosPrompts(audioList!, addUrl, messageId) : '',
   ].filter(Boolean);

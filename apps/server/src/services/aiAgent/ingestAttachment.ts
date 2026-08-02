@@ -1,3 +1,4 @@
+import { ssrfSafeFetch } from '@lobechat/ssrf-safe-fetch';
 import debug from 'debug';
 import mime from 'mime';
 import sharp from 'sharp';
@@ -14,6 +15,10 @@ const MAX_IMAGE_SIZE = 1920;
 // comfortable headroom under the 5MB ceiling.
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024; // 3MB binary → ~4MB base64
 const COMPRESSIBLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+/** Hard cap for untrusted URL / buffer attachment ingestion. */
+export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024; // 50MB
+const ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 25_000;
 
 // --------------- Types ---------------
 
@@ -85,13 +90,22 @@ async function compressImage(
   }
 }
 
+const assertWithinSizeCap = (bytes: number, label: string) => {
+  if (bytes > MAX_ATTACHMENT_BYTES) {
+    throw new Error(
+      `${label} too large (${bytes} bytes; max ${MAX_ATTACHMENT_BYTES}). Re-upload a smaller extract.`,
+    );
+  }
+};
+
 // --------------- Public API ---------------
 
 /**
  * Unified file ingestion: normalize → compress → upload → create record.
  *
  * Accepts both buffer (bot adapter) and URL (external platforms) inputs.
- * Applies the same MIME correction, image compression, and metadata as the UI upload path.
+ * Only persists storage + file row (processingPolicy=on_demand). Content
+ * extraction happens later via resolveAttachmentsByFileIds.
  */
 export async function ingestAttachment(
   source: AttachmentSource,
@@ -107,23 +121,57 @@ export async function ingestAttachment(
     source.size,
   );
 
+  // Reject early on declared size (platform may send size without buffer yet).
+  if (typeof source.size === 'number' && source.size > 0) {
+    assertWithinSizeCap(source.size, 'Attachment');
+  }
+
   let buffer: Buffer;
   let mimeType = source.mimeType || 'application/octet-stream';
 
   // 1. Resolve buffer
   if (source.buffer) {
+    assertWithinSizeCap(source.buffer.length, 'Attachment buffer');
     buffer = source.buffer;
   } else if (source.url) {
-    const response = await fetch(source.url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch attachment: ${response.status} ${response.statusText}`);
-    }
-    buffer = Buffer.from(await response.arrayBuffer());
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ATTACHMENT_DOWNLOAD_TIMEOUT_MS);
+    try {
+      // Hard reject: request MAX+1 so soft truncation at MAX is detectable.
+      // ssrfSafeFetch soft-caps at maxContentLength; if we get exactly MAX+1
+      // (or Content-Length > MAX) the attachment is over budget.
+      const hardCap = MAX_ATTACHMENT_BYTES + 1;
+      const response = await ssrfSafeFetch(
+        source.url,
+        { redirect: 'follow', signal: controller.signal },
+        { maxContentLength: hardCap },
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch attachment: ${response.status} ${response.statusText}`);
+      }
 
-    // Use response header if more specific than what we have
-    const headerType = response.headers.get('content-type');
-    if (headerType && headerType !== 'application/octet-stream') {
-      mimeType = headerType;
+      const contentLength = Number(response.headers.get('content-length') || 0);
+      if (contentLength > MAX_ATTACHMENT_BYTES) {
+        throw new Error(
+          `Attachment too large (${contentLength} bytes; max ${MAX_ATTACHMENT_BYTES})`,
+        );
+      }
+
+      buffer = Buffer.from(await response.arrayBuffer());
+      // Soft-cap returns exactly hardCap bytes when body was larger — reject.
+      if (buffer.length > MAX_ATTACHMENT_BYTES) {
+        throw new Error(
+          `Attachment exceeded size cap after download (${buffer.length} bytes; max ${MAX_ATTACHMENT_BYTES})`,
+        );
+      }
+
+      // Use response header if more specific than what we have
+      const headerType = response.headers.get('content-type');
+      if (headerType && headerType !== 'application/octet-stream') {
+        mimeType = headerType.split(';')[0]!.trim() || mimeType;
+      }
+    } finally {
+      clearTimeout(timeout);
     }
   } else {
     throw new Error('AttachmentSource must have either buffer or url');
@@ -170,11 +218,13 @@ export async function ingestAttachment(
     buffer.length,
   );
 
-  // 4. Upload + create record
+  // 4. Upload + create on_demand file record (chat/bot attachment lifecycle).
   const ext = source.name?.split('.').pop() || 'bin';
   const { nanoid } = await import('@lobechat/utils');
   const pathname = `files/${userId}/${nanoid()}/${source.name || `file.${ext}`}`;
-  const { fileId, key } = await fileService.uploadFromBuffer(buffer, mimeType, pathname);
+  const { fileId, key } = await fileService.uploadFromBuffer(buffer, mimeType, pathname, {
+    processingPolicy: 'on_demand',
+  });
 
   // 5. Resolve access URL for images, videos and audio.
   const resolvedUrl =

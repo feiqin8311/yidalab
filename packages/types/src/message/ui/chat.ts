@@ -36,7 +36,14 @@ export type UIMessageRoleType =
   | 'taskCallback';
 
 export type ChatFileParseStatus =
-  'uploaded' | 'queued' | 'parsing' | 'ready' | 'failed' | 'unsupported';
+  | 'uploaded'
+  | 'queued'
+  | 'parsing'
+  | 'ready'
+  /** Prompt inlined a budgeted slice; more content available via lobe-files tools. */
+  | 'partial'
+  | 'failed'
+  | 'unsupported';
 
 export interface ChatFileItem {
   /**

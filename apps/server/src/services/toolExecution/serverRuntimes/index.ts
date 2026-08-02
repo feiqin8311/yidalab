@@ -21,6 +21,7 @@ import { cloudSandboxRuntime } from './cloudSandbox';
 import { credsRuntime } from './creds';
 import { dingpanRuntime } from './dingpan';
 import { fbaAlertRuntime } from './fbaAlert';
+import { filesRuntime } from './files';
 import { groupManagementRuntime } from './groupManagement';
 import { knowledgeBaseRuntime } from './knowledgeBase';
 import { lobeAgentRuntime } from './lobeAgent';
@@ -82,6 +83,7 @@ registerRuntimes([
   credsRuntime,
   dingpanRuntime,
   fbaAlertRuntime,
+  filesRuntime,
   groupManagementRuntime,
   knowledgeBaseRuntime,
   webOnboardingRuntime,

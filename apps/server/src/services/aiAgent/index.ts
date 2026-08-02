@@ -36,7 +36,7 @@ import type {
 import { SkillEngine } from '@lobechat/context-engine';
 import type { LobeChatDatabase } from '@lobechat/database';
 import { isRemoteHeterogeneousType } from '@lobechat/heterogeneous-agents';
-import { buildTaskManagerDefaultsPrompt } from '@lobechat/prompts';
+import { buildTaskManagerDefaultsPrompt, filesPrompts } from '@lobechat/prompts';
 import type {
   ChatAudioItem,
   ChatFileItem,
@@ -139,8 +139,8 @@ import { shouldSuppressSignal } from '@/server/services/agentSignal/suppressSign
 import { ComposioService } from '@/server/services/composio';
 import { deviceGateway } from '@/server/services/deviceGateway';
 import { getScopedOnlineDevices } from '@/server/services/deviceGateway/scopedDevices';
-import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
+import { AttachmentExtractService } from '@/server/services/file/attachmentExtract';
 import { resolveAttachmentsByFileIds } from '@/server/services/file/resolveAttachments';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
 import type { ConversationHistoryEntry } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
@@ -777,19 +777,58 @@ export class AiAgentService {
   }
 
   /**
+   * Full-text attachment inject for heterogeneous CLIs (no lobe-files tools).
+   * Re-extracts via AttachmentExtractService so prompt-card 12k / shouldInline
+   * replacements never starve Claude Code / Codex / device runs of document body.
+   */
+  private async buildHeteroAttachmentContext(fileList?: ChatFileItem[]): Promise<string> {
+    if (!fileList?.length) return '';
+
+    const extractService = new AttachmentExtractService(this.db, this.userId, this.workspaceId);
+    const enriched: ChatFileItem[] = [];
+
+    for (const item of fileList) {
+      try {
+        const full = await extractService.extractFull(item.id);
+        const content =
+          full.content ||
+          (full.pages?.length ? full.pages.map((p) => p.content).join('\n\n') : '') ||
+          item.content ||
+          '';
+        enriched.push({
+          ...item,
+          content,
+          parseStatus:
+            full.parseStatus === 'ready' || full.parseStatus === 'partial'
+              ? full.parseStatus
+              : item.parseStatus,
+        });
+      } catch (error) {
+        log('hetero attachment full extract failed for %s: %O', item.id, error);
+        enriched.push(item);
+      }
+    }
+
+    return filesPrompts({
+      addUrl: false,
+      allCardsMaxChars: 320_000,
+      fileList: enriched,
+      forHeterogeneousRuntime: true,
+      perFileMaxChars: 80_000,
+    });
+  }
+
+  /**
    * Resolve a run's attachments into the lists the message + context layers
-   * consume. This is the single standard ingestion path shared by BOTH branches
-   * of {@link execAgent} — the heterogeneous-agent branch (which returns early)
-   * and the normal agent branch — so neither hand-rolls its own upload.
+   * consume. Shared by BOTH branches of {@link execAgent}.
    *
-   * Two sources are merged:
-   * - `files`: raw buffers / URLs delivered by bot/IM channels (Slack, Telegram,
-   *   …). These have never touched our storage, so they're uploaded to S3 here.
-   * - `attachedFileIds`: already-uploaded ids (the SPA gateway path). Resolved to
-   *   signed URLs and classified via {@link resolveAttachmentsByFileIds}.
+   * Two sources are merged, then resolved once:
+   * - `files`: raw buffers / URLs from bot/IM → upload via {@link ingestAttachment}
+   * - `attachedFileIds`: already-uploaded ids (SPA gateway)
    *
-   * Per-file ingestion failures are collected into `warnings` and never thrown,
-   * so a single bad attachment can't block the run (the text prompt still works).
+   * Content extraction always goes through {@link resolveAttachmentsByFileIds}
+   * (on_demand / writeMode=never) — never DocumentService.parseFile, which is
+   * gated for persistent resources only and would empty bot document content.
    */
   private async resolveRunAttachments({
     attachedFileIds,
@@ -808,154 +847,64 @@ export class AiAgentService {
     warnings: string[];
   }> {
     const warnings: string[] = [];
-    let fileIds: string[] | undefined;
-    let imageList: Array<{ alt: string; id: string; url: string }> | undefined;
-    let videoList: ChatVideoItem[] | undefined;
-    let audioList: ChatAudioItem[] | undefined;
-    let fileList: ChatFileItem[] | undefined;
+    const uploadedFileIds: string[] = [];
 
-    // Upload raw bot/IM files to S3 and classify them (image / video / audio / document).
+    // 1. Upload raw bot/IM files only — no content parse here.
     if (files && files.length > 0) {
-      fileIds = [];
-      imageList = [];
-      videoList = [];
-      audioList = [];
-      fileList = [];
       const fileService = new FileService(this.db, this.userId, this.workspaceId);
-      const documentService = new DocumentService(this.db, this.userId, this.workspaceId);
 
       for (const file of files) {
         await throwIfAborted('file upload');
 
         try {
           const result = await ingestAttachment(file, fileService, this.userId);
-          fileIds.push(result.fileId);
-
-          if (result.isImage) {
-            imageList.push({
-              alt: file.name || 'image',
-              id: result.fileId,
-              url: result.resolvedUrl,
-            });
-            continue;
-          }
-
-          if (result.isVideo) {
-            videoList.push({
-              alt: file.name || 'video',
-              id: result.fileId,
-              url: result.resolvedUrl,
-            });
-            continue;
-          }
-
-          if (result.isAudio) {
-            audioList.push({
-              alt: file.name || 'audio',
-              id: result.fileId,
-              url: result.resolvedUrl,
-            });
-            continue;
-          }
-
-          // Non-image / non-video / non-audio: parse file content into the documents table so
-          // the MessageContentProcessor can inject it via filesPrompts(). Mirrors
-          // what the web upload path does, ensuring bot-uploaded PDFs / text /
-          // JSON / .skill files are actually visible to the LLM (instead of
-          // being silently uploaded but never read).
-          let content: string | undefined;
-          try {
-            const document = await documentService.parseFile(result.fileId);
-            content = document.content ?? undefined;
-          } catch (parseError) {
-            log(
-              'execAgent: parseFile failed for %s (fileId=%s): %O',
-              file.name,
-              result.fileId,
-              parseError,
-            );
-            warnings.push(
-              `File "${file.name || 'unknown'}" was uploaded but its contents could not be extracted.`,
-            );
-          }
-
-          fileList.push({
-            content,
-            fileType: file.mimeType ?? 'application/octet-stream',
-            id: result.fileId,
-            name: file.name ?? 'file',
-            size: file.size ?? 0,
-            url: result.resolvedUrl || '',
-          });
+          uploadedFileIds.push(result.fileId);
         } catch (error) {
           log('execAgent: failed to ingest file %s: %O', file.name || file.url, error);
           warnings.push(`File "${file.name || 'unknown'}" could not be uploaded and was skipped.`);
         }
       }
 
-      if (fileIds.length > 0) {
-        log(
-          'execAgent: uploaded %d files to S3 (%d images, %d videos, %d audios, %d documents)',
-          fileIds.length,
-          imageList.length,
-          videoList.length,
-          audioList.length,
-          fileList.length,
-        );
-      }
-      if (imageList.length === 0) imageList = undefined;
-      if (videoList.length === 0) videoList = undefined;
-      if (audioList.length === 0) audioList = undefined;
-      if (fileList.length === 0) fileList = undefined;
-    }
-
-    // Attach already-uploaded files referenced by fileIds (e.g. SPA Gateway mode).
-    // These files are already in the `files` table; resolve URLs + classify, and
-    // merge into the imageList/videoList/fileList passed to the LLM and stored
-    // as message relations via messagesFiles.
-    if (attachedFileIds && attachedFileIds.length > 0) {
-      await throwIfAborted('file resolution');
-
-      try {
-        const resolved = await resolveAttachmentsByFileIds({
-          db: this.db,
-          fileIds: attachedFileIds,
-          userId: this.userId,
-          workspaceId: this.workspaceId,
-        });
-
-        warnings.push(...resolved.warnings);
-
-        if (resolved.orderedFileIds.length > 0) {
-          fileIds = [...(fileIds ?? []), ...resolved.orderedFileIds];
-
-          if (resolved.imageList.length > 0) {
-            imageList = [...(imageList ?? []), ...resolved.imageList];
-          }
-          if (resolved.videoList.length > 0) {
-            videoList = [...(videoList ?? []), ...resolved.videoList];
-          }
-          if (resolved.audioList.length > 0) {
-            audioList = [...(audioList ?? []), ...resolved.audioList];
-          }
-          if (resolved.fileList.length > 0) {
-            fileList = [...(fileList ?? []), ...resolved.fileList];
-          }
-        }
-      } catch (err) {
-        // Non-fatal: a resolver hiccup (S3 / DB blip) must not block the run —
-        // the text prompt still works. Persist the file→message relation anyway
-        // so the attachment isn't lost; only its preview / parsed content is.
-        log('execAgent: attachment resolution failed, continuing without previews: %O', err);
-        fileIds = Array.from(new Set([...(fileIds ?? []), ...attachedFileIds]));
+      if (uploadedFileIds.length > 0) {
+        log('execAgent: uploaded %d bot/IM attachment(s) to storage', uploadedFileIds.length);
       }
     }
 
-    // Normalize an empty (all-failed) upload to undefined so callers don't attach
-    // an empty messagesFiles relation.
-    if (fileIds && fileIds.length === 0) fileIds = undefined;
+    const allFileIds = Array.from(new Set([...uploadedFileIds, ...(attachedFileIds ?? [])]));
+    if (allFileIds.length === 0) {
+      return { warnings };
+    }
 
-    return { audioList, fileIds, fileList, imageList, videoList, warnings };
+    // 2. Unified resolve: media lists + on_demand document extract for the prompt.
+    await throwIfAborted('file resolution');
+
+    try {
+      const resolved = await resolveAttachmentsByFileIds({
+        db: this.db,
+        fileIds: allFileIds,
+        userId: this.userId,
+        workspaceId: this.workspaceId,
+        writeMode: 'never',
+      });
+
+      warnings.push(...resolved.warnings);
+
+      return {
+        audioList: resolved.audioList?.length ? resolved.audioList : undefined,
+        fileIds: resolved.orderedFileIds?.length ? resolved.orderedFileIds : undefined,
+        fileList: resolved.fileList?.length ? resolved.fileList : undefined,
+        imageList: resolved.imageList?.length ? resolved.imageList : undefined,
+        videoList: resolved.videoList?.length ? resolved.videoList : undefined,
+        warnings,
+      };
+    } catch (err) {
+      // Non-fatal: keep message↔file links; drop previews only.
+      log('execAgent: attachment resolution failed, continuing without previews: %O', err);
+      warnings.push(
+        'Attachment content could not be resolved for this turn; files are still linked to the message.',
+      );
+      return { fileIds: allFileIds, warnings };
+    }
   }
 
   /**
@@ -1801,12 +1750,29 @@ export class AiAgentService {
       }
 
       // Build cloud-specific system context (repo list + workspace info + optional agent-level static context).
-      const systemContext = buildCloudHeteroContext({
+      const cloudBaseContext = buildCloudHeteroContext({
         agentSystemContext: agentConfig.agencyConfig?.heterogeneousProvider?.systemContext,
         conversationHistory,
         githubToken,
         repos: topicRepos,
       });
+
+      // Hetero CLIs never run MessageContentProcessor / lobe-files. Re-extract
+      // full document text (no prompt-card 12k/shouldInline caps) and inject with
+      // a CLI-sized budget so large PDF/DOCX bodies reach the sandbox/device.
+      const heteroAttachmentContext = await this.buildHeteroAttachmentContext(
+        runAttachments.fileList,
+      );
+
+      const mergeHeteroContext = (...parts: Array<string | undefined>) => {
+        const joined = parts
+          .map((p) => p?.trim())
+          .filter(Boolean)
+          .join('\n\n');
+        return joined || undefined;
+      };
+
+      const systemContext = mergeHeteroContext(cloudBaseContext, heteroAttachmentContext);
 
       // Feed the resolved images (signed URLs) to the dispatched CLI for vision —
       // mirrors the local-mode path, where the client feeds the persisted
@@ -2116,11 +2082,14 @@ export class AiAgentService {
           // device-specific context instead of reusing the cloud-sandbox one
           // (which describes an ephemeral /workspace + pre-cloned repos and
           // would mislead the agent).
-          const deviceSystemContext = buildRemoteDeviceHeteroContext({
-            agentSystemContext: agentConfig.agencyConfig?.heterogeneousProvider?.systemContext,
-            conversationHistory,
-            cwd: deviceCwd,
-          });
+          const deviceSystemContext = mergeHeteroContext(
+            buildRemoteDeviceHeteroContext({
+              agentSystemContext: agentConfig.agencyConfig?.heterogeneousProvider?.systemContext,
+              conversationHistory,
+              cwd: deviceCwd,
+            }),
+            heteroAttachmentContext,
+          );
 
           const result = await deviceGateway.dispatchAgentRun({
             ...heteroParams,

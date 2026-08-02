@@ -13,6 +13,7 @@ import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
 import { FbaAlertManifest } from '@lobechat/builtin-tool-fba-alert';
+import { FilesManifest } from '@lobechat/builtin-tool-files';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -64,4 +65,5 @@ export const builtinToolIdentifiers: string[] = [
   VerifyToolManifest.identifier,
   LobeDeliveryCheckerManifest.identifier,
   WorkbookManifest.identifier,
+  FilesManifest.identifier,
 ];

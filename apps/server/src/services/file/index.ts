@@ -196,6 +196,11 @@ export class FileService {
     id?: string;
     metadata?: Record<string, unknown>;
     name: string;
+    /**
+     * Explicit content-processing policy. Bot/chat uploads should pass
+     * `on_demand` so rows never rely on null→on_demand implicit fallback.
+     */
+    processingPolicy?: 'none' | 'on_demand' | 'persistent';
     size: number;
     url: string;
   }): Promise<{ fileId: string; url: string }> {
@@ -226,6 +231,7 @@ export class FileService {
         id: params.id, // Use custom ID if provided
         metadata: params.metadata,
         name: params.name,
+        processingPolicy: params.processingPolicy,
         size: params.size,
         url: params.url,
       },
@@ -387,6 +393,7 @@ export class FileService {
     buffer: Buffer,
     mimeType: string,
     pathname: string,
+    options?: { processingPolicy?: 'none' | 'on_demand' | 'persistent' },
   ): Promise<{ fileId: string; key: string; url: string }> {
     // Use uploadBuffer with explicit contentType so S3 Content-Type matches
     // the actual bytes (e.g. PNG buffer won't get image/jpeg from .jpg pathname)
@@ -410,6 +417,7 @@ export class FileService {
       id: fileId,
       metadata: { date: new Date().toISOString().slice(0, 10), dirname, filename, path: pathname },
       name,
+      processingPolicy: options?.processingPolicy,
       size,
       url: key,
     });

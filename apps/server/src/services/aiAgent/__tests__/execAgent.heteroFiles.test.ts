@@ -38,11 +38,13 @@ vi.mock('@/server/modules/AgentRuntime/factory', () => ({
 }));
 
 const emptyResolvedAttachments = {
-  fileList: [],
-  imageList: [],
-  orderedFileIds: [],
-  videoList: [],
-  warnings: [],
+  audioList: [] as any[],
+  diagnostics: [] as any[],
+  fileList: [] as any[],
+  imageList: [] as any[],
+  orderedFileIds: [] as string[],
+  videoList: [] as any[],
+  warnings: [] as string[],
 };
 
 vi.mock('@/server/services/file', () => ({
@@ -246,8 +248,8 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
   });
 
   it('should attach the resolver-deduped fileIds (dedup lives in resolveAttachmentsByFileIds)', async () => {
-    // resolveAttachmentsByFileIds dedupes internally and returns orderedFileIds;
-    // execAgent attaches exactly what it returns (messagesFiles PK is fileId+messageId).
+    // resolveRunAttachments dedupes before calling the resolver; resolver returns
+    // orderedFileIds and execAgent attaches exactly that (messagesFiles PK).
     mockResolveAttachmentsByFileIds.mockResolvedValue({
       ...emptyResolvedAttachments,
       orderedFileIds: ['file-1', 'file-2'],
@@ -260,7 +262,10 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
     });
 
     expect(mockResolveAttachmentsByFileIds).toHaveBeenCalledWith(
-      expect.objectContaining({ fileIds: ['file-1', 'file-1', 'file-2'] }),
+      expect.objectContaining({
+        fileIds: ['file-1', 'file-2'],
+        writeMode: 'never',
+      }),
     );
     const userCall = findUserMessageCreate();
     expect(userCall![0].files).toEqual(['file-1', 'file-2']);
@@ -377,7 +382,7 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
         ...emptyResolvedAttachments,
         fileList: [
           {
-            content: '',
+            content: 'pdf body for hetero',
             fileType: 'application/pdf',
             id: 'file-2',
             name: 'doc.pdf',
@@ -395,11 +400,18 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
         prompt: 'Look at this image',
       });
 
+      // Hetero dispatch strips `alt` and only forwards id+url for the CLI.
+      // Document bodies are injected into systemContext (hetero has no MessageContentProcessor).
+      // Full extract may fail under unit mocks — fallback still uses resolver card content.
       expect(mockSpawnHeteroSandbox).toHaveBeenCalledWith(
         expect.objectContaining({
           imageList: [{ id: 'file-1', url: 'https://signed/file-1.png' }],
+          systemContext: expect.stringContaining('pdf body for hetero'),
         }),
       );
+      const spawnArgs = mockSpawnHeteroSandbox.mock.calls[0][0];
+      // Hetero inject must not advertise lobe-files tools the CLI cannot call.
+      expect(spawnArgs.systemContext).not.toContain('availableTool=');
     });
 
     it('should pass imageList undefined when attachments contain no images', async () => {
@@ -469,6 +481,12 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
         isVideo: false,
         resolvedUrl: 'https://signed/uploaded-1.png',
       });
+      // After ingest, all fileIds go through the unified resolver.
+      mockResolveAttachmentsByFileIds.mockResolvedValue({
+        ...emptyResolvedAttachments,
+        imageList: [{ alt: 'shot.png', id: 'uploaded-1', url: 'https://signed/uploaded-1.png' }],
+        orderedFileIds: ['uploaded-1'],
+      });
 
       await service.execAgent({
         agentId: 'agent-1',
@@ -477,6 +495,12 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
       });
 
       expect(mockIngestAttachment).toHaveBeenCalledTimes(1);
+      expect(mockResolveAttachmentsByFileIds).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileIds: ['uploaded-1'],
+          writeMode: 'never',
+        }),
+      );
 
       const userCall = findUserMessageCreate();
       expect(userCall![0].files).toEqual(['uploaded-1']);
@@ -497,8 +521,11 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
       });
       mockResolveAttachmentsByFileIds.mockResolvedValue({
         ...emptyResolvedAttachments,
-        imageList: [{ alt: 'pre.jpg', id: 'file-1', url: 'https://signed/file-1.jpg' }],
-        orderedFileIds: ['file-1'],
+        imageList: [
+          { alt: 'shot.png', id: 'uploaded-1', url: 'https://signed/uploaded-1.png' },
+          { alt: 'pre.jpg', id: 'file-1', url: 'https://signed/file-1.jpg' },
+        ],
+        orderedFileIds: ['uploaded-1', 'file-1'],
       });
 
       await service.execAgent({
@@ -508,7 +535,14 @@ describe('AiAgentService.execAgent - hetero early-exit file attachments', () => 
         prompt: 'Compare these images',
       });
 
-      // Raw `files` are ingested first, then pre-uploaded `attachedFileIds`.
+      expect(mockResolveAttachmentsByFileIds).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileIds: ['uploaded-1', 'file-1'],
+          writeMode: 'never',
+        }),
+      );
+
+      // Raw `files` are ingested first, then merged with pre-uploaded ids.
       const userCall = findUserMessageCreate();
       expect(userCall![0].files).toEqual(['uploaded-1', 'file-1']);
 

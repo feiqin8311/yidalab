@@ -12,7 +12,10 @@ import debug from 'debug';
 
 import { FileModel } from '@/database/models/file';
 import { FileService } from '@/server/services/file';
-import { ContextResourceResolver } from '@/server/services/file/contextResourceResolver';
+import {
+  ContextResourceResolver,
+  type ContextResourceResult,
+} from '@/server/services/file/contextResourceResolver';
 
 const log = debug('lobe-server:resolveAttachments');
 
@@ -213,12 +216,26 @@ export const resolveAttachmentsByFileIds = async ({
       );
     }
 
+    // Prefer structured parseStatus; fall back to ContextResourceResolver status
+    // so partial/failed/unsupported cards can advertise lobe-files tools.
+    const resolveStatus =
+      'resolveStatus' in entry
+        ? (entry.resolveStatus as ContextResourceResult['status'] | undefined)
+        : undefined;
+    const parseStatus = (entry.parseStatus ??
+      (resolveStatus === 'ready' ||
+      resolveStatus === 'partial' ||
+      resolveStatus === 'failed' ||
+      resolveStatus === 'unsupported'
+        ? resolveStatus
+        : undefined)) as ChatFileParseStatus | undefined;
+
     result.fileList.push({
       content,
       fileType: fileType || 'application/octet-stream',
       id: file.id,
       name: file.name || 'file',
-      parseStatus: entry.parseStatus as ChatFileParseStatus | undefined,
+      parseStatus,
       size: file.size ?? 0,
       url: resolvedUrl,
     });

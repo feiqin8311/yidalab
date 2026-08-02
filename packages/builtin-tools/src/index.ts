@@ -14,6 +14,7 @@ import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
 import { FbaAlertManifest } from '@lobechat/builtin-tool-fba-alert';
+import { FilesManifest } from '@lobechat/builtin-tool-files';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -61,6 +62,8 @@ export const defaultToolIds = [
   FbaAlertManifest.identifier,
   // Bounded Excel inspect/query for large chat attachments
   WorkbookManifest.identifier,
+  // On-demand inspect/read/search for chat message attachments
+  FilesManifest.identifier,
 ];
 
 /**
@@ -91,6 +94,7 @@ export const alwaysOnToolIds = [
   DingpanManifest.identifier,
   FbaAlertManifest.identifier,
   WorkbookManifest.identifier,
+  FilesManifest.identifier,
 ];
 
 /**
@@ -331,6 +335,11 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
   {
     identifier: WorkbookManifest.identifier,
     manifest: WorkbookManifest,
+    type: 'builtin',
+  },
+  {
+    identifier: FilesManifest.identifier,
+    manifest: FilesManifest,
     type: 'builtin',
   },
   {
