@@ -35,11 +35,27 @@ export type UIMessageRoleType =
   | 'verify'
   | 'taskCallback';
 
+export type ChatFileParseStatus =
+  | 'uploaded'
+  | 'queued'
+  | 'parsing'
+  | 'ready'
+  /** Prompt inlined a budgeted slice; more content available via lobe-files tools. */
+  | 'partial'
+  | 'failed'
+  | 'unsupported';
+
 export interface ChatFileItem {
+  /**
+   * Bounded text for the model prompt: full body for small files, or a
+   * workbook manifest card for spreadsheets. Must never hold multi-MB dumps.
+   */
   content?: string;
   fileType: string;
   id: string;
   name: string;
+  /** Structured parse lifecycle when applicable (workbooks). */
+  parseStatus?: ChatFileParseStatus;
   size: number;
   url: string;
 }

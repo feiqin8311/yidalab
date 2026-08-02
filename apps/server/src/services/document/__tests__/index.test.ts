@@ -22,6 +22,7 @@ vi.mock('../../resourceEvents', () => ({ publishResourceEvent: vi.fn() }));
 
 const publishResourceEventMock = vi.mocked(publishResourceEvent);
 vi.mock('@lobechat/file-loaders', () => ({
+  isSpreadsheetFile: vi.fn(() => false),
   loadFile: vi.fn(),
   UnsupportedFileTypeError: class UnsupportedFileTypeError extends Error {
     fileType: string;
@@ -1647,6 +1648,11 @@ describe('DocumentService', () => {
     const mockCleanup = vi.fn();
 
     beforeEach(() => {
+      mockFileModel.findById.mockResolvedValue({
+        id: 'file-1',
+        name: 'readme.md',
+        processingPolicy: 'persistent',
+      });
       mockFileService.downloadFileToLocal.mockResolvedValue({
         filePath: '/tmp/test.md',
         file: { name: 'readme.md', url: 's3://bucket/readme.md', parentId: null },
@@ -1727,6 +1733,21 @@ describe('DocumentService', () => {
       }
 
       expect(mockCleanup).toHaveBeenCalled();
+    });
+
+    it('should reject on-demand files without writing documents', async () => {
+      mockFileModel.findById.mockResolvedValue({
+        id: 'file-1',
+        name: 'chat.pdf',
+        processingPolicy: 'on_demand',
+      });
+
+      await expect(service.parseFile('file-1')).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+        message: expect.stringContaining('processingPolicy=on_demand'),
+      });
+      expect(mockFileService.downloadFileToLocal).not.toHaveBeenCalled();
+      expect(mockDocumentModel.create).not.toHaveBeenCalled();
     });
 
     it('should NOT strip page tags in parseFile (unlike parseDocument)', async () => {

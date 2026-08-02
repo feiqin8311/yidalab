@@ -20,7 +20,13 @@ const VerifyEmailPage = () => {
       subtitle={t('betterAuth.verifyEmail.description', { email: email || '@' })}
       title={t('betterAuth.verifyEmail.title')}
       footer={
-        <Link to={'/signin'}>
+        <Link
+          to={
+            email
+              ? `/signin?email=${encodeURIComponent(email)}&callbackUrl=${encodeURIComponent(callbackUrl)}`
+              : `/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`
+          }
+        >
           <Button block icon={ChevronLeftIcon} size={'large'}>
             {t('betterAuth.verifyEmail.backToSignIn')}
           </Button>

@@ -6,7 +6,7 @@
  *
  * Env (optional):
  * - AGENT_MAX_STEPS (default 40)
- * - AGENT_MAX_TOTAL_TOKENS (default 200000)
+ * - AGENT_MAX_TOTAL_TOKENS (default 500000)
  * - AGENT_TOOL_FAIL_STREAK (default 3)
  * - NEXT_PUBLIC_AGENT_MAX_STEPS / NEXT_PUBLIC_AGENT_MAX_TOTAL_TOKENS
  *   (client fallback when server env is not inlined)
@@ -19,7 +19,7 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
 };
 
 export const DEFAULT_AGENT_MAX_STEPS = 40;
-export const DEFAULT_AGENT_MAX_TOTAL_TOKENS = 200_000;
+export const DEFAULT_AGENT_MAX_TOTAL_TOKENS = 500_000;
 export const DEFAULT_AGENT_TOOL_FAIL_STREAK = 3;
 
 export interface AgentRunLimits {

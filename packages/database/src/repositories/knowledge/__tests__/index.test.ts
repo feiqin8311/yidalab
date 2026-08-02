@@ -394,6 +394,16 @@ describe('KnowledgeRepo', () => {
           url: 'https://example.com/recent2.txt',
           updatedAt: new Date('2024-01-09T10:00:00Z'),
         },
+        {
+          id: 'recent-on-demand',
+          userId,
+          name: 'chat-attach.txt',
+          fileType: 'text/plain',
+          size: 50,
+          url: 'https://example.com/chat-attach.txt',
+          processingPolicy: 'on_demand',
+          updatedAt: new Date('2024-01-12T10:00:00Z'),
+        },
       ]);
 
       // Create test documents
@@ -429,6 +439,13 @@ describe('KnowledgeRepo', () => {
       const result = await knowledgeRepo.queryRecent(1);
 
       expect(result).toHaveLength(1);
+    });
+
+    it('excludes on_demand chat attachments from recent list', async () => {
+      const result = await knowledgeRepo.queryRecent(20);
+      const ids = result.map((item) => item.id);
+      expect(ids).not.toContain('recent-on-demand');
+      expect(ids).toContain('recent-file-1');
     });
   });
 

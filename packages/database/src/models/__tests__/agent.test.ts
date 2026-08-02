@@ -427,6 +427,53 @@ describe('AgentModel', () => {
       expect(result.files).toHaveLength(0);
     });
 
+    it('excludes on_demand chat attachments from agent files list', async () => {
+      const agentId = 'test-agent-skip-on-demand';
+      await serverDB.insert(agents).values({ id: agentId, userId });
+      await serverDB.insert(files).values([
+        {
+          id: 'file_persistent_kb',
+          name: 'library.pdf',
+          url: 'https://a.com/library.pdf',
+          size: 100,
+          fileType: 'application/pdf',
+          userId,
+          processingPolicy: 'persistent',
+        },
+        {
+          id: 'file_chat_on_demand',
+          name: 'chat-attach.docx',
+          url: 'https://a.com/chat.docx',
+          size: 200,
+          fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          userId,
+          processingPolicy: 'on_demand',
+        },
+        {
+          id: 'file_legacy_null',
+          name: 'legacy.pdf',
+          url: 'https://a.com/legacy.pdf',
+          size: 300,
+          fileType: 'application/pdf',
+          userId,
+        },
+      ]);
+      await serverDB.insert(agentsFiles).values([
+        { agentId, fileId: 'file_persistent_kb', userId, enabled: true },
+        { agentId, fileId: 'file_chat_on_demand', userId, enabled: true },
+        { agentId, fileId: 'file_legacy_null', userId, enabled: true },
+      ]);
+
+      const result = await agentModel.getAgentAssignedKnowledge(agentId);
+      const names = result.files
+        .map((f) => f?.name)
+        .filter(Boolean)
+        .sort();
+
+      expect(names).toEqual(['legacy.pdf', 'library.pdf']);
+      expect(names).not.toContain('chat-attach.docx');
+    });
+
     it('nulls out a mounted KB / file that the caller can no longer read', async () => {
       // Workspace: A owns a public KB + public file and mounts them onto a
       // public agent. B (another member) sees both mounts in the editor.
@@ -661,6 +708,33 @@ describe('AgentModel', () => {
           expect.objectContaining({ agentId: agent.id, fileId: '2', userId, enabled: true }),
         ]),
       );
+    });
+
+    it('skips on_demand chat attachments when mounting agent files', async () => {
+      const agent = await serverDB
+        .insert(agents)
+        .values({ userId })
+        .returning()
+        .then((res) => res[0]);
+
+      await serverDB.insert(files).values({
+        id: 'file_on_demand_mount',
+        name: 'chat.docx',
+        url: 'https://a.com/chat.docx',
+        size: 10,
+        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        userId,
+        processingPolicy: 'on_demand',
+      });
+
+      await agentModel.createAgentFiles(agent.id, ['1', 'file_on_demand_mount']);
+
+      const results = await serverDB.query.agentsFiles.findMany({
+        where: eq(agentsFiles.agentId, agent.id),
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.fileId).toBe('1');
     });
 
     it('should create new agent file associations with enabled=false', async () => {

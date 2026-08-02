@@ -66,6 +66,18 @@ export class FileService {
   }
 
   /**
+   * Download storage object to a local path (stream when impl supports it).
+   */
+  public async downloadToPath(key: string, destPath: string): Promise<void> {
+    if (this.impl.downloadToPath) {
+      return this.impl.downloadToPath(key, destPath);
+    }
+    const bytes = await this.impl.getFileByteArray(key);
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(destPath, Buffer.from(bytes));
+  }
+
+  /**
    * Create pre-signed upload URL
    */
   public async createPreSignedUrl(key: string): Promise<string> {
@@ -184,6 +196,11 @@ export class FileService {
     id?: string;
     metadata?: Record<string, unknown>;
     name: string;
+    /**
+     * Explicit content-processing policy. Bot/chat uploads should pass
+     * `on_demand` so rows never rely on null→on_demand implicit fallback.
+     */
+    processingPolicy?: 'none' | 'on_demand' | 'persistent';
     size: number;
     url: string;
   }): Promise<{ fileId: string; url: string }> {
@@ -214,6 +231,7 @@ export class FileService {
         id: params.id, // Use custom ID if provided
         metadata: params.metadata,
         name: params.name,
+        processingPolicy: params.processingPolicy,
         size: params.size,
         url: params.url,
       },
@@ -375,6 +393,7 @@ export class FileService {
     buffer: Buffer,
     mimeType: string,
     pathname: string,
+    options?: { processingPolicy?: 'none' | 'on_demand' | 'persistent' },
   ): Promise<{ fileId: string; key: string; url: string }> {
     // Use uploadBuffer with explicit contentType so S3 Content-Type matches
     // the actual bytes (e.g. PNG buffer won't get image/jpeg from .jpg pathname)
@@ -398,6 +417,7 @@ export class FileService {
       id: fileId,
       metadata: { date: new Date().toISOString().slice(0, 10), dirname, filename, path: pathname },
       name,
+      processingPolicy: options?.processingPolicy,
       size,
       url: key,
     });
@@ -461,10 +481,16 @@ export class FileService {
     return { fileId: createdId, key, url };
   }
 
+  /**
+   * Download a file to a temp path. Pass a preloaded, already-authorized `file`
+   * record to skip FileModel.findById (prompt-time multi-file resolve).
+   */
   async downloadFileToLocal(
     fileId: string,
+    fileRecord?: Pick<FileItem, 'id' | 'name' | 'url'> | null,
   ): Promise<{ cleanup: () => void; file: FileItem; filePath: string }> {
-    const file = await this.fileModel.findById(fileId);
+    const file =
+      fileRecord?.id === fileId ? (fileRecord as FileItem) : await this.fileModel.findById(fileId);
     if (!file) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'File not found' });
     }

@@ -1324,11 +1324,6 @@
       "count": 1
     }
   },
-  "src/routes/(mobile)/(home)/features/SessionListContent/List/AddButton.tsx": {
-    "no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/routes/onboarding/features/FullNameStep.tsx": {
     "no-restricted-imports": {
       "count": 1

@@ -48,7 +48,8 @@ export const dingpanRouter = router({
       }
 
       try {
-        return await fn(input.args ?? {});
+        // Detached method extract drops `this`; re-bind for class runtimes.
+        return await fn.call(runtime, input.args ?? {});
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error('[dingpan.execute] %s failed: %O', input.apiName, error);

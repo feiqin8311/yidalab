@@ -7,6 +7,7 @@ import { agentService } from '@/services/agent';
 import { aiChatService } from '@/services/aiChat';
 import { chatService } from '@/services/chat';
 import { messageService } from '@/services/message';
+import { getAgentStoreState } from '@/store/agent';
 import * as agentGroupStore from '@/store/agentGroup';
 import { setPendingTopicRepos } from '@/store/chat/pendingTopicRepos';
 import { messageMapKey } from '@/store/chat/utils/messageMapKey';
@@ -325,6 +326,51 @@ describe('ConversationLifecycle actions', () => {
         });
 
         expect(result.current.executeClientAgent).toHaveBeenCalled();
+      });
+
+      it('does not auto-mount chat attachments onto agent knowledge after send', async () => {
+        const { result } = renderHook(() => useChatStore());
+        const addFilesToAgent = vi
+          .spyOn(getAgentStoreState(), 'addFilesToAgent')
+          .mockResolvedValue(undefined as any);
+
+        act(() => {
+          useChatStore.setState({
+            dbMessagesMap: {
+              [messageMapKey(createTestContext())]: [
+                createMockMessage({
+                  id: 'existing-user',
+                  role: 'user',
+                  fileList: [{ id: 'file_chat_1', name: 'chat.docx' }] as any,
+                }),
+              ],
+            },
+          });
+        });
+
+        vi.spyOn(aiChatService, 'sendMessageInServer').mockResolvedValue({
+          messages: [
+            createMockMessage({
+              id: TEST_IDS.USER_MESSAGE_ID,
+              role: 'user',
+              fileList: [{ id: 'file_chat_1', name: 'chat.docx' }] as any,
+            }),
+            createMockMessage({ id: TEST_IDS.ASSISTANT_MESSAGE_ID, role: 'assistant' }),
+          ],
+          topics: [],
+          assistantMessageId: TEST_IDS.ASSISTANT_MESSAGE_ID,
+        } as any);
+
+        await act(async () => {
+          await result.current.sendMessage({
+            message: TEST_CONTENT.USER_MESSAGE,
+            files: [{ id: 'file_chat_1' }] as any,
+            context: createTestContext(),
+          });
+        });
+
+        expect(result.current.executeClientAgent).toHaveBeenCalled();
+        expect(addFilesToAgent).not.toHaveBeenCalled();
       });
 
       it('should persist selected slash skills into user message content before sending', async () => {

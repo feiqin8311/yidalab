@@ -85,6 +85,16 @@ export class ChunkService {
     // skip if already exist chunk tasks
     if (skipExist && result.chunkTaskId) return;
 
+    // Chunking is only for persistent resources (resource page / KB / document).
+    // Never silently upgrade chat attachments — that would pollute the index.
+    const policy = (result as { processingPolicy?: string }).processingPolicy ?? 'on_demand';
+    if (policy !== 'persistent') {
+      throw new Error(
+        `Cannot chunk file "${result.name}" (processingPolicy=${policy}). ` +
+          `Only files uploaded via Resources / Knowledge Base / Document import can be chunked.`,
+      );
+    }
+
     // 1. create a asyncTaskId
     const asyncTaskId = await this.asyncTaskModel.create({
       status: AsyncTaskStatus.Processing,

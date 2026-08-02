@@ -14,6 +14,7 @@ import { useChatStore } from '@/store/chat';
 import { chatPortalSelectors } from '@/store/chat/slices/portal/selectors';
 
 import { parseDingpanUploadResult } from './parseResult';
+import { canWorkspacePreview, resolveArtifactHtml } from './previewSource';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   container: css`
@@ -49,7 +50,7 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
 }));
 
-const UploadHtmlRender = memo<BuiltinRenderProps>(({ content, messageId, pluginState }) => {
+const UploadHtmlRender = memo<BuiltinRenderProps>(({ args, content, messageId, pluginState }) => {
   const { t } = useTranslation('plugin');
   const [openToolUI, closeToolUI, isOpen] = useChatStore((s) => [
     s.openToolUI,
@@ -62,23 +63,27 @@ const UploadHtmlRender = memo<BuiltinRenderProps>(({ content, messageId, pluginS
     [content, pluginState],
   );
 
+  const previewArgs = args as { documentId?: string; html?: string } | undefined;
+  const artifactHtml = resolveArtifactHtml(previewArgs);
+
   const handleCopyLink = useCallback(async () => {
     if (!result.previewUrl) return;
     await copyToClipboard(result.previewUrl);
     message.success(t('builtins.lobe-dingpan.card.copyLinkSuccess'));
   }, [result.previewUrl, t]);
 
-  if (!result.success && !result.previewUrl && !result.documentId) {
+  if (!result.success && !result.previewUrl && !result.documentId && !artifactHtml) {
     // Let the default tool bubble show the raw error string.
     return null;
   }
 
   const title = result.name || t('builtins.lobe-dingpan.card.defaultTitle');
-  const canWorkspacePreview = Boolean(result.documentId);
+  // Preview from message arguments.html (preferred) or legacy documentId.
+  const workspacePreview = canWorkspacePreview(previewArgs, result);
   const canCopyLink = Boolean(result.previewUrl);
 
   const handleWorkspacePreview = () => {
-    if (!canWorkspacePreview) return;
+    if (!workspacePreview) return;
     if (isOpen) {
       closeToolUI();
       return;
@@ -101,7 +106,7 @@ const UploadHtmlRender = memo<BuiltinRenderProps>(({ content, messageId, pluginS
       </Flexbox>
 
       <Flexbox horizontal gap={8} paddingBlock={0} paddingInline={12} style={{ paddingBottom: 12 }}>
-        {canWorkspacePreview ? (
+        {workspacePreview ? (
           <Button
             icon={isOpen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             size={'small'}

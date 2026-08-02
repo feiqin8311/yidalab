@@ -50,6 +50,9 @@ export function defineConfig(config: CustomNextConfig) {
               // `@napi-rs/canvas` is loaded via dynamic `require()` (see packages/file-loaders),
               // which may not be picked up by Next.js output tracing.
               ...dockerCanvasTracingIncludes,
+              // Do NOT list mammoth/word-extractor here: Turbopack NFT hashes those
+              // package roots as files and dies on pnpm dir-links (os error 21 on
+              // @xmldom/xmldom). Runtime copies live in Dockerfile /deps instead.
             ]
           : []),
       ],
@@ -362,6 +365,10 @@ export function defineConfig(config: CustomNextConfig) {
       'pdfjs-dist',
       'ajv',
       'oidc-provider',
+      '@duckdb/node-api',
+      '@duckdb/node-bindings',
+      // Child fork of workbookParseWorker.cjs — keep off Turbopack graph
+      '@lobechat/file-loaders',
     ],
 
     transpilePackages: ['mermaid'],

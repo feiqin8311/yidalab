@@ -256,7 +256,6 @@ export class KnowledgeRepo {
         f.visibility,
         u.id as uploader_id,
         u.username as uploader_username,
-        u.username as uploader_username,
         u.avatar as uploader_avatar,
         'file' as source_type
       FROM ${files} f
@@ -265,6 +264,7 @@ export class KnowledgeRepo {
       LEFT JOIN ${users} u
         ON f.user_id = u.id
       WHERE ${this.fileOwnershipSql('f', accessCtx)}
+        AND f.processing_policy IS DISTINCT FROM ${'on_demand'}
         AND NOT EXISTS (
           SELECT 1 FROM ${knowledgeBaseFiles}
           WHERE ${knowledgeBaseFiles.fileId} = f.id
@@ -292,14 +292,12 @@ export class KnowledgeRepo {
         visibility,
         uploader_id,
         uploader_username,
-        uploader_username,
         uploader_avatar,
         'document' as source_type
       FROM (
         SELECT
           documents.*,
           u.id as uploader_id,
-          u.username as uploader_username,
           u.username as uploader_username,
           u.avatar as uploader_avatar
         FROM ${documents}
@@ -461,7 +459,11 @@ export class KnowledgeRepo {
     }: QueryFileListParams = {},
     accessCtx?: ResourceAccessContext | null,
   ): ReturnType<typeof sql> {
-    const whereConditions: any[] = [this.fileOwnershipSql('f', accessCtx)];
+    // Hide chat on_demand attachments. Legacy null rows stay listable.
+    const whereConditions: any[] = [
+      this.fileOwnershipSql('f', accessCtx),
+      sql`f.processing_policy IS DISTINCT FROM 'on_demand'`,
+    ];
     const scopeSql =
       accessCtx && listScope
         ? buildResourceListScopeRawSql(accessCtx, 'f', 'file', listScope)
@@ -497,7 +499,10 @@ export class KnowledgeRepo {
     // Knowledge base filter
     if (knowledgeBaseId) {
       // Build where conditions using proper table references (f.column instead of files.column)
-      const kbWhereConditions: any[] = [this.fileOwnershipSql('f', accessCtx)];
+      const kbWhereConditions: any[] = [
+        this.fileOwnershipSql('f', accessCtx),
+        sql`f.processing_policy IS DISTINCT FROM 'on_demand'`,
+      ];
       if (scopeSql) kbWhereConditions.push(scopeSql);
 
       // Parent ID filter

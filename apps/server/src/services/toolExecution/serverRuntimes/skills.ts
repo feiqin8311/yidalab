@@ -495,6 +495,18 @@ class SkillServerRuntimeService implements SkillRuntimeService {
       const deviceResult = await this.execScriptOnDevice(command, options.activatedSkills);
       if (deviceResult !== LEGACY_DEVICE_CLIENT) return deviceResult;
 
+      // Version-skew: client predates prepareSkillDirectory. Only fall back to
+      // sandbox when the product gate is on; YidaLab has sandbox off — fail clear.
+      if (!isCloudSandboxExecutionEnabled()) {
+        return {
+          exitCode: 1,
+          output: '',
+          stderr:
+            'Device client is outdated (missing prepareSkillDirectory). Cloud sandbox is disabled in this deployment — update the LobeHub app to run skills on the device. Do not call lobe-cloud-sandbox.',
+          success: false,
+        };
+      }
+
       // Version-skew fallback: the client predates the RPC. Run the sandbox
       // path but disclose the degradation in stderr so the model relays it.
       const sandboxResult = await this.execScriptInSandbox(command, options);

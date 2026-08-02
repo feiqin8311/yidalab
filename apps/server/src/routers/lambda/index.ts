@@ -85,6 +85,7 @@ import { userMemoryRouter } from './userMemory';
 import { verifyRouter } from './verify';
 import { videoRouter } from './video';
 import { webBrowsingRouter } from './webBrowsing';
+import { workbookRouter } from './workbook';
 import { workspaceUserSettingsRouter } from './workspaceUserSettings';
 
 export const lambdaRouter = router({
@@ -115,6 +116,7 @@ export const lambdaRouter = router({
   device: deviceRouter,
   dingpan: dingpanRouter,
   document: documentRouter,
+  workbook: workbookRouter,
   exporter: exporterRouter,
   file: fileRouter,
   followUpAction: followUpActionRouter,

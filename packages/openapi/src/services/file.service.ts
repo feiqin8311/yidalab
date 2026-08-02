@@ -381,7 +381,8 @@ export class FileUploadService extends BaseService {
   }
 
   /**
-   * Batch create associations between knowledge bases and files
+   * Batch create associations between knowledge bases and files.
+   * Shared path: upgrade on_demand → persistent + enqueue ingestion.
    */
   async addFilesToKnowledgeBase(
     knowledgeBaseId: string,
@@ -406,16 +407,11 @@ export class FileUploadService extends BaseService {
         .map((fileId) => ({ fileId, reason: '文件不存在或无权访问' }));
 
       if (ownedIds.length) {
-        await this.db
-          .insert(knowledgeBaseFiles)
-          .values(
-            ownedIds.map((fileId) => ({
-              fileId,
-              knowledgeBaseId,
-              ...this.buildWorkspacePayload({}),
-            })),
-          )
-          .onConflictDoNothing();
+        const { ResourceIngestionService } = await import('@/server/services/resourceIngestion');
+        const ingestion = new ResourceIngestionService(this.db, this.userId, this.workspaceId);
+        await ingestion.addFilesToKnowledgeBase(knowledgeBaseId, ownedIds, {
+          onConflict: 'nothing',
+        });
       }
 
       return {

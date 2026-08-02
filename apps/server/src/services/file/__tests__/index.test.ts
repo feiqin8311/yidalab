@@ -167,6 +167,19 @@ describe('FileService', () => {
 
       expect(mockTempManager.writeTempFile).toHaveBeenCalledWith(mockContent, mockFile.name);
     });
+
+    it('uses a preloaded file record and skips findById', async () => {
+      const mockContent = new Uint8Array([9]);
+      const mockFilePath = '/tmp/preloaded.txt';
+      mockTempManager.writeTempFile.mockResolvedValue(mockFilePath);
+      vi.mocked(service['impl'].getFileByteArray).mockResolvedValue(mockContent);
+
+      const result = await service.downloadFileToLocal('test-file-id', mockFile);
+
+      expect(mockFileModel.findById).not.toHaveBeenCalled();
+      expect(result.filePath).toBe(mockFilePath);
+      expect(mockTempManager.writeTempFile).toHaveBeenCalledWith(mockContent, mockFile.name);
+    });
   });
 
   it('should delegate deleteFile to implementation', async () => {
@@ -396,6 +409,21 @@ describe('FileService', () => {
             filename: 'test.txt',
             path: 'files/test-user/abc/test.txt',
           }),
+        }),
+        expect.any(Boolean),
+      );
+    });
+
+    it('should pass processingPolicy through to createFileRecord', async () => {
+      const content = Buffer.from('bot chat attachment');
+
+      await service.uploadFromBuffer(content, 'text/plain', 'files/test-user/abc/chat.txt', {
+        processingPolicy: 'on_demand',
+      });
+
+      expect(mockFileModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processingPolicy: 'on_demand',
         }),
         expect.any(Boolean),
       );

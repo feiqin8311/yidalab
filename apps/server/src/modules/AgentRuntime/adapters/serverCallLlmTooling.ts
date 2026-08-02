@@ -1,4 +1,5 @@
-import type { AgentState } from '@lobechat/agent-runtime';
+import { type AgentState, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
+import { DingpanDeliveryManifest, DingpanIdentifier } from '@lobechat/builtin-tool-dingpan';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import {
   buildStepSkillDelta,
@@ -23,6 +24,30 @@ export interface ServerCallLlmTooling {
   tools?: ResolvedToolSet['tools'];
 }
 
+/** Bot / dingpan-mode runs keep uploadHtmlToDingpan under forceFinish. */
+const shouldKeepDingpanOnForceFinish = (state: AgentState): boolean => {
+  if (state.metadata?.botContext || state.metadata?.bot) return true;
+  const mode =
+    state.metadata?.htmlDeliveryMode ??
+    state.metadata?.chatConfig?.htmlDeliveryMode ??
+    state.metadata?.agentConfig?.chatConfig?.htmlDeliveryMode;
+  return mode === 'dingpan';
+};
+
+const topicHasSuccessfulDingpanUpload = (state: AgentState): boolean => {
+  const outcomes = extractDingpanUploadOutcomes(
+    (state.messages ?? []).map((message: any) => ({
+      content: message?.content,
+      plugin: message?.plugin ?? {
+        apiName: message?.apiName,
+        identifier: message?.identifier,
+      },
+      role: message?.role,
+    })),
+  );
+  return outcomes.some((o) => o.success && o.previewUrl);
+};
+
 export const resolveServerCallLlmTooling = (
   ctx: Pick<RuntimeExecutorContext, 'operationId' | 'stepIndex'>,
   state: AgentState,
@@ -44,10 +69,19 @@ export const resolveServerCallLlmTooling = (
     tools: state.tools ?? [],
   };
 
+  const deliveryOnly =
+    !!state.forceFinish &&
+    shouldKeepDingpanOnForceFinish(state) &&
+    !topicHasSuccessfulDingpanUpload(state);
+
   const stepDelta = buildStepToolDelta({
-    activeDeviceId,
+    activeDeviceId: deliveryOnly ? undefined : activeDeviceId,
     enabledToolIds: operationToolSet.enabledToolIds,
     forceFinish: state.forceFinish,
+    forceFinishDeliveryManifests: deliveryOnly
+      ? [DingpanDeliveryManifest as unknown as LobeToolManifest]
+      : undefined,
+    forceFinishDeliveryToolIds: deliveryOnly ? [DingpanIdentifier] : undefined,
     localSystemManifest: LocalSystemManifest as unknown as LobeToolManifest,
     operationManifestMap: operationToolSet.manifestMap,
   });

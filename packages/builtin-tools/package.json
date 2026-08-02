@@ -30,6 +30,7 @@
     "@lobechat/builtin-tool-creds": "workspace:*",
     "@lobechat/builtin-tool-dingpan": "workspace:*",
     "@lobechat/builtin-tool-fba-alert": "workspace:*",
+    "@lobechat/builtin-tool-files": "workspace:*",
     "@lobechat/builtin-tool-group-agent-builder": "workspace:*",
     "@lobechat/builtin-tool-group-management": "workspace:*",
     "@lobechat/builtin-tool-knowledge-base": "workspace:*",
@@ -51,6 +52,7 @@
     "@lobechat/builtin-tool-verify": "workspace:*",
     "@lobechat/builtin-tool-web-browsing": "workspace:*",
     "@lobechat/builtin-tool-web-onboarding": "workspace:*",
+    "@lobechat/builtin-tool-workbook": "workspace:*",
     "@lobechat/const": "workspace:*",
     "@lobehub/icons": "^5.10.0"
   },

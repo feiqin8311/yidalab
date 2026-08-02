@@ -144,6 +144,27 @@ describe('buildStepToolDelta', () => {
       expect(delta.deactivatedToolIds).toEqual(['*']);
     });
 
+    it('should keep delivery tool ids when forceFinishDeliveryToolIds set', () => {
+      const dingpanManifest = {
+        api: [{ description: 'upload', name: 'uploadHtmlToDingpan', parameters: {} }],
+        identifier: 'lobe-dingpan',
+        meta: {},
+      };
+      const delta = buildStepToolDelta({
+        enabledToolIds: [],
+        forceFinish: true,
+        forceFinishDeliveryManifests: [dingpanManifest],
+        forceFinishDeliveryToolIds: ['lobe-dingpan'],
+        operationManifestMap: {},
+      });
+
+      expect(delta.deactivatedToolIds).toEqual(['*']);
+      expect(delta.forceFinishDeliveryToolIds).toEqual(['lobe-dingpan']);
+      expect(delta.activatedTools).toEqual([
+        expect.objectContaining({ id: 'lobe-dingpan', source: 'active_tools' }),
+      ]);
+    });
+
     it('should not set deactivatedToolIds when forceFinish is false', () => {
       const delta = buildStepToolDelta({
         enabledToolIds: [],

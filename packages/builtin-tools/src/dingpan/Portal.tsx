@@ -13,6 +13,7 @@ import { useChatStore } from '@/store/chat';
 import { dbMessageSelectors } from '@/store/chat/selectors';
 
 import { parseDingpanUploadResult } from './parseResult';
+import { resolveArtifactHtml, resolveLegacyDocumentId } from './previewSource';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   empty: css`
@@ -40,7 +41,12 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
 }));
 
-const DingpanPortal = memo<BuiltinPortalProps>(({ messageId, state }) => {
+type DingpanPortalArgs = {
+  documentId?: string;
+  html?: string;
+};
+
+const DingpanPortal = memo<BuiltinPortalProps>(({ arguments: portalArgs, messageId, state }) => {
   const { t } = useTranslation('plugin');
   const message = useChatStore(dbMessageSelectors.getDbMessageById(messageId));
 
@@ -54,9 +60,15 @@ const DingpanPortal = memo<BuiltinPortalProps>(({ messageId, state }) => {
     [message?.content, message?.pluginState, state],
   );
 
-  const documentId = result.documentId;
-  const { data, error, isLoading } = useSWR(
-    documentId ? ['dingpan-html-preview', documentId] : null,
+  const args = (portalArgs ?? {}) as DingpanPortalArgs;
+  const artifactHtml = resolveArtifactHtml(args);
+  const documentId = resolveLegacyDocumentId(args, result);
+
+  // Prefer message tool-call HTML (survives resource library wipe). Fall back to
+  // legacy deliverable documents for older rows that only stored documentId.
+  const needsDocFetch = Boolean(documentId);
+  const { data, isLoading } = useSWR(
+    needsDocFetch ? ['dingpan-html-preview', documentId] : null,
     async () => {
       const doc = await documentService.getDocumentById(documentId!);
       if (!doc?.content?.trim()) throw new Error('empty document');
@@ -65,15 +77,25 @@ const DingpanPortal = memo<BuiltinPortalProps>(({ messageId, state }) => {
     { revalidateOnFocus: false },
   );
 
-  if (!documentId) {
+  const html = artifactHtml || data?.content?.trim() || '';
+  const hasPreviewLink = Boolean(result.previewUrl);
+
+  const openDingpanLink = hasPreviewLink ? (
+    <a href={result.previewUrl} rel="noreferrer" target="_blank">
+      {t('builtins.lobe-dingpan.card.openDingpan')}
+    </a>
+  ) : null;
+
+  if (!html && !needsDocFetch) {
     return (
-      <Center className={styles.empty} flex={1}>
+      <Center className={styles.empty} flex={1} gap={8}>
         <Text type={'secondary'}>{t('builtins.lobe-dingpan.portal.noDocument')}</Text>
+        {openDingpanLink}
       </Center>
     );
   }
 
-  if (isLoading) {
+  if (needsDocFetch && isLoading) {
     return (
       <Center className={styles.empty} flex={1}>
         <Text type={'secondary'}>{t('builtins.lobe-dingpan.portal.loading')}</Text>
@@ -81,36 +103,33 @@ const DingpanPortal = memo<BuiltinPortalProps>(({ messageId, state }) => {
     );
   }
 
-  if (error || !data?.content) {
+  if (!html) {
     return (
       <Center className={styles.empty} flex={1} gap={8}>
         <Text type={'secondary'}>{t('builtins.lobe-dingpan.portal.loadFailed')}</Text>
-        {result.previewUrl ? (
-          <a href={result.previewUrl} rel="noreferrer" target="_blank">
-            {t('builtins.lobe-dingpan.card.openDingpan')}
-          </a>
-        ) : null}
+        {openDingpanLink}
       </Center>
     );
   }
 
-  const html = data.content;
   const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(html);
 
   return (
     <Flexbox className={styles.root} gap={8}>
       {result.previewUrl ? (
         <Text
+          title={result.previewUrl}
+          type={'secondary'}
           style={{
             fontSize: 12,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
-          title={result.previewUrl}
-          type={'secondary'}
         >
-          {result.previewUrl}
+          <a href={result.previewUrl} rel="noreferrer" target="_blank">
+            {result.previewUrl}
+          </a>
         </Text>
       ) : null}
       <div className={styles.frame}>

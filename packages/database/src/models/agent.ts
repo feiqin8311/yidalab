@@ -707,10 +707,14 @@ export class AgentModel {
     ]);
 
     return {
-      files: fileResult.map((item) => ({
-        ...item.files,
-        enabled: item.enabled,
-      })),
+      // Chat on_demand attachments must not appear as agent knowledge (paperclip menu).
+      // Legacy null processing_policy rows stay listable (same as FileModel.query).
+      files: fileResult
+        .filter((item) => item.files?.processingPolicy !== 'on_demand')
+        .map((item) => ({
+          ...item.files,
+          enabled: item.enabled,
+        })),
       knowledgeBases: knowledgeBaseResult.map((item) => ({
         ...item.knowledgeBases,
         enabled: item.enabled,
@@ -774,6 +778,23 @@ export class AgentModel {
   };
 
   createAgentFiles = async (agentId: string, fileIds: string[], enabled: boolean = true) => {
+    if (fileIds.length === 0) return;
+
+    // Never mount chat on_demand attachments as agent knowledge.
+    const eligibleRows = await this.db
+      .select({ id: files.id })
+      .from(files)
+      .where(
+        and(
+          inArray(files.id, fileIds),
+          buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, files),
+          sql`${files.processingPolicy} IS DISTINCT FROM ${'on_demand'}`,
+        ),
+      );
+    const eligibleIds = new Set(eligibleRows.map((row) => row.id));
+    const candidateIds = fileIds.filter((fileId) => eligibleIds.has(fileId));
+    if (candidateIds.length === 0) return;
+
     // Exclude the fileIds that already exist in agentsFiles, and then insert them
     const existingFiles = await this.db
       .select({ id: agentsFiles.fileId })
@@ -782,13 +803,13 @@ export class AgentModel {
         and(
           eq(agentsFiles.agentId, agentId),
           this.agentsFilesOwnership(),
-          inArray(agentsFiles.fileId, fileIds),
+          inArray(agentsFiles.fileId, candidateIds),
         ),
       );
 
     const existingFilesIds = new Set(existingFiles.map((item) => item.id));
 
-    const needToInsertFileIds = fileIds.filter((fileId) => !existingFilesIds.has(fileId));
+    const needToInsertFileIds = candidateIds.filter((fileId) => !existingFilesIds.has(fileId));
 
     if (needToInsertFileIds.length === 0) return;
 

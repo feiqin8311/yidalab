@@ -136,6 +136,8 @@ export interface ServerMessagesEngineParams {
   modelDisplayName?: string;
   /** Model knowledge cutoff date, e.g. `2024-06`. Omit when unknown. */
   modelKnowledgeCutoff?: string;
+  /** Model context window — seeds MessagesEngine budget gate. */
+  contextWindowTokens?: number;
 
   /** Page content context (optional, for document editing) */
   pageContentContext?: PageContentContext;

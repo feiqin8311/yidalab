@@ -82,6 +82,44 @@ export class ToolResolver {
 
     // Handle deactivation (e.g. forceFinish strips all tools)
     if (stepDelta.deactivatedToolIds?.includes('*')) {
+      const deliveryIds = stepDelta.forceFinishDeliveryToolIds?.filter(Boolean) ?? [];
+      if (deliveryIds.length > 0) {
+        // Delivery-only forceFinish: keep only named tools (usually lobe-dingpan).
+        const keep = new Set(deliveryIds);
+        const keptEnabled = enabledToolIds.filter((id) => keep.has(id));
+        const keptManifestMap: Record<string, LobeToolManifest> = {};
+        for (const id of keptEnabled) {
+          if (manifestMap[id]) keptManifestMap[id] = manifestMap[id];
+        }
+        // Prefer delivery activation manifests (may be upload-api-only)
+        for (const activation of stepDelta.activatedTools) {
+          if (keep.has(activation.id) && activation.manifest) {
+            keptManifestMap[activation.id] = activation.manifest;
+            if (!keptEnabled.includes(activation.id)) keptEnabled.push(activation.id);
+          }
+        }
+        const keptTools: UniformTool[] = [];
+        const seenNames = new Set<string>();
+        for (const id of keptEnabled) {
+          const m = keptManifestMap[id];
+          if (!m) continue;
+          for (const tool of generateToolsFromManifest(m)) {
+            if (shouldFilterByToolNames && !allowedToolNameSet.has(tool.function.name)) continue;
+            if (seenNames.has(tool.function.name)) continue;
+            seenNames.add(tool.function.name);
+            keptTools.push(tool);
+          }
+        }
+        return {
+          enabledToolIds: keptEnabled,
+          executorMap,
+          manifestMap: { ...manifestMap, ...keptManifestMap },
+          promptManifestMap: keptManifestMap,
+          sourceMap,
+          tools: keptTools,
+        };
+      }
+
       return {
         enabledToolIds: [],
         executorMap,

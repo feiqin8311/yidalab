@@ -1,15 +1,30 @@
 import type { LobeChatDatabase } from '@lobechat/database';
-import type { ChatAudioItem, ChatFileItem, ChatImageItem, ChatVideoItem } from '@lobechat/types';
+import { ALL_FILE_CARDS_MAX_CHARS } from '@lobechat/file-loaders';
+import type {
+  ChatAudioItem,
+  ChatFileItem,
+  ChatFileParseStatus,
+  ChatImageItem,
+  ChatVideoItem,
+  RuntimeDiagnostic,
+} from '@lobechat/types';
 import debug from 'debug';
 
 import { FileModel } from '@/database/models/file';
-import { DocumentService } from '@/server/services/document';
 import { FileService } from '@/server/services/file';
+import {
+  ContextResourceResolver,
+  type ContextResourceResult,
+} from '@/server/services/file/contextResourceResolver';
 
 const log = debug('lobe-server:resolveAttachments');
 
 export interface ResolvedAttachments {
   audioList: ChatAudioItem[];
+  /**
+   * Recoverable parse/tool diagnostics — session continues even if one file fails.
+   */
+  diagnostics: RuntimeDiagnostic[];
   fileList: ChatFileItem[];
   imageList: ChatImageItem[];
   /**
@@ -23,30 +38,58 @@ export interface ResolvedAttachments {
 }
 
 interface ResolveArgs {
+  /** Cap concurrent non-media resolves (default 4). */
+  concurrency?: number;
   db: LobeChatDatabase;
   fileIds: string[];
   userId: string;
   workspaceId?: string;
+  /**
+   * `never` for client prompt hydrate (no DocumentService write / workbook enqueue).
+   * Default `allow` preserves gateway behavior for persistent resources.
+   */
+  writeMode?: 'allow' | 'never';
 }
 
 const dedupe = (ids: string[]) => Array.from(new Set(ids));
 
+/** Exported for concurrency unit tests. */
+export const mapPool = async <T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, concurrency);
+  const results = Array.from({ length: items.length }) as R[];
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await mapper(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+};
+
 /**
  * Resolve fileIds into image/video/file lists for the LLM prompt layer.
  *
- * Images and videos return as-is with a signed URL. Non-media files are
- * parsed via `DocumentService.parseFile` (idempotent) so their text content
- * can be injected by `filesPrompts()`. Missing or unparseable files are
- * skipped and reported in `warnings`.
+ * Uses ContextResourceResolver for non-media files. Pass writeMode='never' so
+ * prompt-time hydrate never writes documents/chunks via DocumentService.parseFile.
  */
 export const resolveAttachmentsByFileIds = async ({
   db,
   fileIds,
   userId,
   workspaceId,
+  writeMode = 'allow',
+  concurrency = 4,
 }: ResolveArgs): Promise<ResolvedAttachments> => {
   const result: ResolvedAttachments = {
     audioList: [],
+    diagnostics: [],
     fileList: [],
     imageList: [],
     orderedFileIds: [],
@@ -58,49 +101,81 @@ export const resolveAttachmentsByFileIds = async ({
   const dedupedFileIds = dedupe(fileIds);
   const fileModel = new FileModel(db, userId, workspaceId);
   const fileService = new FileService(db, userId, workspaceId);
-  const fileRecords = await fileModel.findByIds(dedupedFileIds);
+  // Grant-aware batch (same ACL as findById); access context loaded once.
+  const fileRecords = await fileModel.findReadableByIds(dedupedFileIds);
   if (fileRecords.length === 0) {
     log('no file records found for fileIds=%O', dedupedFileIds);
     return result;
   }
 
-  const documentService = new DocumentService(db, userId, workspaceId);
+  const resolver = new ContextResourceResolver(db, userId, workspaceId);
   const recordById = new Map(fileRecords.map((f) => [f.id, f]));
 
-  // Resolve every file in parallel — URL signing + PDF parsing can both be
-  // I/O-bound, and a serial loop made every extra attachment add latency
-  // before the agent could start running.
-  const resolved = await Promise.all(
-    dedupedFileIds.map(async (id) => {
-      const file = recordById.get(id);
-      if (!file) {
-        return { id, missing: true as const };
-      }
-      const resolvedUrl = (await fileService.getFullFileUrl(file.url)) || file.url;
-      const fileType = file.fileType || '';
-      if (
-        fileType.startsWith('image') ||
-        fileType.startsWith('video') ||
-        fileType.startsWith('audio')
-      ) {
-        return { file, fileType, id, resolvedUrl };
-      }
-      let content: string | undefined;
-      let parseError: unknown;
-      try {
-        const document = await documentService.parseFile(file.id);
-        content = document.content ?? undefined;
-      } catch (error) {
-        parseError = error;
-      }
-      return { content, file, fileType, id, parseError, resolvedUrl };
-    }),
-  );
+  const resolved = await mapPool(dedupedFileIds, concurrency, async (id) => {
+    const file = recordById.get(id);
+    if (!file) {
+      return { id, missing: true as const };
+    }
+    const resolvedUrl = (await fileService.getFullFileUrl(file.url)) || file.url;
+    const fileType = file.fileType || '';
+    if (
+      fileType.startsWith('image') ||
+      fileType.startsWith('video') ||
+      fileType.startsWith('audio')
+    ) {
+      return { file, fileType, id, resolvedUrl };
+    }
+
+    try {
+      const ctx = await resolver.resolveForPrompt(
+        file.id,
+        {},
+        {
+          file: {
+            fileType: file.fileType || '',
+            id: file.id,
+            name: file.name || 'file',
+            processingPolicy: (file as { processingPolicy?: string | null }).processingPolicy,
+            size: file.size ?? null,
+            url: file.url,
+          },
+          ...(writeMode === 'never' ? { writeMode: 'never' as const } : {}),
+        },
+      );
+      return {
+        content: ctx.content,
+        diagnostic: ctx.diagnostic,
+        file,
+        fileType,
+        id,
+        parseStatus: ctx.parseStatus,
+        resolvedUrl,
+        resolveStatus: ctx.status,
+        warnings: ctx.warnings,
+      };
+    } catch (error) {
+      return {
+        file,
+        fileType,
+        id,
+        parseError: error,
+        resolvedUrl,
+      };
+    }
+  });
+
+  let cardBudget = ALL_FILE_CARDS_MAX_CHARS;
 
   for (const entry of resolved) {
     if ('missing' in entry) {
       result.warnings.push(`Attachment "${entry.id}" was not found and skipped.`);
       continue;
+    }
+    if ('diagnostic' in entry && entry.diagnostic) {
+      result.diagnostics.push(entry.diagnostic);
+    }
+    if ('warnings' in entry && entry.warnings?.length) {
+      result.warnings.push(...entry.warnings);
     }
     const { file, fileType, resolvedUrl } = entry;
     result.orderedFileIds.push(file.id);
@@ -116,17 +191,51 @@ export const resolveAttachmentsByFileIds = async ({
       result.audioList.push({ alt: file.name || 'audio', id: file.id, url: resolvedUrl });
       continue;
     }
-    if (entry.parseError) {
-      log('parseFile failed for %s (id=%s): %O', file.name, file.id, entry.parseError);
+    if (entry.parseError && !entry.content) {
+      log('resolve failed for %s (id=%s): %O', file.name, file.id, entry.parseError);
       result.warnings.push(
         `File "${file.name || 'unknown'}" was attached but its contents could not be extracted.`,
       );
     }
+
+    let content = entry.content;
+    if (content && content.length > cardBudget) {
+      content = `${content.slice(0, Math.max(0, cardBudget))}\n…[attachment card budget]`;
+    }
+    if (content) cardBudget = Math.max(0, cardBudget - content.length);
+
+    // Explicit empty body so the model does not treat a bare file URL as crawlable text.
+    if (!content) {
+      const reason =
+        entry.warnings?.join('; ') ||
+        (entry.parseError instanceof Error ? entry.parseError.message : undefined) ||
+        'no extractable text';
+      content = `Attachment "${file.name || file.id}" could not provide inline text (${reason}). Do not download/crawl the file URL (binary). Ask for pasted text or .txt/.md, or upload via Resources.`;
+      result.warnings.push(
+        `File "${file.name || 'unknown'}" had no extractable text for the prompt.`,
+      );
+    }
+
+    // Prefer structured parseStatus; fall back to ContextResourceResolver status
+    // so partial/failed/unsupported cards can advertise lobe-files tools.
+    const resolveStatus =
+      'resolveStatus' in entry
+        ? (entry.resolveStatus as ContextResourceResult['status'] | undefined)
+        : undefined;
+    const parseStatus = (entry.parseStatus ??
+      (resolveStatus === 'ready' ||
+      resolveStatus === 'partial' ||
+      resolveStatus === 'failed' ||
+      resolveStatus === 'unsupported'
+        ? resolveStatus
+        : undefined)) as ChatFileParseStatus | undefined;
+
     result.fileList.push({
-      content: entry.content,
+      content,
       fileType: fileType || 'application/octet-stream',
       id: file.id,
       name: file.name || 'file',
+      parseStatus,
       size: file.size ?? 0,
       url: resolvedUrl,
     });
@@ -146,7 +255,7 @@ export const resolveAttachmentsByFileIds = async ({
 
 /**
  * Metadata-only resolver for UI rendering (CommentCard, TaskInstruction) and
- * prompt rendering (buildTaskPrompt). Skips `DocumentService.parseFile` so it
+ * prompt rendering (buildTaskPrompt). Skips content extraction so it
  * stays fast and does not block on large PDFs. Items returned in caller order;
  * missing files are dropped.
  *
@@ -172,19 +281,19 @@ export const resolveAttachmentMetadata = async ({
 
   const fileService = signUrls ? new FileService(db, userId, workspaceId) : null;
   const recordById = new Map(fileRecords.map((f) => [f.id, f]));
-  const items = await Promise.all(
-    dedupedFileIds.map(async (id) => {
-      const file = recordById.get(id);
-      if (!file) return undefined;
-      const url = fileService ? (await fileService.getFullFileUrl(file.url)) || file.url : file.url;
-      return {
-        fileType: file.fileType || 'application/octet-stream',
-        id: file.id,
-        name: file.name || 'file',
-        size: file.size ?? 0,
-        url,
-      } satisfies ChatFileItem;
-    }),
-  );
-  return items.filter((it): it is ChatFileItem => !!it);
+  const items: ChatFileItem[] = [];
+  for (const id of dedupedFileIds) {
+    const file = recordById.get(id);
+    if (!file) continue;
+    const url = fileService ? (await fileService.getFullFileUrl(file.url)) || file.url : file.url;
+    items.push({
+      fileType: file.fileType || 'application/octet-stream',
+      id: file.id,
+      name: file.name || 'file',
+      parseStatus: (file as { parseStatus?: ChatFileParseStatus }).parseStatus,
+      size: file.size ?? 0,
+      url,
+    });
+  }
+  return items;
 };

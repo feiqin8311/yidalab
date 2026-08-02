@@ -15,6 +15,16 @@ export interface BuildStepToolDeltaParams {
    */
   forceFinish?: boolean;
   /**
+   * Optional upload-only (or full) manifests for delivery tools that are not
+   * already in operationManifestMap / enabledToolIds.
+   */
+  forceFinishDeliveryManifests?: LobeToolManifest[];
+  /**
+   * When forceFinish is true, keep only these tool ids (delivery-only mode).
+   * Typical: `['lobe-dingpan']` so uploadHtmlToDingpan can still run.
+   */
+  forceFinishDeliveryToolIds?: string[];
+  /**
    * The local-system manifest to inject when device is active.
    * Passed in to avoid a hard dependency on @lobechat/builtin-tool-local-system.
    */
@@ -61,9 +71,21 @@ export function buildStepToolDelta(params: BuildStepToolDeltaParams): StepToolDe
     }
   }
 
-  // forceFinish → strip all tools
+  // forceFinish → strip tools; optionally keep delivery-only tools (钉盘 upload)
   if (params.forceFinish) {
     delta.deactivatedToolIds = ['*'];
+    const deliveryIds = params.forceFinishDeliveryToolIds?.filter(Boolean) ?? [];
+    if (deliveryIds.length > 0) {
+      delta.forceFinishDeliveryToolIds = deliveryIds;
+      const enabledSetForDelivery = new Set(params.enabledToolIds);
+      for (const id of deliveryIds) {
+        if (enabledSetForDelivery.has(id) || params.operationManifestMap[id]) continue;
+        const manifest = params.forceFinishDeliveryManifests?.find((m) => m.identifier === id);
+        if (manifest) {
+          delta.activatedTools.push({ id, manifest, source: 'active_tools' });
+        }
+      }
+    }
   }
 
   return delta;

@@ -20,9 +20,10 @@ import {
   scrubFakeUploadProgressNarration,
   shouldEnsureDingpanForBotReply,
 } from './botDingpanDeliveryHeuristic';
+import { ensureDingpanDeliverable } from './ensureDingpanDeliverable';
 
 const MISSING_REPORT_NOTE =
-  '说明：本轮未调用 uploadHtmlToDingpan，Web 话题里可能也没有完整 HTML 报告。请重试，或到 Web 打开同一话题查看中间结果。';
+  '说明：本轮未能上传钉盘报告（系统补交付也未成功）。请到 YidaLab 打开同一话题查看中间结果后重试。';
 
 const MAX_RELAY_CHARS = 1200;
 
@@ -45,6 +46,8 @@ export const compactBotRelayText = (reply: string, maxChars = MAX_RELAY_CHARS): 
 
   // Drop markdown link wrappers → bare URL (IM has no MD)
   text = text.replaceAll(/\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g, '$2');
+  // CommonMark autolink <https://...> — DingTalk shows the brackets as literal junk
+  text = text.replaceAll(/<(https?:\/\/[^>\s]+)>/g, '$1');
 
   if (text.length <= maxChars) return text;
 
@@ -110,8 +113,19 @@ export async function prepareBotOutboundReply(params: {
       return compactBotRelayText(reply);
     }
 
-    // Report-class answer without upload: do not pretend full report delivered.
-    if (shouldEnsureDingpanForBotReply(reply)) {
+    // Report-class without upload: system upload (not model-dependent).
+    if (shouldEnsureDingpanForBotReply(reply) && topicId) {
+      const ensured = await ensureDingpanDeliverable({
+        db,
+        reply,
+        topicId,
+        userId,
+        workspaceId,
+      });
+      if (ensured.previewUrl) {
+        reply = `${reply.trim()}\n\n钉盘报告：\n${ensured.previewUrl}`;
+        return compactBotRelayText(reply);
+      }
       if (
         reply.includes('未调用') ||
         reply.includes('uploadHtmlToDingpan') ||
@@ -119,7 +133,10 @@ export async function prepareBotOutboundReply(params: {
       ) {
         return compactBotRelayText(reply);
       }
-      return compactBotRelayText(`${reply.trim()}\n\n${MISSING_REPORT_NOTE}`);
+      const failNote = ensured.error
+        ? `${MISSING_REPORT_NOTE}\n原因：${ensured.error.slice(0, 160)}`
+        : MISSING_REPORT_NOTE;
+      return compactBotRelayText(`${reply.trim()}\n\n${failNote}`);
     }
 
     return compactBotRelayText(reply);

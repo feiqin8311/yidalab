@@ -66,6 +66,17 @@ AUTH_DINGTALK_CORP_ID=
 # TELEMETRY_DISABLED=1
 ```
 
+## 生产发版
+
+**服务器不编译。** push → GitHub Actions 构建镜像 → SSH 部署到 `116.205.229.31`。
+
+```bash
+git push origin main # 或 codex/yidalab-custom
+# Actions：「YidaLab Production Image」（约 15–25 分钟）
+```
+
+说明：[scripts/ops/deploy/README.md](./scripts/ops/deploy/README.md)
+
 ## 分支
 
 本仓库产品分支：`main`（`feiqin8311/yidalab`）。\

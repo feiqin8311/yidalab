@@ -16,15 +16,19 @@ import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
 import type { LobeDocumentPage } from '@/types/document';
-import type { FileSource } from '@/types/files';
+import type { FileSource, ResourcePersistReason, ResourceProcessingPolicy } from '@/types/files';
 
 import { idGenerator, randomSlug } from '../utils/idGenerator';
-import { accessedAt, createdAt, timestamps } from './_helpers';
+import { accessedAt, createdAt, timestamps, timestamptz } from './_helpers';
 import { asyncTasks } from './asyncTask';
 import { users } from './user';
 import { workspaces } from './workspace';
 
 export const DOCUMENT_FOLDER_TYPE = 'custom/folder';
+
+/** Chat-attachment structured parse lifecycle (workbooks first). */
+export type FileParseStatus =
+  'uploaded' | 'queued' | 'parsing' | 'ready' | 'failed' | 'unsupported';
 
 /** File type used by the parent document for a managed skill bundle. */
 export const SKILL_BUNDLE_FILE_TYPE = 'skills/bundle';
@@ -206,6 +210,32 @@ export const files = pgTable(
       onDelete: 'set null',
     }),
 
+    /**
+     * Structured parse lifecycle for chat attachments (esp. workbooks).
+     * uploaded → queued → parsing → ready | failed | unsupported
+     */
+    parseStatus: text('parse_status').$type<FileParseStatus>().default('uploaded'),
+    /** Human/machine parse failure detail when parseStatus=failed */
+    parseError: text('parse_error'),
+    /** Parser implementation version for idempotent rebuilds */
+    parserVersion: text('parser_version'),
+    parseTaskId: uuid('parse_task_id').references(() => asyncTasks.id, {
+      onDelete: 'set null',
+    }),
+    parsedAt: timestamptz('parsed_at'),
+
+    /**
+     * Content processing policy. Authoritative gate for long-lived documents /
+     * chunks / embeddings / workbook assets. Chat attachments use `on_demand`.
+     * Null = legacy rows (treated as listable in the resource browser until
+     * backfilled); createFile always writes an explicit value for new rows.
+     */
+    processingPolicy: text('processing_policy').$type<ResourceProcessingPolicy>(),
+    /** Why persistent processing was requested (audit). */
+    persistReason: text('persist_reason').$type<ResourcePersistReason>(),
+    /** First time persistent processing was requested. */
+    processingRequestedAt: timestamptz('processing_requested_at'),
+
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     /**
@@ -228,6 +258,13 @@ export const files = pgTable(
       parentIdIdx: index('files_parent_id_idx').on(table.parentId),
       chunkTaskIdIdx: index('files_chunk_task_id_idx').on(table.chunkTaskId),
       embeddingTaskIdIdx: index('files_embedding_task_id_idx').on(table.embeddingTaskId),
+      parseStatusIdx: index('files_parse_status_idx').on(table.parseStatus),
+      parseTaskIdIdx: index('files_parse_task_id_idx').on(table.parseTaskId),
+      processingPolicyIdx: index('files_processing_policy_idx').on(table.processingPolicy),
+      processingPolicyParseStatusIdx: index('files_processing_policy_parse_status_idx').on(
+        table.processingPolicy,
+        table.parseStatus,
+      ),
       clientIdUnique: uniqueIndex('files_client_id_user_id_unique').on(
         table.clientId,
         table.userId,
@@ -243,6 +280,128 @@ export const files = pgTable(
 );
 export type NewFile = typeof files.$inferInsert;
 export type FileItem = typeof files.$inferSelect;
+
+/** Workbook-level structured parse result (one row per file). */
+export interface FileWorkbookManifestSheet {
+  columnCount: number;
+  columns: string[];
+  name: string;
+  rowCount: number;
+  /** Budgeted sample rows for prompt cards (not full data). */
+  sampleRows: Record<string, string>[];
+  sheetIndex: number;
+}
+
+export interface FileWorkbookManifest {
+  /** When true, sheets/columns were capped at parse time. */
+  coverage?: {
+    columnsCapped?: boolean;
+    sheetsCapped?: boolean;
+    sourceSheetCount?: number;
+  };
+  fileName?: string;
+  parserVersion: string;
+  sheetCount: number;
+  sheets: FileWorkbookManifestSheet[];
+  totalRows: number;
+  /** Approximate tokens if the whole workbook were inlined as markdown. */
+  unrestrictedTokenEstimate?: number;
+}
+
+export const fileWorkbooks = pgTable(
+  'file_workbooks',
+  {
+    id: text('id')
+      .$defaultFn(() => idGenerator('files', 16))
+      .primaryKey(),
+    fileId: text('file_id')
+      .references(() => files.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    parserVersion: text('parser_version').notNull(),
+    /**
+     * Monotonic publish generation. Workers write assets under this id;
+     * only the generation that completes may flip status to ready.
+     */
+    generationId: text('generation_id'),
+    status: text('status').$type<FileParseStatus>().notNull().default('ready'),
+    sheetCount: integer('sheet_count').notNull().default(0),
+    totalRows: integer('total_rows').notNull().default(0),
+    tokenEstimate: integer('token_estimate'),
+    manifest: jsonb('manifest').$type<FileWorkbookManifest>(),
+    error: text('error'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('file_workbooks_file_id_parser_version_unique').on(t.fileId, t.parserVersion),
+    index('file_workbooks_file_id_idx').on(t.fileId),
+    index('file_workbooks_user_id_idx').on(t.userId),
+    index('file_workbooks_workspace_id_idx').on(t.workspaceId),
+    index('file_workbooks_status_idx').on(t.status),
+  ],
+);
+
+export type NewFileWorkbook = typeof fileWorkbooks.$inferInsert;
+export type FileWorkbookItem = typeof fileWorkbooks.$inferSelect;
+
+export interface FileSheetColumnMeta {
+  name: string;
+}
+
+/**
+ * Per-sheet query asset. Full rows live in `storage_key` (S3 JSONL) or
+ * small-sheet `inline_jsonl` — never re-parse the original XLSX on query.
+ */
+export const fileSheetAssets = pgTable(
+  'file_sheet_assets',
+  {
+    id: text('id')
+      .$defaultFn(() => idGenerator('files', 16))
+      .primaryKey(),
+    workbookId: text('workbook_id')
+      .references(() => fileWorkbooks.id, { onDelete: 'cascade' })
+      .notNull(),
+    fileId: text('file_id')
+      .references(() => files.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    sheetName: text('sheet_name').notNull(),
+    sheetIndex: integer('sheet_index').notNull().default(0),
+    rowCount: integer('row_count').notNull().default(0),
+    columnCount: integer('column_count').notNull().default(0),
+    columns: jsonb('columns').$type<FileSheetColumnMeta[]>().notNull().default([]),
+    /** S3 key for sheet body (jsonl or future parquet) */
+    storageKey: text('storage_key'),
+    /** Small sheets only — full JSONL body when under inline cap */
+    inlineJsonl: text('inline_jsonl'),
+    /**
+     * Asset encoding: `jsonl` (default) or `parquet` (DuckDB path, future).
+     * Query layer switches on this flag — never re-open XLSX.
+     */
+    format: text('format').$type<'jsonl' | 'parquet'>().notNull().default('jsonl'),
+    generationId: text('generation_id'),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('file_sheet_assets_workbook_sheet_gen_unique').on(
+      t.workbookId,
+      t.sheetName,
+      t.generationId,
+    ),
+    index('file_sheet_assets_file_id_idx').on(t.fileId),
+    index('file_sheet_assets_workbook_id_idx').on(t.workbookId),
+    index('file_sheet_assets_user_id_idx').on(t.userId),
+  ],
+);
+
+export type NewFileSheetAsset = typeof fileSheetAssets.$inferInsert;
+export type FileSheetAssetItem = typeof fileSheetAssets.$inferSelect;
 
 /** Knowledge-base visibility — shared by column def and insert schema. */
 export const KNOWLEDGE_BASE_VISIBILITY = ['private', 'public'] as const;

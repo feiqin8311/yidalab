@@ -875,6 +875,34 @@
       "when": 1784789678984,
       "tag": "0124_company_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1785422558978,
+      "tag": "0125_file_workbook_structured_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1785430000000,
+      "tag": "0126_file_workbook_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1785464778406,
+      "tag": "0127_file_processing_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1785486000000,
+      "tag": "0128_cleanup_on_demand_agents_files",
+      "breakpoints": true
     }
   ],
   "version": "6"

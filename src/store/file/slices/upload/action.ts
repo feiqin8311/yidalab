@@ -34,6 +34,19 @@ interface UploadWithProgressParams {
   onStatusUpdate?: OnStatusUpdate;
   parentId?: string;
   /**
+   * Placement intent for the upload (message attachment vs resource library).
+   */
+  placementType?:
+    | 'message_attachment'
+    | 'resource_library'
+    | 'knowledge_base'
+    | 'document_asset'
+    | 'agent_knowledge';
+  /**
+   * Content processing policy. Chat uses `on_demand`; library/KB uses `persistent`.
+   */
+  processingPolicy?: 'none' | 'on_demand' | 'persistent';
+  /**
    * Optional flag to indicate whether to skip the file type check.
    * When set to `true`, any file type checks will be bypassed.
    * Default is `false`, which means file type checks will be performed.
@@ -131,6 +144,8 @@ export class FileUploadActionImpl {
     skipCheckFileType,
     parentId,
     source,
+    processingPolicy,
+    placementType,
     uploadId,
     abortController,
     visibility,
@@ -224,6 +239,22 @@ export class FileUploadActionImpl {
       const fileUrl = metadata.path || checkStatus.url;
       if (!fileUrl) throw new Error('File upload failed: missing file url');
 
+      const resolvedPolicy =
+        processingPolicy ??
+        (knowledgeBaseId || parentId || placementType === 'resource_library'
+          ? 'persistent'
+          : placementType === 'message_attachment'
+            ? 'on_demand'
+            : undefined);
+
+      const resolvedPlacement =
+        placementType ??
+        (knowledgeBaseId
+          ? ('knowledge_base' as const)
+          : parentId
+            ? ('resource_library' as const)
+            : undefined);
+
       const data = await fileService.createFile(
         {
           fileType,
@@ -231,6 +262,8 @@ export class FileUploadActionImpl {
           metadata: { ...metadata, ...dimensions },
           name: normalizedFile.name,
           parentId,
+          ...(resolvedPolicy ? { processingPolicy: resolvedPolicy } : {}),
+          ...(resolvedPlacement ? { placementType: resolvedPlacement } : {}),
           size: normalizedFile.size,
           source,
           url: fileUrl,

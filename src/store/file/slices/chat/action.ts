@@ -7,7 +7,6 @@ import { t } from 'i18next';
 import { notification } from '@/components/AntdStaticMethods';
 import { FILE_UPLOAD_BLACKLIST } from '@/const/file';
 import { fileService } from '@/services/file';
-import { ragService } from '@/services/rag';
 import { UPLOAD_NETWORK_ERROR } from '@/services/upload';
 import { getAgentStoreState } from '@/store/agent';
 import { agentByIdSelectors } from '@/store/agent/selectors';
@@ -16,7 +15,6 @@ import { uploadFileListReducer } from '@/store/file/reducers/uploadFileList';
 import { type StoreSetter } from '@/store/types';
 import { type FileListItem } from '@/types/files';
 import { type UploadFileItem } from '@/types/files/upload';
-import { isChunkingUnsupported } from '@/utils/isChunkingUnsupported';
 import { sleep } from '@/utils/sleep';
 import { setNamespace } from '@/utils/storeDebug';
 
@@ -216,6 +214,8 @@ export class FileActionImpl {
         fileResult = await this.#get().uploadWithProgress({
           file,
           onStatusUpdate: dispatchChatUploadFileList,
+          placementType: 'message_attachment',
+          processingPolicy: 'on_demand',
         });
       } catch (error) {
         // skip `UNAUTHORIZED` error
@@ -228,12 +228,10 @@ export class FileActionImpl {
         dispatchChatUploadFileList({ id: file.name, type: 'removeFile' });
       }
 
-      if (!fileResult) return;
-
-      // image don't need to be chunked and embedding
-      if (isChunkingUnsupported(file.type)) return;
-
-      await ragService.parseFileContent(fileResult.id);
+      // Chat attachments stay on-demand: original blob is kept for history /
+      // re-ask; prompt-time content comes from ContextResourceResolver.
+      // Do NOT call ragService.parseFileContent — that writes documents/chunks.
+      void fileResult;
     });
 
     await Promise.all(pools);

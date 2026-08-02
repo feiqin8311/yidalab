@@ -7,10 +7,18 @@ import debug from 'debug';
 
 import { BaseProcessor } from '../base/BaseProcessor';
 import type { PipelineContext, ProcessorOptions } from '../types';
+import {
+  DEFAULT_CONTEXT_INPUT_BUDGET,
+  estimateTokensFromMessages,
+  evaluateContextBudgetGate,
+  stripFileBodiesFromMessages,
+} from '../utils/contextBudgetGate';
 
 declare module '../types' {
   interface PipelineContextMetadataOverrides {
     assistantMessagesProcessed?: number;
+    contextBudgetGate?: { action: string; reason?: string };
+    estimatedContextTokens?: number;
     messageContentProcessed?: number;
     toolMessagesProcessed?: number;
     userMessagesProcessed?: number;
@@ -101,6 +109,10 @@ export class MessageContentProcessor extends BaseProcessor {
 
   protected async doProcess(context: PipelineContext): Promise<PipelineContext> {
     const clonedContext = this.cloneContext(context);
+    const maxTokens =
+      typeof clonedContext.metadata.maxTokens === 'number' && clonedContext.metadata.maxTokens > 0
+        ? clonedContext.metadata.maxTokens
+        : DEFAULT_CONTEXT_INPUT_BUDGET;
 
     let processedCount = 0;
     let userMessagesProcessed = 0;
@@ -142,6 +154,30 @@ export class MessageContentProcessor extends BaseProcessor {
         log.extend('error')(`Error processing message ${message.id} content: ${error}`);
         // Continue processing other messages
       }
+    }
+
+    // Final preflight: conservative token estimate → soft strip → re-count → hard reject.
+    let estimatedTokens = estimateTokensFromMessages(clonedContext.messages);
+    let gate = evaluateContextBudgetGate({ estimatedTokens, maxTokens });
+
+    if (gate.action === 'strip_file_bodies' || gate.action === 'reject') {
+      log('context budget gate %s (pre-strip): %s', gate.action, gate.reason);
+      clonedContext.messages = stripFileBodiesFromMessages(clonedContext.messages);
+      estimatedTokens = estimateTokensFromMessages(clonedContext.messages);
+      gate = evaluateContextBudgetGate({ estimatedTokens, maxTokens });
+      log(
+        'context budget gate after strip: action=%s tokens=%d max=%d',
+        gate.action,
+        estimatedTokens,
+        maxTokens,
+      );
+    }
+
+    clonedContext.metadata.contextBudgetGate = gate;
+    clonedContext.metadata.estimatedContextTokens = estimatedTokens;
+
+    if (gate.action === 'reject') {
+      return this.abort(clonedContext, gate.reason);
     }
 
     // Update metadata

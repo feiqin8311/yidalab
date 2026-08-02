@@ -37,12 +37,6 @@ vi.mock('@/components/AntdStaticMethods', () => ({
   },
 }));
 
-vi.mock('@/services/rag', () => ({
-  ragService: {
-    parseFileContent: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
 vi.mock('i18next', () => ({
   t: (key: string, options?: { reason?: string }) => {
     if (key === 'upload.permissionDenied') {
@@ -144,6 +138,40 @@ describe('useFileStore:chat', () => {
 
     expect(toast.error).not.toHaveBeenCalled();
     expect(uploadWithProgress).toHaveBeenCalledTimes(1);
+    expect(uploadWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        placementType: 'message_attachment',
+        processingPolicy: 'on_demand',
+      }),
+    );
+  });
+
+  it('uploadChatFiles should not trigger persistent parse after upload', async () => {
+    mockAgentMode({ enableAgentMode: true, heterogeneous: false });
+
+    const { result } = renderHook(() => useStore());
+    const uploadWithProgress = vi.fn().mockResolvedValue({ id: 'file-pdf', url: 'http://x/pdf' });
+
+    act(() => {
+      useStore.setState({
+        chatUploadFileList: [],
+        uploadWithProgress: uploadWithProgress as any,
+      });
+    });
+
+    await act(async () => {
+      await result.current.uploadChatFiles(
+        [new File(['%PDF'], 'doc.pdf', { type: 'application/pdf' })],
+        AGENT_ID,
+      );
+    });
+
+    expect(uploadWithProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        placementType: 'message_attachment',
+        processingPolicy: 'on_demand',
+      }),
+    );
   });
 
   it('uploadChatFiles should allow any file type for heterogeneous agents', async () => {

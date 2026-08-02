@@ -205,6 +205,80 @@ describe('KnowledgeBaseModel', () => {
       expect(addedFiles).toHaveLength(2);
     });
 
+    it('upgrades on_demand files to persistent with knowledge_base reason', async () => {
+      await serverDB.insert(globalFiles).values([
+        {
+          hashId: 'hash_on_demand',
+          url: 'https://example.com/chat.pdf',
+          size: 1000,
+          fileType: 'application/pdf',
+          creator: userId,
+        },
+      ]);
+      await serverDB.insert(files).values({
+        id: 'file-on-demand',
+        name: 'chat.pdf',
+        url: 'https://example.com/chat.pdf',
+        fileHash: 'hash_on_demand',
+        size: 1000,
+        fileType: 'application/pdf',
+        userId,
+        processingPolicy: 'on_demand',
+        persistReason: null,
+      });
+
+      const { id: knowledgeBaseId } = await knowledgeBaseModel.create({ name: 'KB Upgrade' });
+      const result = await knowledgeBaseModel.addFilesToKnowledgeBase(knowledgeBaseId, [
+        'file-on-demand',
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect((result as { upgradedFileIds?: string[] }).upgradedFileIds).toEqual([
+        'file-on-demand',
+      ]);
+
+      const file = await serverDB.query.files.findFirst({
+        where: eq(files.id, 'file-on-demand'),
+      });
+      expect(file?.processingPolicy).toBe('persistent');
+      expect(file?.persistReason).toBe('knowledge_base');
+      expect(file?.processingRequestedAt).toBeTruthy();
+    });
+
+    it('does not re-upgrade already-persistent files', async () => {
+      await serverDB.insert(globalFiles).values([
+        {
+          hashId: 'hash_persistent',
+          url: 'https://example.com/res.pdf',
+          size: 1000,
+          fileType: 'application/pdf',
+          creator: userId,
+        },
+      ]);
+      await serverDB.insert(files).values({
+        id: 'file-persistent',
+        name: 'res.pdf',
+        url: 'https://example.com/res.pdf',
+        fileHash: 'hash_persistent',
+        size: 1000,
+        fileType: 'application/pdf',
+        userId,
+        processingPolicy: 'persistent',
+        persistReason: 'resource_upload',
+      });
+
+      const { id: knowledgeBaseId } = await knowledgeBaseModel.create({ name: 'KB Persist' });
+      const result = await knowledgeBaseModel.addFilesToKnowledgeBase(knowledgeBaseId, [
+        'file-persistent',
+      ]);
+
+      expect((result as { upgradedFileIds?: string[] }).upgradedFileIds).toEqual([]);
+      const file = await serverDB.query.files.findFirst({
+        where: eq(files.id, 'file-persistent'),
+      });
+      expect(file?.persistReason).toBe('resource_upload');
+    });
+
     it('should add documents (with docs_ prefix) to a knowledge base by resolving to file IDs', async () => {
       await serverDB.insert(globalFiles).values([
         {
@@ -343,6 +417,49 @@ describe('KnowledgeBaseModel', () => {
         where: eq(knowledgeBaseFiles.knowledgeBaseId, victimKbId),
       });
       expect(kbFiles).toHaveLength(0);
+    });
+
+    it("should NOT allow linking another user's file into own knowledge base (IDOR)", async () => {
+      await serverDB.insert(globalFiles).values([
+        {
+          hashId: 'hash_victim_file',
+          url: 'https://example.com/victim-secret.pdf',
+          size: 2000,
+          fileType: 'application/pdf',
+          creator: 'user2',
+        },
+      ]);
+      await serverDB.insert(files).values([
+        {
+          id: 'file_victim',
+          name: 'victim-secret.pdf',
+          url: 'https://example.com/victim-secret.pdf',
+          fileHash: 'hash_victim_file',
+          size: 2000,
+          fileType: 'application/pdf',
+          userId: 'user2',
+          processingPolicy: 'on_demand',
+        },
+      ]);
+
+      const { id: attackerKbId } = await knowledgeBaseModel.create({ name: 'Attacker KB' });
+      const result = await knowledgeBaseModel.addFilesToKnowledgeBase(attackerKbId, [
+        'file_victim',
+      ]);
+
+      expect(result).toHaveLength(0);
+      expect((result as { upgradedFileIds?: string[] }).upgradedFileIds ?? []).toEqual([]);
+
+      const kbFiles = await serverDB.query.knowledgeBaseFiles.findMany({
+        where: eq(knowledgeBaseFiles.knowledgeBaseId, attackerKbId),
+      });
+      expect(kbFiles).toHaveLength(0);
+
+      const victimFile = await serverDB.query.files.findFirst({
+        where: eq(files.id, 'file_victim'),
+      });
+      expect(victimFile?.processingPolicy).toBe('on_demand');
+      expect(victimFile?.userId).toBe('user2');
     });
 
     it("should NOT allow adding documents to another user's knowledge base (IDOR)", async () => {

@@ -102,7 +102,12 @@ RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
     mkdir -p /deps && \
     cd /deps && \
     echo '{"name":"deps","private":true}' > package.json && \
-    pnpm add --ignore-workspace pg drizzle-orm
+    pnpm add --ignore-workspace \
+      pg \
+      drizzle-orm \
+      mammoth@^1.12.0 \
+      word-extractor@^1.0.4 \
+      xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
 COPY . .
 
@@ -134,12 +139,25 @@ COPY --from=builder /app/scripts/migrateServerDB/errorHint.js /app/errorHint.js
 COPY --from=builder /deps/node_modules/.pnpm /app/node_modules/.pnpm
 COPY --from=builder /deps/node_modules/pg /app/node_modules/pg
 COPY --from=builder /deps/node_modules/drizzle-orm /app/node_modules/drizzle-orm
+COPY --from=builder /deps/node_modules/xlsx /app/node_modules/xlsx
+# docx/doc parsers — @lobechat/file-loaders is serverExternal + dynamic import; standalone
+# tracing may omit these (same class of bug as xlsx before WORKBOOK_PARSE_WORKER_PATH).
+COPY --from=builder /deps/node_modules/mammoth /app/node_modules/mammoth
+COPY --from=builder /deps/node_modules/word-extractor /app/node_modules/word-extractor
 
 # Copy server launcher and shared scripts
 COPY --from=builder /app/scripts/serverLauncher/startServer.js /app/startServer.js
 COPY --from=builder /app/scripts/_shared /app/scripts/_shared
+# Stable path for Excel child process (standalone tracing may omit monorepo package layout)
+COPY --from=builder /app/packages/file-loaders/src/loaders/excel/workbookParseWorker.cjs /app/workbookParseWorker.cjs
 
+# Fail the image build if office parsers cannot resolve at runtime.
 RUN set -e && \
+    cd /app && \
+    node -e "require.resolve('xlsx')" && \
+    node -e "require.resolve('mammoth')" && \
+    node -e "require.resolve('word-extractor')" && \
+    test -f /app/workbookParseWorker.cjs && \
     addgroup -S -g 1001 nodejs && \
     adduser -D -G nodejs -H -S -h /app -u 1001 nextjs && \
     chown -R nextjs:nodejs /app /etc/proxychains4.conf
@@ -154,7 +172,8 @@ ENV NODE_ENV="production" \
     NODE_OPTIONS="--dns-result-order=ipv4first --use-openssl-ca" \
     NODE_EXTRA_CA_CERTS="" \
     NODE_TLS_REJECT_UNAUTHORIZED="" \
-    SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"
+    SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt" \
+    WORKBOOK_PARSE_WORKER_PATH="/app/workbookParseWorker.cjs"
 
 # Make the middleware rewrite through local as default
 # refs: https://github.com/lobehub/lobehub/issues/5876

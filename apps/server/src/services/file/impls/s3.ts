@@ -60,6 +60,10 @@ export class S3StaticFileImpl implements FileServiceImpl {
     return this.s3.getFileByteArray(key);
   }
 
+  async downloadToPath(key: string, destPath: string): Promise<void> {
+    return this.s3.downloadFileToPath(key, destPath);
+  }
+
   async createPreSignedUrl(key: string): Promise<string> {
     return this.s3.createPreSignedUrl(key);
   }

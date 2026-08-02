@@ -25,6 +25,7 @@
     "test:coverage": "vitest --coverage --silent='passed-only'"
   },
   "dependencies": {
+    "@duckdb/node-api": "1.5.5-r.2",
     "@napi-rs/canvas": "^0.1.100",
     "@xmldom/xmldom": "^0.9.10",
     "concat-stream": "^2.0.0",

@@ -1,5 +1,5 @@
 import type { KnowledgeBaseItem, ResourceListScope } from '@lobechat/types';
-import { and, count, desc, eq, inArray, or, sql, sum } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, ne, or, sql, sum } from 'drizzle-orm';
 
 import type { NewDocument, NewFile, NewKnowledgeBase } from '../schemas';
 import { documents, files, knowledgeBaseFiles, knowledgeBases } from '../schemas';
@@ -45,7 +45,15 @@ export class KnowledgeBaseModel {
     return result;
   };
 
-  addFilesToKnowledgeBase = async (id: string, fileIds: string[]) => {
+  /**
+   * Link files into a KB and upgrade non-persistent files in one transaction.
+   * Upgrade alone must not commit without the link (and vice versa for the insert path).
+   */
+  addFilesToKnowledgeBase = async (
+    id: string,
+    fileIds: string[],
+    options?: { onConflict?: 'throw' | 'nothing' },
+  ) => {
     // Verify the target knowledge base belongs to the current user
     const kb = await this.db.query.knowledgeBases.findFirst({
       where: and(eq(knowledgeBases.id, id), this.ownership()),
@@ -53,55 +61,99 @@ export class KnowledgeBaseModel {
     if (!kb) return [];
 
     // Separate document IDs from file IDs
-    const documentIds = fileIds.filter((id) => id.startsWith('docs_'));
-    const directFileIds = fileIds.filter((id) => !id.startsWith('docs_'));
+    const documentIds = fileIds.filter((fid) => fid.startsWith('docs_'));
+    const directFileIds = fileIds.filter((fid) => !fid.startsWith('docs_'));
 
-    // Resolve document IDs to their mirror file IDs via documents.fileId
-    let resolvedFileIds = [...directFileIds];
-    if (documentIds.length > 0) {
-      const docsWithFiles = await this.db
-        .select({ fileId: documents.fileId })
-        .from(documents)
+    return this.db.transaction(async (tx) => {
+      // Resolve document IDs to their mirror file IDs via documents.fileId
+      let resolvedFileIds = [...directFileIds];
+      if (documentIds.length > 0) {
+        const docsWithFiles = await tx
+          .select({ fileId: documents.fileId })
+          .from(documents)
+          .where(
+            and(
+              inArray(documents.id, documentIds),
+              buildWorkspaceWhere(
+                { userId: this.userId, workspaceId: this.workspaceId },
+                documents,
+              ),
+            ),
+          );
+
+        const mirrorFileIds = docsWithFiles
+          .map((doc) => doc.fileId)
+          .filter((fid): fid is string => fid !== null);
+        resolvedFileIds = [...resolvedFileIds, ...mirrorFileIds];
+
+        await tx
+          .update(documents)
+          .set({ knowledgeBaseId: id })
+          .where(
+            and(
+              inArray(documents.id, documentIds),
+              buildWorkspaceWhere(
+                { userId: this.userId, workspaceId: this.workspaceId },
+                documents,
+              ),
+            ),
+          );
+      }
+
+      if (resolvedFileIds.length === 0) {
+        return [];
+      }
+
+      // Drop foreign fileIds (own KB + victim fileId IDOR). Upgrade/insert only owned rows.
+      const ownedFiles = await tx
+        .select({ id: files.id })
+        .from(files)
         .where(
           and(
-            inArray(documents.id, documentIds),
-            buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, documents),
+            inArray(files.id, resolvedFileIds),
+            buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, files),
           ),
         );
+      resolvedFileIds = ownedFiles.map((row) => row.id);
+      if (resolvedFileIds.length === 0) {
+        return [];
+      }
 
-      const mirrorFileIds = docsWithFiles
-        .map((doc) => doc.fileId)
-        .filter((id): id is string => id !== null);
-      resolvedFileIds = [...resolvedFileIds, ...mirrorFileIds];
-
-      // Update documents.knowledgeBaseId for pages
-      await this.db
-        .update(documents)
-        .set({ knowledgeBaseId: id })
+      // Linking into a KB is a persistent placement: upgrade chat/on_demand files so
+      // they remain listable and can be parsed. Idempotent for already-persistent.
+      const upgraded = await tx
+        .update(files)
+        .set({
+          persistReason: 'knowledge_base',
+          processingPolicy: 'persistent',
+          processingRequestedAt: new Date(),
+        })
         .where(
           and(
-            inArray(documents.id, documentIds),
-            buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, documents),
+            inArray(files.id, resolvedFileIds),
+            buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, files),
+            or(isNull(files.processingPolicy), ne(files.processingPolicy, 'persistent')),
           ),
-        );
-    }
+        )
+        .returning({ id: files.id });
 
-    // Insert using resolved file IDs
-    if (resolvedFileIds.length === 0) {
-      return [];
-    }
-
-    return this.db
-      .insert(knowledgeBaseFiles)
-      .values(
+      const insert = tx.insert(knowledgeBaseFiles).values(
         resolvedFileIds.map((fileId) => ({
           fileId,
           knowledgeBaseId: id,
           userId: this.userId,
           workspaceId: this.workspaceId ?? null,
         })),
-      )
-      .returning();
+      );
+
+      const rows =
+        options?.onConflict === 'nothing'
+          ? await insert.onConflictDoNothing().returning()
+          : await insert.returning();
+
+      // Callers should requestProcessing for upgraded ids (shared ingestion service).
+      return Object.assign(rows, { upgradedFileIds: upgraded.map((r) => r.id) });
+    });
   };
 
   // delete

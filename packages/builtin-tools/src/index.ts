@@ -14,6 +14,7 @@ import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
 import { FbaAlertManifest } from '@lobechat/builtin-tool-fba-alert';
+import { FilesManifest } from '@lobechat/builtin-tool-files';
 import { GroupAgentBuilderManifest } from '@lobechat/builtin-tool-group-agent-builder';
 import { GroupManagementManifest } from '@lobechat/builtin-tool-group-management';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
@@ -34,6 +35,7 @@ import { UserInteractionManifest } from '@lobechat/builtin-tool-user-interaction
 import { VerifyToolManifest } from '@lobechat/builtin-tool-verify';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
 import { WebOnboardingManifest } from '@lobechat/builtin-tool-web-onboarding';
+import { WorkbookManifest } from '@lobechat/builtin-tool-workbook';
 import { isDesktop, RECOMMENDED_SKILLS, RecommendedSkillType } from '@lobechat/const';
 import { type LobeBuiltinTool } from '@lobechat/types';
 
@@ -58,6 +60,10 @@ export const defaultToolIds = [
   DingpanManifest.identifier,
   // Company FBA inventory alert → dingtalk-fba-bot HTTP
   FbaAlertManifest.identifier,
+  // Bounded Excel inspect/query for large chat attachments
+  WorkbookManifest.identifier,
+  // On-demand inspect/read/search for chat message attachments
+  FilesManifest.identifier,
 ];
 
 /**
@@ -87,6 +93,8 @@ export const alwaysOnToolIds = [
   SkillStoreManifest.identifier,
   DingpanManifest.identifier,
   FbaAlertManifest.identifier,
+  WorkbookManifest.identifier,
+  FilesManifest.identifier,
 ];
 
 /**
@@ -121,6 +129,8 @@ export const chatModeAllowedToolIds = [
   KnowledgeBaseManifest.identifier,
   MemoryManifest.identifier,
   WebBrowsingManifest.identifier,
+  // Excel attachments: inspect/query without requiring full agent mode
+  WorkbookManifest.identifier,
 ];
 
 /**
@@ -320,6 +330,16 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
   {
     identifier: CalculatorManifest.identifier,
     manifest: CalculatorManifest,
+    type: 'builtin',
+  },
+  {
+    identifier: WorkbookManifest.identifier,
+    manifest: WorkbookManifest,
+    type: 'builtin',
+  },
+  {
+    identifier: FilesManifest.identifier,
+    manifest: FilesManifest,
     type: 'builtin',
   },
   {

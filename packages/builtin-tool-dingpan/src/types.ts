@@ -64,8 +64,8 @@ export interface UploadHtmlToDingpanParams {
   /** Optional folder link override for this upload. */
   folderLink?: string;
   /**
-   * Full HTML document string. Required when documentId is omitted;
-   * used as content when creating a new deliverable document.
+   * Full HTML document string. Required when documentId is omitted.
+   * Kept on the tool message as the chat Artifact (not resource library).
    */
   html?: string;
   /** Keyword segment when ASIN is absent. */
@@ -78,9 +78,9 @@ export interface UploadHtmlToDingpanParams {
   spaceId?: string;
   /** Task short label for the filename, e.g. 推广复盘 */
   taskType?: string;
-  /** Title for the persisted document (defaults from uploadName). */
+  /** Display title (does not create a resource document). */
   title?: string;
-  /** Topic to associate the deliverable document with (traceability). */
+  /** Topic id for server context / bot fallback association. */
   topicId?: string;
   /**
    * Full remote file name override.

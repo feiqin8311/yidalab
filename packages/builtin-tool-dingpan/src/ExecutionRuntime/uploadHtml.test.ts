@@ -14,7 +14,6 @@ describe('DingpanExecutionRuntime.uploadHtmlToDingpan', () => {
 
   it('loads html from document bridge and patches metadata after upload', async () => {
     const bridge: DingpanDocumentBridge = {
-      createDeliverableDocument: vi.fn(),
       getDeliverableHtml: vi.fn().mockResolvedValue({
         content: '<html><body>ok</body></html>',
         title: 'My Report',
@@ -44,9 +43,8 @@ describe('DingpanExecutionRuntime.uploadHtmlToDingpan', () => {
     expect(result.state?.documentId).toBe('docs_abc');
   });
 
-  it('creates a deliverable document when only html is provided', async () => {
+  it('uploads html without touching the document bridge', async () => {
     const bridge: DingpanDocumentBridge = {
-      createDeliverableDocument: vi.fn().mockResolvedValue({ id: 'docs_new' }),
       getDeliverableHtml: vi.fn(),
       patchDingpanMetadata: vi.fn().mockResolvedValue(undefined),
     };
@@ -66,16 +64,16 @@ describe('DingpanExecutionRuntime.uploadHtmlToDingpan', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(bridge.createDeliverableDocument).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: '<html>hi</html>',
-        title: 'hi',
-        topicId: 'tpc_1',
-      }),
-    );
-    expect(bridge.patchDingpanMetadata).toHaveBeenCalledWith(
-      'docs_new',
-      expect.objectContaining({ previewUrl: 'https://example.com/p' }),
-    );
+    expect(bridge.getDeliverableHtml).not.toHaveBeenCalled();
+    expect(bridge.patchDingpanMetadata).not.toHaveBeenCalled();
+    expect(result.state?.documentId).toBeUndefined();
+    expect(result.content).toContain('preview_url');
+    expect(result.content).not.toContain('document_id');
+    expect(result.state).toMatchObject({
+      fileId: 'fid-2',
+      name: 'report.html',
+      previewUrl: 'https://example.com/p',
+      success: true,
+    });
   });
 });

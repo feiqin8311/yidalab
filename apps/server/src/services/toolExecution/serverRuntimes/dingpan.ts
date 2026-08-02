@@ -36,22 +36,6 @@ const createDocumentBridge = (
   const documentService = new DocumentService(serverDB, userId, workspaceId ?? undefined);
 
   return {
-    createDeliverableDocument: async ({ content, title, topicId }) => {
-      const doc = await documentService.createDocument({
-        content,
-        editorData: {},
-        fileType: 'text/html',
-        metadata: {
-          deliverable: true,
-          source: 'dingpan-html',
-          ...(topicId ? { topicId } : {}),
-        },
-        title,
-        visibility: 'private',
-      });
-      return { id: doc.id };
-    },
-
     getDeliverableHtml: async (documentId) => {
       const doc = await documentService.getDocumentById(documentId);
       // DocumentModel.findById is already scoped to userId/workspaceId.

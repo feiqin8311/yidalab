@@ -789,13 +789,43 @@ export class DocumentService {
   }
 
   /**
-   * Parse file content
+   * Parse file content into a long-lived documents row.
    *
+   * Only allowed for files with processingPolicy=persistent (resource library /
+   * knowledge base / document import). Chat on-demand attachments must use
+   * ContextResourceResolver instead — this method writes to the database.
    */
   async parseFile(fileId: string): Promise<LobeDocument> {
     // Idempotent: return existing document if already parsed
     const existingDoc = await this.documentModel.findByFileId(fileId);
-    if (existingDoc) return existingDoc as LobeDocument;
+    if (existingDoc) {
+      const meta = (existingDoc as LobeDocument).metadata as
+        { structured?: boolean; parser?: string } | undefined;
+      const content = (existingDoc as LobeDocument).content || '';
+      // Structured workbook cards are always OK; small docs return as-is.
+      if (meta?.structured || content.length <= 80_000) {
+        return existingDoc as LobeDocument;
+      }
+      // Mega legacy dump: only rebuild if spreadsheet; otherwise return capped.
+    }
+
+    // Gate: refuse to create new documents for non-persistent files.
+    // Existing documents (above) may still be returned for legacy chat files.
+    const fileRecord = await this.fileModel.findById(fileId);
+    if (!fileRecord) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: `File not found: ${fileId}` });
+    }
+    const policy =
+      (fileRecord as { processingPolicy?: string | null }).processingPolicy ?? 'on_demand';
+    if (policy !== 'persistent') {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message:
+          `File "${fileRecord.name}" has processingPolicy=${policy}. ` +
+          `Persistent document parse requires processingPolicy=persistent. ` +
+          `Use ContextResourceResolver for on-demand chat attachments, or upload via Resources / Document import.`,
+      });
+    }
 
     const { filePath, file, cleanup } = await this.fileService.downloadFileToLocal(fileId);
 
@@ -803,6 +833,104 @@ export class DocumentService {
     log(`${logPrefix} Starting to parse file, path: ${filePath}`);
 
     try {
+      // Spreadsheets: structured workbook path — do not store full markdown grid.
+      // Prefer async queue; sync parse only if already claimed/worker unavailable path.
+      const { isSpreadsheetFile } = await import('@lobechat/file-loaders');
+      if (isSpreadsheetFile(file.fileType || '', file.name)) {
+        const { WorkbookService } = await import('@/server/services/workbook');
+        const workbookService = new WorkbookService(this.db, this.userId, this.workspaceId);
+        const inspect = await workbookService.inspectWorkbook(fileId);
+        if (inspect.parseStatus !== 'ready') {
+          // Fire worker if needed; return status card without blocking upload/chat.
+          const card =
+            inspect.promptCard ||
+            `Spreadsheet "${file.name}" parseStatus=${inspect.parseStatus}. Use lobe-workbook after ready.`;
+          if (existingDoc) {
+            await this.documentModel.update(existingDoc.id, {
+              content: card,
+              metadata: {
+                ...(existingDoc.metadata as object),
+                parser: 'workbook-v1',
+                structured: true,
+              },
+              totalCharCount: card.length,
+            });
+            const updated = await this.documentModel.findByFileId(fileId);
+            return updated as LobeDocument;
+          }
+          const document = await this.documentModel.create({
+            content: card,
+            fileId,
+            fileType: CUSTOM_DOCUMENT_FILE_TYPE,
+            filename: file.name,
+            metadata: { parser: 'workbook-v1', structured: true, parseStatus: inspect.parseStatus },
+            parentId: file.parentId,
+            source: file.url,
+            sourceType: 'file',
+            title: file.name.replace(/\.(xlsx?|xlsm)$/i, '') || 'Workbook',
+            totalCharCount: card.length,
+            totalLineCount: card.split('\n').length,
+          });
+          return document as LobeDocument;
+        }
+        const card = inspect.promptCard;
+        const title = file.name.replace(/\.(xlsx?|xlsm)$/i, '') || 'Workbook';
+        if (existingDoc) {
+          await this.documentModel.update(existingDoc.id, {
+            content: card,
+            metadata: {
+              ...(existingDoc.metadata as object),
+              parser: 'workbook-v1',
+              structured: true,
+            },
+            pages: [
+              {
+                charCount: card.length,
+                lineCount: card.split('\n').length,
+                metadata: { sheetName: '_manifest' },
+                pageContent: card,
+              },
+            ],
+            totalCharCount: card.length,
+            totalLineCount: card.split('\n').length,
+          });
+          const updated = await this.documentModel.findByFileId(fileId);
+          return updated as LobeDocument;
+        }
+        const document = await this.documentModel.create({
+          content: card,
+          fileId,
+          fileType: CUSTOM_DOCUMENT_FILE_TYPE,
+          filename: title,
+          metadata: { parser: 'workbook-v1', structured: true },
+          pages: [
+            {
+              charCount: card.length,
+              lineCount: card.split('\n').length,
+              metadata: { sheetName: '_manifest' },
+              pageContent: card,
+            },
+          ],
+          parentId: file.parentId,
+          source: file.url,
+          sourceType: 'file',
+          title,
+          totalCharCount: card.length,
+          totalLineCount: card.split('\n').length,
+        });
+        return document as LobeDocument;
+      }
+
+      // Non-spreadsheet mega legacy document: return capped body without re-parse.
+      if (existingDoc) {
+        const content = (existingDoc as LobeDocument).content || '';
+        return {
+          ...(existingDoc as LobeDocument),
+          content: `${content.slice(0, 80_000)}\n\n…[legacy document body capped]`,
+          totalCharCount: Math.min((existingDoc as LobeDocument).totalCharCount || 0, 80_000),
+        };
+      }
+
       // Use loadFile to load file content
       const fileDocument = await loadFile(filePath);
 

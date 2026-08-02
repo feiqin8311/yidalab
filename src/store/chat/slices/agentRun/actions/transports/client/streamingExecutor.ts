@@ -28,6 +28,7 @@ import {
 import debug from 'debug';
 
 import { getAgentRunLimits } from '@/helpers/agentRunLimits';
+import { resolveAndMergeAttachmentContents } from '@/helpers/hydrateMessageAttachments';
 import { createAgentToolsEngine } from '@/helpers/toolEngineering';
 import { aiAgentService } from '@/services/aiAgent';
 import { isCanUseVideo, isCanUseVision } from '@/services/chat/helper';
@@ -517,7 +518,7 @@ export class StreamingExecutorActionImpl {
     });
 
     // Create a new array to avoid modifying the original messages
-    const messages = [...originalMessages];
+    let messages = [...originalMessages];
 
     // Decide tool / function-calling capability from real data, not a guess.
     // The enabled-model list hydrates asynchronously (auth session → aiProvider
@@ -528,6 +529,22 @@ export class StreamingExecutorActionImpl {
     // without rechecking capability. Wait (bounded) for the list so a fast first
     // send after reload never attaches tools to a model that can't use them.
     await getAiInfraStoreState().ensureAiProviderRuntimeStateReady();
+
+    // Prompt-time on_demand attachment text (client path only).
+    // Chat uploads skip documents/chunks; MessageModel leaves fileList.content
+    // empty. Gateway already resolves via resolveRunAttachments — mirror that
+    // here for send / regenerate / continue / tool resume / group. In-memory only.
+    // Single resolve across messages + initialState.messages (tool resume).
+    let initialState = params.initialState;
+    const initialMessages = (initialState?.messages ?? []) as UIChatMessage[];
+    const [hydratedMessages, hydratedInitialMessages] = await resolveAndMergeAttachmentContents([
+      messages,
+      initialMessages,
+    ]);
+    messages = hydratedMessages ?? messages;
+    if (initialState && hydratedInitialMessages && hydratedInitialMessages !== initialMessages) {
+      initialState = { ...initialState, messages: hydratedInitialMessages };
+    }
 
     // ===========================================
     // Step 1: Create Agent State (resolves config once)
@@ -545,7 +562,7 @@ export class StreamingExecutorActionImpl {
       disableTools,
       topicId,
       threadId: threadId ?? undefined,
-      initialState: params.initialState,
+      initialState,
       initialContext: params.initialContext,
       operationId,
       subAgentId, // Pass subAgentId for agent config retrieval (behavior depends on scope)

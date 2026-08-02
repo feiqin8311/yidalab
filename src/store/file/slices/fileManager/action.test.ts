@@ -457,6 +457,8 @@ describe('FileManagerActions', () => {
         knowledgeBaseId: undefined,
         onStatusUpdate: expect.any(Function),
         parentId: undefined,
+        placementType: 'resource_library',
+        processingPolicy: 'persistent',
         uploadId: expect.any(String),
       });
       // Upload should not auto-chunk
@@ -483,6 +485,8 @@ describe('FileManagerActions', () => {
         knowledgeBaseId: 'kb-123',
         onStatusUpdate: expect.any(Function),
         parentId: undefined,
+        placementType: 'knowledge_base',
+        processingPolicy: 'persistent',
         uploadId: expect.any(String),
       });
     });

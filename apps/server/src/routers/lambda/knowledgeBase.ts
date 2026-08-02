@@ -33,10 +33,13 @@ export const knowledgeBaseRouter = router({
     .input(z.object({ ids: z.array(z.string()), knowledgeBaseId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
-        return await ctx.knowledgeBaseModel.addFilesToKnowledgeBase(
-          input.knowledgeBaseId,
-          input.ids,
+        const { ResourceIngestionService } = await import('@/server/services/resourceIngestion');
+        const ingestion = new ResourceIngestionService(
+          ctx.serverDB,
+          ctx.userId,
+          ctx.workspaceId ?? undefined,
         );
+        return await ingestion.addFilesToKnowledgeBase(input.knowledgeBaseId, input.ids);
       } catch (e: any) {
         // Check for PostgreSQL unique constraint violation (code 23505)
         const pgErrorCode = e?.cause?.cause?.code || e?.cause?.code || e?.code;

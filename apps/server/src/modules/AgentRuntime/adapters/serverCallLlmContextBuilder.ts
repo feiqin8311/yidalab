@@ -1,4 +1,8 @@
-import type { AgentState, CallLLMPayload } from '@lobechat/agent-runtime';
+import {
+  type AgentState,
+  type CallLLMPayload,
+  extractDingpanUploadOutcomes,
+} from '@lobechat/agent-runtime';
 import {
   type ComposioServiceSummary,
   type CredSummary,
@@ -90,6 +94,7 @@ export const buildServerCallLlmContext = async ({
   });
   const {
     capabilities,
+    contextWindowTokens,
     messagesForContext,
     modelDisplayName,
     modelKnowledgeCutoff,
@@ -462,6 +467,28 @@ export const buildServerCallLlmContext = async ({
     enableHistoryCount: agentConfig.chatConfig?.enableHistoryCount ?? undefined,
     evalContext: ctx.evalContext,
     forceFinish: state.forceFinish,
+    // Align with resolveServerCallLlmTooling: bot/dingpan + no successful upload yet
+    forceFinishDeliveryOnly: (() => {
+      if (!state.forceFinish) return false;
+      const wantsDingpan =
+        !!(state.metadata?.botContext || state.metadata?.bot) ||
+        state.metadata?.htmlDeliveryMode === 'dingpan' ||
+        state.metadata?.chatConfig?.htmlDeliveryMode === 'dingpan' ||
+        state.metadata?.agentConfig?.chatConfig?.htmlDeliveryMode === 'dingpan';
+      if (!wantsDingpan) return false;
+      const outcomes = extractDingpanUploadOutcomes(
+        (state.messages ?? []).map((message: any) => ({
+          content: message?.content,
+          plugin: message?.plugin,
+          role: message?.role,
+        })),
+      );
+      return !outcomes.some((o) => o.success && o.previewUrl);
+    })(),
+    forceFinishReason:
+      typeof state.metadata?.runBrakeReason === 'string'
+        ? state.metadata.runBrakeReason
+        : undefined,
     historyCount: resolveRuntimeHistoryCount(agentConfig.chatConfig?.historyCount),
     initialContext: (state as any).initialContext?.initialContext,
     knowledge: {
@@ -483,6 +510,7 @@ export const buildServerCallLlmContext = async ({
     model,
     modelDisplayName,
     modelKnowledgeCutoff,
+    contextWindowTokens,
     provider,
     systemRole: agentConfig.systemRole ?? undefined,
     toolDiscoveryConfig,

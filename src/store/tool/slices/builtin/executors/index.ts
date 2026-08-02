@@ -33,6 +33,7 @@ import { topicReferenceExecutor } from './lobe-topic-reference';
 import { userInteractionExecutor } from './lobe-user-interaction';
 import { webBrowsing } from './lobe-web-browsing';
 import { webOnboardingExecutor } from './lobe-web-onboarding';
+import { workbookExecutor } from './lobe-workbook';
 
 /**
  * Registry structure: Map<identifier, executor instance>
@@ -150,6 +151,7 @@ export const registerBuiltinToolExecutors = (): void => {
     cloudSandboxExecutor,
     credsExecutor,
     dingpanExecutor,
+    workbookExecutor,
     groupAgentBuilderExecutor,
     groupManagementExecutor,
     knowledgeBaseExecutor,

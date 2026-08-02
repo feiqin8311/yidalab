@@ -330,6 +330,8 @@ export class FileManageActionImpl {
           knowledgeBaseId,
           onStatusUpdate: dispatchDockFileList,
           parentId,
+          placementType: knowledgeBaseId ? 'knowledge_base' : 'resource_library',
+          processingPolicy: 'persistent',
           uploadId: uploadFileItem.id,
           visibility,
         });
@@ -647,6 +649,8 @@ export class FileManageActionImpl {
             knowledgeBaseId,
             onStatusUpdate: dispatchDockFileList,
             parentId,
+            placementType: knowledgeBaseId ? 'knowledge_base' : 'resource_library',
+            processingPolicy: 'persistent',
             uploadId: id,
           });
 

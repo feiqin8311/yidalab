@@ -589,6 +589,41 @@ describe('FileModel', () => {
       expect(filteredFiles[0].name).toBe('document.pdf');
     });
 
+    it('excludes on_demand chat attachments from resource file list', async () => {
+      await serverDB.insert(files).values([
+        {
+          name: 'library.pdf',
+          url: 'https://example.com/library.pdf',
+          size: 100,
+          fileType: 'application/pdf',
+          userId,
+          processingPolicy: 'persistent',
+        },
+        {
+          name: 'chat-attach.docx',
+          url: 'https://example.com/chat.docx',
+          size: 200,
+          fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          userId,
+          processingPolicy: 'on_demand',
+        },
+        {
+          name: 'legacy-null.pdf',
+          url: 'https://example.com/legacy.pdf',
+          size: 300,
+          fileType: 'application/pdf',
+          userId,
+          // processingPolicy null = pre-migration row, still listable
+        },
+      ]);
+
+      const listed = await fileModel.query();
+      const names = listed.map((f) => f.name).sort();
+      expect(names).toContain('library.pdf');
+      expect(names).toContain('legacy-null.pdf');
+      expect(names).not.toContain('chat-attach.docx');
+    });
+
     it('should filter files by category', async () => {
       await serverDB.insert(files).values(sharedFileList);
 
@@ -1606,6 +1641,123 @@ describe('FileModel', () => {
 
       const result = await fileModel.findByIds(['other-file-id']);
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('findReadableByIds', () => {
+    it('returns owned files in personal mode and excludes others', async () => {
+      const otherUserId = 'other-readable-user';
+      await serverDB.insert(users).values({ id: otherUserId });
+      await serverDB.insert(files).values([
+        {
+          id: 'readable-1',
+          userId,
+          name: 'a.txt',
+          url: 'u1',
+          fileType: 'text/plain',
+          size: 1,
+        },
+        {
+          id: 'readable-other',
+          userId: otherUserId,
+          name: 'b.txt',
+          url: 'u2',
+          fileType: 'text/plain',
+          size: 1,
+        },
+      ]);
+
+      const result = await fileModel.findReadableByIds(['readable-1', 'readable-other']);
+      expect(result.map((f) => f.id)).toEqual(['readable-1']);
+    });
+
+    it('findById delegates to findReadableByIds for a single id', async () => {
+      await serverDB.insert(files).values({
+        id: 'readable-single',
+        userId,
+        name: 's.txt',
+        url: 'u',
+        fileType: 'text/plain',
+        size: 1,
+      });
+      const one = await fileModel.findById('readable-single');
+      const many = await fileModel.findReadableByIds(['readable-single']);
+      expect(one?.id).toBe(many[0]?.id);
+    });
+
+    it('workspace: public + grant + admin ACL', async () => {
+      const { resourceGrants, workspaceMembers } = await import('../../schemas');
+      const wsId = 'readable-acl-ws';
+      const memberId = 'readable-member';
+      const ownerId = userId;
+      const adminId = 'readable-admin';
+
+      await serverDB.insert(users).values([{ id: memberId }, { id: adminId }]);
+      await serverDB.insert(workspaces).values({
+        id: wsId,
+        name: 'ACL WS',
+        primaryOwnerId: ownerId,
+        slug: wsId,
+      });
+      await serverDB.insert(workspaceMembers).values([
+        { role: 'owner', userId: ownerId, workspaceId: wsId },
+        { role: 'editor', userId: memberId, workspaceId: wsId },
+        { role: 'admin', userId: adminId, workspaceId: wsId },
+      ]);
+
+      await serverDB.insert(files).values([
+        {
+          fileType: 'text/plain',
+          id: 'acl-public',
+          name: 'public.txt',
+          size: 1,
+          url: 'u-pub',
+          userId: ownerId,
+          visibility: 'public',
+          workspaceId: wsId,
+        },
+        {
+          fileType: 'text/plain',
+          id: 'acl-private-no-grant',
+          name: 'secret.txt',
+          size: 1,
+          url: 'u-sec',
+          userId: ownerId,
+          visibility: 'private',
+          workspaceId: wsId,
+        },
+        {
+          fileType: 'text/plain',
+          id: 'acl-private-granted',
+          name: 'shared.txt',
+          size: 1,
+          url: 'u-grant',
+          userId: ownerId,
+          visibility: 'private',
+          workspaceId: wsId,
+        },
+      ]);
+      await serverDB.insert(resourceGrants).values({
+        grantedBy: ownerId,
+        granteeId: memberId,
+        granteeType: 'user',
+        resourceId: 'acl-private-granted',
+        resourceType: 'file',
+        role: 'viewer',
+        workspaceId: wsId,
+      });
+
+      const memberModel = new FileModel(serverDB, memberId, wsId);
+      const adminModel = new FileModel(serverDB, adminId, wsId);
+      const ids = ['acl-public', 'acl-private-no-grant', 'acl-private-granted'];
+
+      const memberReadable = await memberModel.findReadableByIds(ids);
+      expect(memberReadable.map((f) => f.id).sort()).toEqual(
+        ['acl-private-granted', 'acl-public'].sort(),
+      );
+
+      const adminReadable = await adminModel.findReadableByIds(ids);
+      expect(adminReadable.map((f) => f.id).sort()).toEqual(ids.sort());
     });
   });
 

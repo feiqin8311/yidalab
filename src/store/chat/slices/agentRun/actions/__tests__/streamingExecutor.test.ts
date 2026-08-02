@@ -29,6 +29,9 @@ const serverConfigMock = vi.hoisted(() => ({ enableVisualUnderstanding: false })
 const agentSignalBridgeMock = vi.hoisted(() => ({
   emitClientAgentSignalSourceEvent: vi.fn().mockResolvedValue(undefined),
 }));
+const hydrateMessageAttachmentsMock = vi.hoisted(() => ({
+  resolveAndMergeAttachmentContents: vi.fn(async (lists: UIChatMessage[][]) => lists),
+}));
 
 vi.mock('@/utils/localStorage', () => {
   class AsyncLocalStorage<State> {
@@ -94,6 +97,10 @@ vi.mock('zustand/traditional');
 vi.mock('@/store/chat/slices/agentRun/actions/lifecycle/agentSignalBridge', () => ({
   emitClientAgentSignalSourceEvent: agentSignalBridgeMock.emitClientAgentSignalSourceEvent,
 }));
+vi.mock('@/helpers/hydrateMessageAttachments', () => ({
+  resolveAndMergeAttachmentContents:
+    hydrateMessageAttachmentsMock.resolveAndMergeAttachmentContents,
+}));
 // Desktop notification gating: isDesktop defaults to false (web/test env), matching
 // the real env so the existing suite is unaffected; flipped true per-test to exercise
 // the notification branch. The service is dynamically imported inside executeClientAgent.
@@ -137,6 +144,9 @@ beforeEach(() => {
   setupMockSelectors();
   spyOnMessageService();
   serverConfigMock.enableVisualUnderstanding = false;
+  hydrateMessageAttachmentsMock.resolveAndMergeAttachmentContents.mockImplementation(
+    async (lists: UIChatMessage[][]) => lists,
+  );
 
   act(() => {
     useAgentStore.setState({ availableAgents: [] });
@@ -208,6 +218,68 @@ describe('StreamingExecutor actions', () => {
       );
 
       streamSpy.mockRestore();
+    });
+
+    it('hydrates empty on_demand attachment bodies once before creating agent state', async () => {
+      act(() => {
+        useChatStore.setState({ executeClientAgent: realExecAgentRuntime });
+      });
+
+      const { result } = renderHook(() => useChatStore());
+      const emptyDocx = {
+        id: 'file_docx',
+        name: 'listing.docx',
+        fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size: 12,
+        url: 'https://example.com/listing.docx',
+      };
+      const userMessage = {
+        id: TEST_IDS.USER_MESSAGE_ID,
+        role: 'user',
+        content: TEST_CONTENT.USER_MESSAGE,
+        sessionId: TEST_IDS.SESSION_ID,
+        topicId: TEST_IDS.TOPIC_ID,
+        fileList: [emptyDocx],
+      } as UIChatMessage;
+      const hydratedMessage = {
+        ...userMessage,
+        fileList: [{ ...emptyDocx, content: 'SKU listing body' }],
+      } as UIChatMessage;
+
+      hydrateMessageAttachmentsMock.resolveAndMergeAttachmentContents.mockResolvedValue([
+        [hydratedMessage],
+        [],
+      ]);
+
+      const createStateSpy = vi.fn(realCreateAgentState);
+      act(() => {
+        useChatStore.setState({ internal_createAgentState: createStateSpy as any });
+      });
+
+      vi.spyOn(chatService, 'createAssistantMessageStream').mockImplementation(
+        async ({ onFinish }) => {
+          await onFinish?.(TEST_CONTENT.AI_RESPONSE, {} as any);
+        },
+      );
+
+      await act(async () => {
+        await result.current.executeClientAgent({
+          context: { agentId: TEST_IDS.SESSION_ID, topicId: TEST_IDS.TOPIC_ID },
+          messages: [userMessage],
+          parentMessageId: userMessage.id,
+          parentMessageType: 'user',
+        });
+      });
+
+      expect(hydrateMessageAttachmentsMock.resolveAndMergeAttachmentContents).toHaveBeenCalledWith([
+        [userMessage],
+        [],
+      ]);
+      expect(createStateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [hydratedMessage],
+        }),
+      );
     });
 
     it('should stop agent runtime loop when operation is cancelled before step execution', async () => {

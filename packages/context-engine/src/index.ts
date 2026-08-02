@@ -35,6 +35,29 @@ export {
   estimateSentMessageAttachmentTokenBuckets,
   isTextLikeUploadFile,
 } from './tokenAccounting';
+export type { ContextBudgetGateDecision, ContextBudgetGateInput } from './utils/contextBudgetGate';
+export {
+  DEFAULT_CONTEXT_INPUT_BUDGET,
+  DEFAULT_OUTPUT_RESERVE,
+  estimateTokensFromMessages,
+  estimateTokensFromText,
+  evaluateContextBudgetGate,
+  inputBudgetFromContextWindow,
+  stripFileBodiesFromMessages,
+  stripInlineFileBodiesFromText,
+} from './utils/contextBudgetGate';
+export type { AssembleContextItemsResult, CreateContextItemParams } from './utils/contextItems';
+export {
+  assembleContextItems,
+  buildContextTraceSnapshot,
+  createContextItem,
+  createFileManifestContextItem,
+} from './utils/contextItems';
+export type { BuildToolExecutionResultParams } from './utils/toolExecutionResult';
+export {
+  buildToolExecutionResult,
+  modelContentFromExecutionResult,
+} from './utils/toolExecutionResult';
 // Processors
 export type { PlaceholderValue, PlaceholderValueMap } from './processors';
 export {

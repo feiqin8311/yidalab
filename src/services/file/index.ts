@@ -28,6 +28,8 @@ export class FileService {
        * children inherit their parent document). Personal mode ignores this.
        */
       visibility?: 'private' | 'public';
+      placementType?: UploadFileParams['placementType'];
+      processingPolicy?: UploadFileParams['processingPolicy'];
     },
     knowledgeBaseId?: string,
   ): Promise<{ id: string; url: string }> => {
@@ -122,6 +124,25 @@ export class FileService {
 
   checkFileHash = async (hash: string): Promise<CheckFileHashResult> => {
     return lambdaClient.file.checkFileHash.mutate({ hash });
+  };
+
+  /**
+   * Prompt-time extract for chat on_demand attachments (client agent path).
+   * Does not write documents/chunks.
+   */
+  resolveAttachmentsForPrompt = async (fileIds: string[]) => {
+    if (fileIds.length === 0) {
+      return {
+        audioList: [],
+        diagnostics: [],
+        fileList: [],
+        imageList: [],
+        orderedFileIds: [],
+        videoList: [],
+        warnings: [],
+      };
+    }
+    return lambdaClient.file.resolveAttachmentsForPrompt.query({ fileIds });
   };
 
   removeFileAsyncTask = async (id: string, type: 'embedding' | 'chunk') => {

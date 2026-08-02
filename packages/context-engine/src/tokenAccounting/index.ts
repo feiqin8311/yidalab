@@ -1,4 +1,5 @@
 // cspell:ignore tokenx
+import { filesPrompts } from '@lobechat/prompts';
 import { estimateTokenCount } from 'tokenx';
 
 import type {
@@ -51,14 +52,13 @@ const bumpSource = (
  * | `toolCallId`       | `msg.tool_call_id`                                         | `message.tool_call_id`           |
  * | `toolDefinition`   | top-level `tools[]` param                                  | request `tools` array            |
  *
- * **What's NOT counted (intentionally)** — these are DB-only fields the
- * harness stores but doesn't ship to the provider:
+ * **Attachments:** `fileList` / media lists that are injected by
+ * `MessageContent` → `filesPrompts` **are** counted (same prompt shape as the
+ * real request). Ignoring them under-counted Excel dumps and skipped auto-compress.
  *
- *   `plugin`, `pluginState`, `pluginIntervention`, `pluginError`, `chunksList`,
- *   `editorData`, `extra`, `fileList`, `imageList`, `videoList`, `metadata`
- *   (other than `metadata.usage.totalOutputTokens` shortcut for assistant)
- *
- * Counting them would over-estimate and trigger compression too early.
+ * **Still NOT counted (DB-only, not shipped):** `plugin`, `pluginState`,
+ * `pluginIntervention`, `pluginError`, `chunksList`, `editorData`, `extra`,
+ * and most `metadata` (except assistant usage shortcut).
  *
  * **Token estimation accuracy**
  *
@@ -145,6 +145,25 @@ export const countContextTokens = ({
         const reasoningContent = typeof reasoning === 'string' ? reasoning : reasoning.content;
         bumpSource(bySource, 'reasoning', estimate(reasoningContent));
       }
+    }
+
+    // File / media context injected into the user turn (same as MessageContent)
+    if (
+      msg.role === 'user' &&
+      ((msg.fileList && msg.fileList.length > 0) ||
+        (msg.imageList && msg.imageList.length > 0) ||
+        (msg.videoList && msg.videoList.length > 0) ||
+        (msg.audioList && msg.audioList.length > 0))
+    ) {
+      const attachmentPrompt = filesPrompts({
+        addUrl: false,
+        audioList: msg.audioList,
+        fileList: msg.fileList,
+        imageList: msg.imageList,
+        messageId: msg.id,
+        videoList: msg.videoList,
+      });
+      bumpSource(bySource, 'content', estimate(attachmentPrompt));
     }
 
     // tool_call_id is sent regardless of fast-path (it's on `tool` role messages,

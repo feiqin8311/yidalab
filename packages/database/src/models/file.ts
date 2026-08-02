@@ -1,6 +1,19 @@
 import type { QueryFileListParams } from '@lobechat/types';
 import { FilesTabs, SortType } from '@lobechat/types';
-import { and, asc, count, desc, eq, ilike, inArray, like, notExists, or, sum } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  like,
+  notExists,
+  or,
+  sql,
+  sum,
+} from 'drizzle-orm';
 import type { PgTransaction } from 'drizzle-orm/pg-core';
 
 import type { FileItem, NewFile, NewGlobalFile } from '../schemas';
@@ -311,10 +324,13 @@ export class FileModel {
     visibility?: 'private' | 'public';
   } = {}) => {
     // 1. Build where clause
+    // Chat attachments (processingPolicy=on_demand) must not appear in resource /
+    // library file lists. Legacy null policy rows stay listable.
     let whereClause = and(
       q ? ilike(files.name, `%${q}%`) : undefined,
       this.ownership(callerAgentVisibility),
       visibility ? eq(files.visibility, visibility) : undefined,
+      sql`${files.processingPolicy} IS DISTINCT FROM ${'on_demand'}`,
     );
     if (category && category !== FilesTabs.All && category !== FilesTabs.Home) {
       const fileTypePrefix = this.getFileTypePrefix(category as FilesTabs);
@@ -409,28 +425,33 @@ export class FileModel {
     });
   };
 
-  findById = async (id: string, trx?: Transaction) => {
+  /**
+   * Batch read with the same ACL as findById (owner / public / grant / admin).
+   * Loads workspace access context once — use for prompt-time multi-file resolve.
+   */
+  findReadableByIds = async (ids: string[], trx?: Transaction) => {
+    if (ids.length === 0) return [];
+    const uniqueIds = [...new Set(ids)];
     const database = trx || this.db;
 
-    // Personal mode: creator-only.
+    // Personal mode: creator-only (same as findById).
     if (!this.workspaceId) {
-      return database.query.files.findFirst({
-        where: and(eq(files.id, id), this.ownership()),
+      return database.query.files.findMany({
+        where: and(inArray(files.id, uniqueIds), this.ownership()),
       });
     }
 
-    // Workspace: creator / public / grant / admin can read.
     const { loadResourceAccessContext } = await import('../utils/resource-access');
     const accessCtx = await loadResourceAccessContext(
       database as LobeChatDatabase,
       this.userId,
       this.workspaceId,
     );
-    if (!accessCtx) return undefined;
+    if (!accessCtx) return [];
 
     if (accessCtx.isAdmin) {
-      return database.query.files.findFirst({
-        where: and(eq(files.id, id), eq(files.workspaceId, this.workspaceId)),
+      return database.query.files.findMany({
+        where: and(inArray(files.id, uniqueIds), eq(files.workspaceId, this.workspaceId)),
       });
     }
 
@@ -443,9 +464,9 @@ export class FileModel {
             OR (g.grantee_type = 'department' AND g.grantee_id = ${accessCtx.departmentId})
           )`;
 
-    return database.query.files.findFirst({
+    return database.query.files.findMany({
       where: and(
-        eq(files.id, id),
+        inArray(files.id, uniqueIds),
         eq(files.workspaceId, this.workspaceId),
         or(
           sql`${files.visibility} IS NULL`,
@@ -464,6 +485,11 @@ export class FileModel {
         ),
       ),
     });
+  };
+
+  findById = async (id: string, trx?: Transaction) => {
+    const rows = await this.findReadableByIds([id], trx);
+    return rows[0];
   };
 
   /**
