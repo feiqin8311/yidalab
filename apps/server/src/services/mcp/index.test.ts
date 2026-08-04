@@ -183,8 +183,8 @@ describe('MCPService', () => {
       expect(result.state).toEqual(errorResult);
     });
 
-    it('should throw TRPCError when client throws error', async () => {
-      const error = new Error('MCP client error');
+    it('should throw TRPCError when client throws non-transient error', async () => {
+      const error = new Error('invalid schema for tool arguments');
       mockClient.callTool.mockRejectedValue(error);
 
       await expect(
@@ -194,6 +194,44 @@ describe('MCPService', () => {
           argsStr: '{}',
         }),
       ).rejects.toThrow(TRPCError);
+      expect(mockClient.callTool).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry transient 502 then succeed', async () => {
+      mockClient.callTool
+        .mockRejectedValueOnce(
+          new Error('Streamable HTTP error: Error POSTing to endpoint: 502 Bad Gateway'),
+        )
+        .mockResolvedValueOnce({
+          content: [{ type: 'text', text: 'ok' }],
+          isError: false,
+        });
+
+      const result = await mcpService.callTool({
+        clientParams: mockParams,
+        toolName: 'testTool',
+        argsStr: '{}',
+      });
+
+      expect(mockClient.callTool).toHaveBeenCalledTimes(2);
+      expect(result.content).toBe('ok');
+      expect(result.success).toBe(true);
+    });
+
+    it('should exhaust retries on persistent 502 and throw TRPCError', async () => {
+      mockClient.callTool.mockRejectedValue(
+        new Error('Streamable HTTP error: Error POSTing to endpoint: 502 Bad Gateway'),
+      );
+
+      await expect(
+        mcpService.callTool({
+          clientParams: mockParams,
+          toolName: 'testTool',
+          argsStr: '{}',
+        }),
+      ).rejects.toThrow(TRPCError);
+      // 1 initial + 2 retries
+      expect(mockClient.callTool).toHaveBeenCalledTimes(3);
     });
 
     it('should parse args string correctly', async () => {

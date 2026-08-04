@@ -18,7 +18,7 @@ const REPLAN_CODES = new Set([
   'INVALID_ARGUMENT',
   'MANIFEST_NOT_FOUND',
   'MCP_CONFIG_NOT_FOUND',
-  'MCP_EXECUTION_ERROR',
+  // MCP_EXECUTION_ERROR is a catch-all — re-classified by status/message below.
 ]);
 const STOP_CODES = new Set([
   'FORBIDDEN',
@@ -39,6 +39,12 @@ const RETRY_KEYWORDS = [
   'econnreset',
   'econnrefused',
   'enotfound',
+  'fetch failed',
+  'bad gateway',
+  'gateway timeout',
+  'internal server error',
+  'streamable http',
+  'novalidsessionid',
 ];
 const REPLAN_KEYWORDS = [
   'invalid',
@@ -80,6 +86,16 @@ const tryExtractStatus = (message: string): number | undefined => {
   return Number.isNaN(status) ? undefined : status;
 };
 
+const resolveStatus = (
+  message: string,
+  ...candidates: Array<number | undefined>
+): number | undefined => {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && !Number.isNaN(candidate)) return candidate;
+  }
+  return tryExtractStatus(message);
+};
+
 const normalizeSignal = (error: unknown): ToolErrorSignal => {
   if (typeof error === 'string') {
     const message = error.toLowerCase();
@@ -92,12 +108,7 @@ const normalizeSignal = (error: unknown): ToolErrorSignal => {
     return {
       code: normalizeCode(raw.code),
       message,
-      status:
-        typeof raw.status === 'number'
-          ? raw.status
-          : typeof raw.statusCode === 'number'
-            ? raw.statusCode
-            : tryExtractStatus(message),
+      status: resolveStatus(message, raw.status, raw.statusCode),
     };
   }
 
@@ -117,27 +128,23 @@ const normalizeSignal = (error: unknown): ToolErrorSignal => {
     return {
       code: normalizeCode(raw.code || nestedCode),
       message,
-      status:
-        typeof raw.status === 'number'
-          ? raw.status
-          : typeof raw.statusCode === 'number'
-            ? raw.statusCode
-            : typeof raw.error?.status === 'number'
-              ? raw.error.status
-              : raw.error?.statusCode,
+      status: resolveStatus(
+        message,
+        raw.status,
+        raw.statusCode,
+        raw.error?.status,
+        raw.error?.statusCode,
+      ),
     };
   }
 
   return { message: 'unknown error' };
 };
 
-const classifyKind = ({ code, message, status }: ToolErrorSignal): ToolErrorKind => {
-  if (code) {
-    if (STOP_CODES.has(code)) return 'stop';
-    if (REPLAN_CODES.has(code)) return 'replan';
-    if (RETRY_CODES.has(code)) return 'retry';
-  }
-
+const classifyByStatusAndMessage = ({
+  message,
+  status,
+}: Pick<ToolErrorSignal, 'message' | 'status'>): ToolErrorKind | undefined => {
   if (status !== undefined) {
     if (status === 401 || status === 403) return 'stop';
     if (status === 400 || status === 404 || status === 409 || status === 422) return 'replan';
@@ -145,12 +152,26 @@ const classifyKind = ({ code, message, status }: ToolErrorSignal): ToolErrorKind
   }
 
   if (hasAnyKeyword(message, STOP_KEYWORDS)) return 'stop';
-  if (hasAnyKeyword(message, REPLAN_KEYWORDS)) return 'replan';
   if (hasAnyKeyword(message, RETRY_KEYWORDS)) return 'retry';
+  if (hasAnyKeyword(message, REPLAN_KEYWORDS)) return 'replan';
 
-  // Unknown failures may happen after a side effect already succeeded, so only
-  // explicitly classified retryable errors should be replayed.
-  return 'stop';
+  return undefined;
+};
+
+const classifyKind = ({ code, message, status }: ToolErrorSignal): ToolErrorKind => {
+  // MCP_EXECUTION_ERROR is a catch-all wrapper from toolExecution — do not hard-map
+  // it to replan, or SIF 502 / fetch failed never enter executeToolWithRetry.
+  if (code === 'MCP_EXECUTION_ERROR') {
+    return classifyByStatusAndMessage({ message, status }) ?? 'retry';
+  }
+
+  if (code) {
+    if (STOP_CODES.has(code)) return 'stop';
+    if (REPLAN_CODES.has(code)) return 'replan';
+    if (RETRY_CODES.has(code)) return 'retry';
+  }
+
+  return classifyByStatusAndMessage({ message, status }) ?? 'stop';
 };
 
 export const classifyToolError = (error: unknown): ClassifiedToolError => {
@@ -161,4 +182,12 @@ export const classifyToolError = (error: unknown): ClassifiedToolError => {
     kind: classifyKind(signal),
     message: signal.message,
   };
+};
+
+/** Transient transport / upstream flakes safe to auto-retry (no request mutation). */
+export const isTransientToolTransportError = (error: unknown): boolean => {
+  if (error instanceof Error && error.name === 'McpError') return false;
+
+  const signal = normalizeSignal(error);
+  return classifyByStatusAndMessage(signal) === 'retry';
 };

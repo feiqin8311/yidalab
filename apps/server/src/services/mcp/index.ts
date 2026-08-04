@@ -21,11 +21,17 @@ import {
 } from '@/libs/mcp';
 import { MCPClient } from '@/libs/mcp';
 
+import { isTransientToolTransportError } from '../toolExecution/errorClassification';
 import { type ProcessContentBlocksFn } from './contentProcessor';
 import { contentBlocksToString } from './contentProcessor';
 import { mcpSystemDepsCheckService } from './deps';
 
 const log = debug('lobe-mcp:service');
+
+/** Transport-level retries for flaky HTTP MCP (SIF 502, brief disconnects). */
+const MCP_CALL_TOOL_RETRIES = 2;
+const MCP_CALL_TOOL_MIN_TIMEOUT_MS = 200;
+const MCP_CALL_TOOL_MAX_TIMEOUT_MS = 1500;
 
 /**
  * MCP Tool call raw result type
@@ -223,8 +229,6 @@ export class MCPService {
       processContentBlocks: processContentBlocksFn,
     } = options;
 
-    const client = await this.getClient(clientParams); // Get client using params
-
     const args = safeParseJSON(argsStr);
     const loggableParams = this.sanitizeForLogging(clientParams);
 
@@ -235,22 +239,54 @@ export class MCPService {
     );
 
     try {
-      // Delegate the call to the MCPClient instance
-      const result = await client.callTool(toolName, args); // Pass args directly
+      return await retry(
+        async (bail, attemptNumber) => {
+          // Reconnect client on retry (stale Streamable HTTP session / dead keep-alive)
+          const client = await this.getClient(clientParams, attemptNumber > 1);
 
-      // Use the common processing method
-      const processedResult = await MCPService.processToolCallResult(
-        result,
-        processContentBlocksFn,
+          try {
+            const result = await client.callTool(toolName, args);
+            const processedResult = await MCPService.processToolCallResult(
+              result,
+              processContentBlocksFn,
+            );
+
+            log(
+              `Tool "${toolName}" called successfully for params: %O, result: %O`,
+              loggableParams,
+              processedResult.state,
+            );
+
+            return processedResult;
+          } catch (error) {
+            // Application-level MCP errors: surface to caller, never retry same args
+            if (error instanceof McpError) {
+              bail(error);
+              return undefined as never;
+            }
+
+            if (!isTransientToolTransportError(error)) {
+              bail(error as Error);
+              return undefined as never;
+            }
+
+            log(
+              `Transient MCP transport error for tool "%s" (attempt %d/%d): %s`,
+              toolName,
+              attemptNumber,
+              MCP_CALL_TOOL_RETRIES + 1,
+              (error as Error).message,
+            );
+            throw error;
+          }
+        },
+        {
+          factor: 2,
+          maxTimeout: MCP_CALL_TOOL_MAX_TIMEOUT_MS,
+          minTimeout: MCP_CALL_TOOL_MIN_TIMEOUT_MS,
+          retries: MCP_CALL_TOOL_RETRIES,
+        },
       );
-
-      log(
-        `Tool "${toolName}" called successfully for params: %O, result: %O`,
-        loggableParams,
-        processedResult.state,
-      );
-
-      return processedResult;
     } catch (error) {
       if (error instanceof McpError) {
         const mcpError = error as McpError;
