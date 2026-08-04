@@ -576,6 +576,8 @@
       "baseline-browser-mapping": "2.10.31",
       "drizzle-orm": "^0.45.2",
       "fast-xml-parser": "5.4.2",
+      "file-entry-cache": "11.1.1",
+      "flat-cache": "6.1.23",
       "lexical": "0.42.0",
       "node-gyp": "^12.4.0",
       "pdfjs-dist": "5.4.530",
