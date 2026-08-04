@@ -80,7 +80,7 @@ export const OPS_HOME_SUGGESTS: readonly OpsHomeSuggest[] = [
     title: '领星广告短查询',
     description: '国家 + 活动 + SKU 固定八段',
     prompt:
-      '美国 【广告活动全称或ID】 【SKU】\n（领星短查询：对比近7/前7、近14/前14，按固定八段输出结论、基础数据、竞价与否词建议）',
+      '美国 【广告活动全称或ID】 【SKU】\n（领星短查询：analyze_campaign 一次取 7/14/30 对比，按固定八段输出结论、基础数据、竞价与否词建议）',
   },
 ] as const;
 

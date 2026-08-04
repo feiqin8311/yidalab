@@ -15,9 +15,23 @@ export const startAppInitialization = () => {
   if (started) return;
   started = true;
 
-  // must run synchronously before first React render
-  bootTiming.spanSync('import-settings', startImportSettingsFromUrl);
-  bootTiming.spanSync('tool-surfaces', registerBuiltinToolSurfaces);
+  const markReady = () => {
+    flushSync(() => {
+      setAppReady(true);
+    });
+    bootTiming.mark('app-ready');
+  };
+
+  try {
+    // must run synchronously before first React render
+    bootTiming.spanSync('import-settings', startImportSettingsFromUrl);
+    bootTiming.spanSync('tool-surfaces', registerBuiltinToolSurfaces);
+  } catch (error) {
+    // Never leave AppLayer at appReady=false forever (white screen after splash).
+    console.error('[SPA Initialize] sync bootstrap failed', error);
+    markReady();
+    return;
+  }
 
   void bootTiming
     .span('core-init', initializeApp)
@@ -25,10 +39,7 @@ export const startAppInitialization = () => {
       console.error('[SPA Initialize] failed', error);
     })
     .finally(() => {
-      flushSync(() => {
-        setAppReady(true);
-      });
-      bootTiming.mark('app-ready');
+      markReady();
       startPostRenderInitialization();
       startBootMetricsFinalize();
     });

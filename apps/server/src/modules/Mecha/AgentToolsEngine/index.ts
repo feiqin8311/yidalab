@@ -10,12 +10,14 @@
  * - No dependency on frontend stores (useToolStore, useAgentStore, etc.)
  */
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
+import { FilesManifest } from '@lobechat/builtin-tool-files';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { MessageManifest } from '@lobechat/builtin-tool-message';
 import { RemoteDeviceManifest } from '@lobechat/builtin-tool-remote-device';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
+import { WorkbookManifest } from '@lobechat/builtin-tool-workbook';
 import {
   alwaysOnToolIds,
   builtinTools,
@@ -263,6 +265,9 @@ export const createServerAgentToolsEngine = (
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
     [WebBrowsingManifest.identifier]: isSearchEnabled,
+    // Attachment tools: always on when chat-mode whitelist includes them
+    [FilesManifest.identifier]: true,
+    [WorkbookManifest.identifier]: true,
   };
 
   // Custom mode: the tool set is EXACTLY the agent's declared plugins — no

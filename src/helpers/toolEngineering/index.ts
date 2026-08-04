@@ -2,10 +2,12 @@
  * Tools Engineering - Unified tools processing using ToolsEngine
  */
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
+import { FilesManifest } from '@lobechat/builtin-tool-files';
 import { KnowledgeBaseManifest } from '@lobechat/builtin-tool-knowledge-base';
 import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MemoryManifest } from '@lobechat/builtin-tool-memory';
 import { WebBrowsingManifest } from '@lobechat/builtin-tool-web-browsing';
+import { WorkbookManifest } from '@lobechat/builtin-tool-workbook';
 import { alwaysOnToolIds, chatModeAllowedToolIds, defaultToolIds } from '@lobechat/builtin-tools';
 import { createEnableChecker, type PluginEnableChecker } from '@lobechat/context-engine';
 import { ToolsEngine } from '@lobechat/context-engine';
@@ -231,6 +233,9 @@ export const createAgentToolsEngine = (
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,
     [WebBrowsingManifest.identifier]: webBrowsingEnabled,
+    // Attachment tools: always on when chat-mode whitelist includes them
+    [FilesManifest.identifier]: true,
+    [WorkbookManifest.identifier]: true,
   };
 
   const agentModeRules = {

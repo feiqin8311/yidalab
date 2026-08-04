@@ -1,0 +1,67 @@
+import { FilesApiName } from '@lobechat/builtin-tool-files';
+import { z } from 'zod';
+
+import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { router } from '@/libs/trpc/lambda';
+import { serverDatabase } from '@/libs/trpc/lambda/middleware';
+import { filesRuntime } from '@/server/services/toolExecution/serverRuntimes/files';
+
+/**
+ * SPA product path bridge: browser agents call lobe-files via trpc so
+ * AttachmentExtractService (topic-scoped inspect/read/search) runs server-side.
+ *
+ * Same pattern as workbook/dingpan — without this, SPA hits
+ * "Tool lobe-files/inspectAttachment is not available" (no client executor).
+ */
+const filesProcedure = wsCompatProcedure.use(serverDatabase);
+
+const filesApiNameSchema = z.enum([
+  FilesApiName.inspectAttachment,
+  FilesApiName.readAttachment,
+  FilesApiName.searchAttachment,
+]);
+
+export const filesRouter = router({
+  execute: filesProcedure
+    .input(
+      z.object({
+        agentId: z.string().optional(),
+        apiName: filesApiNameSchema,
+        args: z.record(z.string(), z.unknown()).optional().default({}),
+        topicId: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const runtime = filesRuntime.factory({
+        agentId: input.agentId,
+        serverDB: ctx.serverDB,
+        topicId: input.topicId,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId ?? null,
+      });
+
+      const fn = runtime?.[input.apiName];
+      if (typeof fn !== 'function') {
+        return {
+          content: `Builtin tool "lobe-files" has no API named "${input.apiName}".`,
+          error: { message: 'Unknown API', type: 'UNKNOWN_API' },
+          success: false,
+        };
+      }
+
+      try {
+        // Detached method extract drops `this`; re-bind so fail/toOutput work.
+        return await fn.call(runtime, input.args ?? {});
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('[files.execute] %s failed: %O', input.apiName, error);
+        return {
+          content: `Files tool failed: ${message}`,
+          error: { message, type: 'FilesToolError' },
+          success: false,
+        };
+      }
+    }),
+});
+
+export type FilesRouter = typeof filesRouter;

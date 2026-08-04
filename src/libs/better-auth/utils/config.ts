@@ -70,6 +70,11 @@ export const getTrustedOrigins = (enabledSSOProviders: string[]) => {
 /**
  * Build Better Auth secondaryStorage backed by Redis.
  * Uses the shared Redis manager to avoid duplicate connections and prefixes keys to prevent clashes.
+ *
+ * Fail-open: Redis blips must NOT break sign-in / get-session. With
+ * `session.storeSessionInDatabase: true`, Better Auth falls back to Postgres
+ * when `get` returns null. Throwing here surfaced as
+ * "Connection is closed" → UI "请检查账号与密码".
  */
 export const createSecondaryStorage = () => {
   const redisConfig = getRedisConfig();
@@ -80,31 +85,46 @@ export const createSecondaryStorage = () => {
   const buildKey = (key: string) => `${secondaryStorageKeyPrefix}${key}`;
 
   const getRedisClient = async () => {
-    const redisClient = await initializeRedis(redisConfig);
-    if (!redisClient) {
-      throw new Error('Redis secondary storage is enabled but failed to initialize');
+    try {
+      return await initializeRedis(redisConfig);
+    } catch (error) {
+      console.error('[better-auth secondaryStorage] redis init failed:', error);
+      return null;
     }
-
-    return redisClient;
   };
 
   return {
     delete: async (key: string) => {
-      const redisClient = await getRedisClient();
-      await redisClient.del(buildKey(key));
+      try {
+        const redisClient = await getRedisClient();
+        if (!redisClient) return;
+        await redisClient.del(buildKey(key));
+      } catch (error) {
+        console.error('[better-auth secondaryStorage] delete failed:', error);
+      }
     },
     get: async (key: string) => {
-      const redisClient = await getRedisClient();
-      return (await redisClient.get(buildKey(key))) ?? null;
+      try {
+        const redisClient = await getRedisClient();
+        if (!redisClient) return null;
+        return (await redisClient.get(buildKey(key))) ?? null;
+      } catch (error) {
+        console.error('[better-auth secondaryStorage] get failed:', error);
+        return null;
+      }
     },
     set: async (key: string, value: string, ttl?: number) => {
-      const redisClient = await getRedisClient();
-      if (typeof ttl === 'number') {
-        await redisClient.set(buildKey(key), value, { ex: ttl });
-        return;
+      try {
+        const redisClient = await getRedisClient();
+        if (!redisClient) return;
+        if (typeof ttl === 'number') {
+          await redisClient.set(buildKey(key), value, { ex: ttl });
+          return;
+        }
+        await redisClient.set(buildKey(key), value);
+      } catch (error) {
+        console.error('[better-auth secondaryStorage] set failed:', error);
       }
-
-      await redisClient.set(buildKey(key), value);
     },
   };
 };

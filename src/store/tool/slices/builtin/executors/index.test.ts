@@ -1,3 +1,4 @@
+import { FilesApiName, FilesIdentifier } from '@lobechat/builtin-tool-files';
 import { LobeAgentApiName, LobeAgentIdentifier } from '@lobechat/builtin-tool-lobe-agent';
 import {
   WebOnboardingApiName,
@@ -53,6 +54,15 @@ describe('builtin executor registry', () => {
     await registerBuiltinToolExecutors();
 
     expect(hasExecutor(LobeAgentIdentifier, LobeAgentApiName.analyzeVisualMedia)).toBe(true);
+  }, 30_000);
+
+  it('registers lobe-files attachment APIs (SPA lambda bridge)', async () => {
+    await registerBuiltinToolExecutors();
+
+    expect(hasExecutor(FilesIdentifier, FilesApiName.inspectAttachment)).toBe(true);
+    expect(hasExecutor(FilesIdentifier, FilesApiName.readAttachment)).toBe(true);
+    expect(hasExecutor(FilesIdentifier, FilesApiName.searchAttachment)).toBe(true);
+    expect(getApiNamesForIdentifier(FilesIdentifier)).toEqual(Object.values(FilesApiName));
   }, 30_000);
 
   it('rejects nested sub-agent execution', async () => {
