@@ -143,6 +143,25 @@
     <div id="root" style="height: 100%"></div>
 
     <!--ANALYTICS_SCRIPTS-->
+    <script>
+      // Failsafe: never leave the static YidaLab splash forever if SPA boot hangs.
+      // CacheHydrationGate normally removes #loading-screen within ~1.5s after React mounts.
+      (function () {
+        var MAX_MS = 12000;
+        setTimeout(function () {
+          var el = document.getElementById('loading-screen');
+          if (el) el.remove();
+          var root = document.getElementById('root');
+          if (root && !root.childElementCount) {
+            console.warn('[YidaLab] SPA boot timeout — root still empty');
+            root.innerHTML =
+              '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;font:14px/1.5 system-ui;color:#374151;text-align:center">' +
+              '页面加载失败。请硬刷新（Cmd+Shift+R），或打开控制台查看错误后重试。' +
+              '</div>';
+          }
+        }, MAX_MS);
+      })();
+    </script>
     <script type="module" src="/src/spa/entry.web.tsx"></script>
   </body>
 </html>

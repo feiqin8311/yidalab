@@ -48,6 +48,7 @@ import { dingpanRouter } from './dingpan';
 import { documentRouter } from './document';
 import { exporterRouter } from './exporter';
 import { fileRouter } from './file';
+import { filesRouter } from './files';
 import { followUpActionRouter } from './followUpAction';
 import { generationRouter } from './generation';
 import { generationBatchRouter } from './generationBatch';
@@ -116,6 +117,7 @@ export const lambdaRouter = router({
   device: deviceRouter,
   dingpan: dingpanRouter,
   document: documentRouter,
+  files: filesRouter,
   workbook: workbookRouter,
   exporter: exporterRouter,
   file: fileRouter,

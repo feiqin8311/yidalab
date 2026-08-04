@@ -58,8 +58,6 @@ export const defaultToolIds = [
   LobeAgentManifest.identifier,
   // Company DingTalk Drive upload — available on every agent by default
   DingpanManifest.identifier,
-  // Company FBA inventory alert → dingtalk-fba-bot HTTP
-  FbaAlertManifest.identifier,
   // Bounded Excel inspect/query for large chat attachments
   WorkbookManifest.identifier,
   // On-demand inspect/read/search for chat message attachments
@@ -84,7 +82,8 @@ export const defaultToolIds = [
  * `lobe-dingpan` is always-on so every company member's agents can upload to DingTalk
  * Drive without each agent opting in — credentials come from company/personal vault.
  *
- * `lobe-fba-alert` is always-on for company inventory alerts (skill + fixed phrases).
+ * `lobe-fba-alert` is NOT always-on: inventory alert is skill-driven (dingtalk-fba-alert),
+ * not a pinned chat-input tool. Package stays registered for opt-in / seed installs.
  */
 export const alwaysOnToolIds = [
   LobeAgentManifest.identifier,
@@ -92,7 +91,6 @@ export const alwaysOnToolIds = [
   SkillsManifest.identifier,
   SkillStoreManifest.identifier,
   DingpanManifest.identifier,
-  FbaAlertManifest.identifier,
   WorkbookManifest.identifier,
   FilesManifest.identifier,
 ];
@@ -131,6 +129,8 @@ export const chatModeAllowedToolIds = [
   WebBrowsingManifest.identifier,
   // Excel attachments: inspect/query without requiring full agent mode
   WorkbookManifest.identifier,
+  // Chat on_demand attachments: inspect/read/search without full agent mode
+  FilesManifest.identifier,
 ];
 
 /**
@@ -348,6 +348,8 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     type: 'builtin',
   },
   {
+    // Not pinned in chat Tools; keep package for explicit install / legacy callers.
+    hidden: true,
     identifier: FbaAlertManifest.identifier,
     manifest: FbaAlertManifest,
     type: 'builtin',

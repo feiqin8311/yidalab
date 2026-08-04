@@ -312,6 +312,8 @@ export default defineConfig({
     proxy: {
       '/api': `http://localhost:${process.env.PORT || 3010}`,
       '/oidc': `http://localhost:${process.env.PORT || 3010}`,
+      // Path-style S3 via app origin (same as prod nginx /lobe → rustfs)
+      '/lobe': `http://localhost:${process.env.PORT || 3010}`,
       '/trpc': `http://localhost:${process.env.PORT || 3010}`,
       '/webapi': `http://localhost:${process.env.PORT || 3010}`,
     },

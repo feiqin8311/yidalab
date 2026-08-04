@@ -24,6 +24,7 @@ import { claudeCodeExecutor, codexExecutor } from './heteroCli';
 import { activatorExecutor } from './lobe-activator';
 import { agentDocumentsExecutor } from './lobe-agent-documents';
 import { dingpanExecutor } from './lobe-dingpan';
+import { filesExecutor } from './lobe-files';
 import { messageExecutor } from './lobe-message';
 import { notebookExecutor } from './lobe-notebook';
 import { pageAgentExecutor } from './lobe-page-agent';
@@ -151,6 +152,7 @@ export const registerBuiltinToolExecutors = (): void => {
     cloudSandboxExecutor,
     credsExecutor,
     dingpanExecutor,
+    filesExecutor,
     workbookExecutor,
     groupAgentBuilderExecutor,
     groupManagementExecutor,
