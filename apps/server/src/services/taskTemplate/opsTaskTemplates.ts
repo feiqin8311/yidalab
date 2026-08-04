@@ -30,7 +30,7 @@ export const OPS_TASK_TEMPLATES: readonly TaskTemplate[] = [
     cronPattern: '0 10 * * 1,2,3,4,5',
     interests: ['marketing', 'operations', 'business'],
     instruction:
-      '工作日广告巡检：对【站点】【广告活动全称或 ID】与关联【SKU】，调用 company.mcp.lingxing-mcp（或 lingxing-ads skill），对比近7/前7、近14/前14，按固定八段输出结论、基础数据、竞价与否词建议。禁止散文式复盘。',
+      '工作日广告巡检：对【站点】【广告活动全称或 ID】与关联【SKU】，调用 company.mcp.lingxing-mcp 的 analyze_campaign（或 lingxing-ads skill），一次取 7/14/30 对比与否词，按固定八段输出。禁止散文式复盘。',
   },
   {
     id: 900_003,

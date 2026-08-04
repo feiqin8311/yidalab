@@ -10,7 +10,7 @@
 | ----------------------------------------------- | ------------------------------------------------------------------------- |
 | ASIN 流量诊断、自然 / 广告归因、关键词排名异常  | `company.mcp.sif-mcp` + 领星 MCP/skill；必要时 SellerSprite / Amazon 搜索 |
 | 广告结构、Campaign / Search Term、否词          | `lingxing-ads` skill 或 `company.mcp.lingxing-mcp`                        |
-| 领星短格式：`美国 活动名 SKU` / `国家+活动+SKU` | **仅** `lingxing-ads` → 固定八段，禁止散文复盘                            |
+| 领星短格式：`美国 活动名 SKU` / `国家+活动+SKU` | **仅** `lingxing-ads` → MCP `analyze_campaign` → 固定八段，禁止散文复盘   |
 | 类目大盘、淡旺季、BSR、新品机会、关键词机会     | SellerSprite + Sorftime + SIF；有则 activate 对应 company skill           |
 | Listing 诊断、Rufus/Alexa 友好、标题五点改写    | listing /rufus auditor company skills + Amazon 采集                       |
 | 评论 / VOC / 痛点 / 使用场景                    | Amazon reviews + user-pain-miner / research skills                        |
