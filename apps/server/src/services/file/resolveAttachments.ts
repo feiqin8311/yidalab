@@ -204,31 +204,41 @@ export const resolveAttachmentsByFileIds = async ({
     }
     if (content) cardBudget = Math.max(0, cardBudget - content.length);
 
-    // Explicit empty body so the model does not treat a bare file URL as crawlable text.
-    if (!content) {
-      const reason =
-        entry.warnings?.join('; ') ||
-        (entry.parseError instanceof Error ? entry.parseError.message : undefined) ||
-        'no extractable text';
-      content = `Attachment "${file.name || file.id}" could not provide inline text (${reason}). Do not download/crawl the file URL (binary). Ask for pasted text or .txt/.md, or upload via Resources.`;
-      result.warnings.push(
-        `File "${file.name || 'unknown'}" had no extractable text for the prompt.`,
-      );
-    }
-
     // Prefer structured parseStatus; fall back to ContextResourceResolver status
     // so partial/failed/unsupported cards can advertise lobe-files tools.
     const resolveStatus =
       'resolveStatus' in entry
         ? (entry.resolveStatus as ContextResourceResult['status'] | undefined)
         : undefined;
-    const parseStatus = (entry.parseStatus ??
+    let parseStatus = (entry.parseStatus ??
       (resolveStatus === 'ready' ||
       resolveStatus === 'partial' ||
       resolveStatus === 'failed' ||
       resolveStatus === 'unsupported'
         ? resolveStatus
         : undefined)) as ChatFileParseStatus | undefined;
+
+    // Explicit empty body so the model does not treat a bare file URL as crawlable text.
+    // Force parseStatus=failed so file cards advertise availableTool=lobe-files/* —
+    // otherwise a non-empty "ask for .txt" placeholder looks ready and the model
+    // skips tools (DingTalk: first docx turn said "无法提取" without calling tools).
+    if (!content) {
+      const reason =
+        entry.warnings?.join('; ') ||
+        (entry.parseError instanceof Error ? entry.parseError.message : undefined) ||
+        'no extractable text';
+      content =
+        `Attachment id=${file.id} name="${file.name || file.id}" could not provide inline text (${reason}). ` +
+        `Do not download/crawl the file URL (binary). ` +
+        `REQUIRED: call lobe-files/inspectAttachment then lobe-files/readAttachment with this fileId. ` +
+        `Only if tools fail, ask the user to paste text or re-upload as .txt/.md.`;
+      if (!parseStatus || parseStatus === 'ready') parseStatus = 'failed';
+      result.warnings.push(
+        `File "${file.name || 'unknown'}" had no extractable text for the prompt.`,
+      );
+    } else if (entry.parseError && parseStatus !== 'partial') {
+      parseStatus = parseStatus ?? 'failed';
+    }
 
     result.fileList.push({
       content,
