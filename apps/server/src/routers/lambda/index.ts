@@ -35,6 +35,7 @@ import { apiKeyRouter } from './apiKey';
 import { asrRouter } from './asr';
 import { botMessageRouter } from './botMessage';
 import { briefRouter } from './brief';
+import { businessFunctionRouter } from './businessFunction';
 import { changelogRouter } from './changelog';
 import { chunkRouter } from './chunk';
 import { comfyuiRouter } from './comfyui';
@@ -109,6 +110,7 @@ export const lambdaRouter = router({
   apiKey: apiKeyRouter,
   asr: asrRouter,
   chunk: chunkRouter,
+  businessFunction: businessFunctionRouter,
   company: companyRouter,
   companyFeedback: companyFeedbackRouter,
   comfyui: comfyuiRouter,

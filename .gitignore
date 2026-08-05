@@ -43,9 +43,11 @@ tmp/
 
 # Environment files
 .env
+.env.*
 .env.local
 .env*.local
 .env.development
+.env.bak*
 venv/
 .venv/
 

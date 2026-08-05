@@ -389,4 +389,42 @@ describe('MCPService', () => {
       });
     });
   });
+
+  describe('sanitizeForLogging', () => {
+    it('redacts auth.token and every header value without mutating the original', () => {
+      const original = {
+        auth: { token: 'secret-token', type: 'bearer' as const },
+        env: { API_KEY: 'env-secret' },
+        headers: { 'Authorization': 'Bearer secret', 'x-api-key': 'k' },
+        name: 'company.mcp.lingxing-mcp',
+        type: 'http' as const,
+        url: 'https://mcp.example/lingxing',
+      };
+      const originalSnapshot = structuredClone(original);
+
+      const sanitized = (mcpService as any).sanitizeForLogging(original);
+
+      expect(sanitized.env).toBeUndefined();
+      expect(sanitized.auth).toEqual({ token: '[redacted]', type: 'bearer' });
+      expect(sanitized.headers).toEqual({
+        'Authorization': '[redacted]',
+        'x-api-key': '[redacted]',
+      });
+      expect(sanitized.name).toBe('company.mcp.lingxing-mcp');
+      expect(sanitized.url).toBe('https://mcp.example/lingxing');
+      // Original object must stay intact for actual MCP calls.
+      expect(original).toEqual(originalSnapshot);
+    });
+
+    it('handles missing auth/headers', () => {
+      const sanitized = (mcpService as any).sanitizeForLogging({
+        name: 'x',
+        type: 'http',
+        url: 'https://example.com',
+      });
+      expect(sanitized.auth).toBeUndefined();
+      expect(sanitized.headers).toBeUndefined();
+      expect(sanitized.env).toBeUndefined();
+    });
+  });
 });

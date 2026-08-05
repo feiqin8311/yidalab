@@ -11,6 +11,8 @@ const prefixes = {
   companyMarketSkills: 'cms',
   companyFeedback: 'cfb',
   briefs: 'brf',
+  businessFunctionResultRows: 'bfrr',
+  businessFunctionRuns: 'bfr',
   taskComments: 'cmt',
   tasks: 'task',
   agents: 'agt',

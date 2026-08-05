@@ -165,7 +165,8 @@ describe('systemStatusSelectors', () => {
       const s: GlobalState = merge(initialState, {
         status: { sidebarItems: stored },
       });
-      // Missing bottom default `feedback` is backfilled immediately after spacer.
+      // Missing bottom default `feedback` after spacer; `functions` pins after `tasks`
+      // even when tasks was re-anchored into the bottom group.
       expect(systemStatusSelectors.sidebarItems(null)(s)).toEqual([
         'private',
         'agent',
@@ -174,6 +175,7 @@ describe('systemStatusSelectors', () => {
         'feedback',
         'pages',
         'tasks',
+        'functions',
         'image',
         'community',
         'resource',
@@ -184,6 +186,7 @@ describe('systemStatusSelectors', () => {
     it('should preserve a canonically-positioned spacer', () => {
       const stored = [
         'pages',
+        'functions',
         'recents',
         'private',
         'agent',
@@ -219,8 +222,10 @@ describe('systemStatusSelectors', () => {
       const s: GlobalState = merge(initialState, {
         status: { sidebarItems: stored },
       });
+      // `functions` is backfilled immediately after `tasks` (product order).
       expect(systemStatusSelectors.sidebarItems(null)(s)).toEqual([
         'tasks',
+        'functions',
         'pages',
         'recents',
         'private',
@@ -243,6 +248,7 @@ describe('systemStatusSelectors', () => {
       // every known key is present
       expect(items).toContain('pages');
       expect(items).toContain('tasks');
+      expect(items).toContain('functions');
       expect(items).toContain('community');
       expect(items).toContain('resource');
       expect(items).toContain('memory');
@@ -253,6 +259,7 @@ describe('systemStatusSelectors', () => {
       // missing top-group defaults slot in just before the accordion
       expect(items.indexOf('tasks')).toBeLessThan(spacerIdx - 2);
       expect(items.indexOf('pages')).toBeLessThan(spacerIdx - 2);
+      expect(items.indexOf('functions')).toBeLessThan(spacerIdx - 2);
       // missing bottom-group defaults sit after the spacer
       expect(items.indexOf('image')).toBeGreaterThan(spacerIdx);
     });
@@ -266,6 +273,7 @@ describe('systemStatusSelectors', () => {
       // the legacy state was saved) is backfilled at the head of the block.
       expect(items).toEqual([
         'tasks',
+        'functions',
         'pages',
         'private',
         'agent',
@@ -288,6 +296,7 @@ describe('systemStatusSelectors', () => {
       // backfilled at the head of the block; recents/agent keep legacy order.
       expect(items).toEqual([
         'tasks',
+        'functions',
         'pages',
         'private',
         'recents',

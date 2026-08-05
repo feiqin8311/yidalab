@@ -10,6 +10,7 @@ export enum SidebarTabKey {
   Chat = 'chat',
   Community = 'community',
   Feedback = 'feedback',
+  Functions = 'functions',
   Home = 'home',
   Image = 'image',
   Knowledge = 'knowledge',
