@@ -3,6 +3,7 @@ import {
   type UniformSearchResponse,
   type UniformSearchResult,
 } from '@lobechat/types';
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import urlJoin from 'url-join';
@@ -18,7 +19,7 @@ const log = debug('lobe-search:Kagi');
  */
 export class KagiImpl implements SearchServiceImpl {
   private get apiKey(): string | undefined {
-    return process.env.KAGI_API_KEY;
+    return getVaultEnv('KAGI_API_KEY');
   }
 
   private get baseUrl(): string {
@@ -82,17 +83,15 @@ export class KagiImpl implements SearchServiceImpl {
 
       log('Parsed Kagi response: %o', kagiResponse);
 
-      const mappedResults = (kagiResponse.data || []).map(
-        (result): UniformSearchResult => ({
-          category: 'general', // Default category
-          content: result.snippet || '', // Prioritize content
-          engines: ['kagi'], // Use 'kagi' as the engine name
-          parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
-          score: 1, // Default score to 1
-          title: result.title || '',
-          url: result.url,
-        }),
-      );
+      const mappedResults = (kagiResponse.data || []).map((result): UniformSearchResult => ({
+        category: 'general', // Default category
+        content: result.snippet || '', // Prioritize content
+        engines: ['kagi'], // Use 'kagi' as the engine name
+        parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
+        score: 1, // Default score to 1
+        title: result.title || '',
+        url: result.url,
+      }));
 
       log('Mapped %d results to SearchResult format', mappedResults.length);
 

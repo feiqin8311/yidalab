@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { parse as parseUrl } from 'node:url';
 
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
+
 import {
   buildHtmlDeliverableName,
   type HtmlDeliverableNameInput,
@@ -15,6 +17,9 @@ const DINGPAN_FETCH_TIMEOUT_MS = 45_000;
 
 /** Soft cap for HTML body (~3MB). Larger payloads choke trpc + OSS and rarely finish. */
 export const DINGPAN_HTML_MAX_BYTES = 3 * 1024 * 1024;
+
+/** Request-scoped vault first (withVaultCredEnv / ALS), then process.env deploy defaults. */
+const env = (key: string): string => getVaultEnv(key);
 
 const dingpanFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const controller = new AbortController();
@@ -62,7 +67,7 @@ export const resolveFolderTarget = (input: {
   folderLink?: string;
   spaceId?: string;
 }): { folderId: string; spaceId: string } => {
-  const folderLink = input.folderLink?.trim() || process.env.DINGTALK_FOLDER_LINK?.trim() || '';
+  const folderLink = input.folderLink?.trim() || env('DINGTALK_FOLDER_LINK');
   if (folderLink) {
     const parsed = parseUrl(folderLink, true);
     const spaceId = String(parsed.query.spaceId || '').trim();
@@ -79,8 +84,8 @@ export const resolveFolderTarget = (input: {
     return { folderId, spaceId };
   }
 
-  const spaceId = (input.spaceId || process.env.DINGTALK_SPACE_ID || '').trim();
-  const folderId = (input.folderId || process.env.DINGTALK_FOLDER_ID || '').trim();
+  const spaceId = (input.spaceId || env('DINGTALK_SPACE_ID')).trim();
+  const folderId = (input.folderId || env('DINGTALK_FOLDER_ID')).trim();
   if (!spaceId || !folderId) {
     throw new Error(
       'Missing target folder: set DINGTALK_FOLDER_LINK (credential/env) or pass folderLink / spaceId+folderId',
@@ -90,8 +95,8 @@ export const resolveFolderTarget = (input: {
 };
 
 export const getAccessToken = async (): Promise<string> => {
-  const appKey = (process.env.DINGTALK_APP_KEY || '').trim();
-  const appSecret = (process.env.DINGTALK_APP_SECRET || '').trim();
+  const appKey = env('DINGTALK_APP_KEY');
+  const appSecret = env('DINGTALK_APP_SECRET');
   if (!appKey || !appSecret) {
     throw new Error('DINGTALK_APP_KEY and DINGTALK_APP_SECRET are required');
   }
@@ -112,13 +117,13 @@ export const getAccessToken = async (): Promise<string> => {
  * (oapi topapi/v2/user/get). The new contact/users API often 404s for staff userIds.
  */
 export const getUnionId = async (_accessToken?: string): Promise<string> => {
-  const unionId = (process.env.DINGTALK_UNION_ID || '').trim();
+  const unionId = env('DINGTALK_UNION_ID');
   if (unionId) return unionId;
-  const userId = (process.env.DINGTALK_USER_ID || '').trim();
+  const userId = env('DINGTALK_USER_ID');
   if (!userId) throw new Error('DINGTALK_UNION_ID or DINGTALK_USER_ID is required');
 
-  const appKey = (process.env.DINGTALK_APP_KEY || '').trim();
-  const appSecret = (process.env.DINGTALK_APP_SECRET || '').trim();
+  const appKey = env('DINGTALK_APP_KEY');
+  const appSecret = env('DINGTALK_APP_SECRET');
   if (!appKey || !appSecret) {
     throw new Error(
       'DINGTALK_APP_KEY and DINGTALK_APP_SECRET are required to resolve USER_ID → unionId',
@@ -543,12 +548,8 @@ export const uploadHtmlToDingpan = async (
 };
 
 export const dingpanConfigStatus = () => {
-  const hasAppCreds = Boolean(
-    process.env.DINGTALK_APP_KEY?.trim() && process.env.DINGTALK_APP_SECRET?.trim(),
-  );
-  const hasUnionOrUser = Boolean(
-    process.env.DINGTALK_UNION_ID?.trim() || process.env.DINGTALK_USER_ID?.trim(),
-  );
+  const hasAppCreds = Boolean(env('DINGTALK_APP_KEY') && env('DINGTALK_APP_SECRET'));
+  const hasUnionOrUser = Boolean(env('DINGTALK_UNION_ID') || env('DINGTALK_USER_ID'));
   let defaultFolderConfigured: boolean;
   try {
     resolveFolderTarget({});

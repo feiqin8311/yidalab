@@ -147,9 +147,13 @@ export const applyDingpanDeliveryClaimGuard = (
 /** Normalize empty tool content so the model never sees a silent blank tool message. */
 export const normalizeEmptyToolContent = (
   content: string | undefined | null,
-  error?: { message?: string } | null,
+  error?: { message?: string } | null | unknown,
 ): string => {
   if (typeof content === 'string' && content.length > 0) return content;
-  const message = error?.message?.trim() || 'Tool returned empty result';
+  const errMsg =
+    error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '').trim()
+      : '';
+  const message = errMsg || 'Tool returned empty result';
   return JSON.stringify({ error: message, success: false, synthetic: true });
 };

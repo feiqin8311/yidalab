@@ -8,7 +8,9 @@ import { withTimeout } from '../utils/withTimeout';
 const JINA_TIMEOUT = 15_000;
 
 export const jina: CrawlImpl<{ apiKey?: string }> = async (url, params) => {
-  const token = params.apiKey ?? process.env.JINA_READER_API_KEY ?? process.env.JINA_API_KEY;
+  const { getVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+  const token =
+    (params.apiKey ?? getVaultEnv('JINA_READER_API_KEY')) || getVaultEnv('JINA_API_KEY');
   let res: Response;
 
   try {

@@ -61,6 +61,59 @@ describe('queryJsonlSheet', () => {
     expect(page2.rows.map((r) => r.id)).not.toContain('0');
   });
 
+  it('aggregates sum/avg without groupBy', () => {
+    const jsonl = [
+      JSON.stringify({ 花费: '100', 渠道: 'A' }),
+      JSON.stringify({ 花费: '200', 渠道: 'B' }),
+      JSON.stringify({ 花费: '50', 渠道: 'A' }),
+    ].join('\n');
+    const result = queryJsonlSheet(jsonl, {
+      aggregates: [
+        { column: '花费', op: 'sum' },
+        { column: '花费', op: 'avg' },
+        { column: '花费', op: 'count' },
+      ],
+    });
+    expect(result.summary?.sum_花费).toBe(350);
+    expect(result.summary?.avg_花费).toBeCloseTo(350 / 3);
+    expect(result.summary?.count_花费).toBe(3);
+    expect(result.hasMore).toBe(false);
+  });
+
+  it('parses currency and percent for aggregates', () => {
+    const jsonl = [
+      JSON.stringify({ 花费: '¥1,200.50', 转化: '12%' }),
+      JSON.stringify({ 花费: '$300', 转化: '8%' }),
+    ].join('\n');
+    const result = queryJsonlSheet(jsonl, {
+      aggregates: [
+        { column: '花费', op: 'sum' },
+        { column: '转化', op: 'avg' },
+      ],
+    });
+    expect(result.summary?.sum_花费).toBeCloseTo(1500.5);
+    expect(result.summary?.avg_转化).toBeCloseTo(0.1);
+  });
+
+  it('aggregates with groupBy ranking and hasMore', () => {
+    const jsonl = [
+      JSON.stringify({ 花费: '100', 渠道: 'A' }),
+      JSON.stringify({ 花费: '200', 渠道: 'B' }),
+      JSON.stringify({ 花费: '50', 渠道: 'A' }),
+      JSON.stringify({ 花费: '10', 渠道: 'C' }),
+    ].join('\n');
+    const result = queryJsonlSheet(jsonl, {
+      aggregates: [{ column: '花费', op: 'sum' }],
+      groupBy: ['渠道'],
+      limit: 2,
+    });
+    expect(result.groups?.[0]).toMatchObject({ 渠道: 'B', sum_花费: 200 });
+    expect(result.groups?.[1]).toMatchObject({ 渠道: 'A', sum_花费: 150 });
+    expect(result.totalGroups).toBe(3);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe('2');
+  });
+
   it('orderBy sorts full filtered set before limit (Top-N)', () => {
     const r = queryJsonlSheet(jsonl, {
       limit: 2,

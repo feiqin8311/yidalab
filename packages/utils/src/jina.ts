@@ -3,6 +3,11 @@ const DEFAULT_JINA_SEARCH_BASE_URL = 'https://s.jina.ai';
 const CN_JINA_READER_BASE_URL = 'https://r.jinaai.cn';
 const CN_JINA_SEARCH_BASE_URL = 'https://s.jinaai.cn';
 
+/**
+ * Client-safe: only process.env (no AsyncLocalStorage / vault).
+ * Server vault override for JINA_USE_CN_DOMAINS is not needed for URL host
+ * selection at request time in browser; deploy env is enough.
+ */
 export const isJinaCnDomainsEnabled = () =>
   process.env.JINA_USE_CN_DOMAINS?.trim().toLowerCase() === 'true';
 

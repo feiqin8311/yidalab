@@ -202,12 +202,22 @@ export const createToolsEngine = (config: ToolsEngineConfig = {}): ToolsEngine =
   });
 };
 
+export type AgentToolsEngineAttachment = {
+  fileType?: string | null;
+  name?: string | null;
+};
+
 export const createAgentToolsEngine = (
   workingModel: WorkingModel,
   /** Runtime-resolved plugin IDs (from agentConfigResolver), may include tools beyond the active agent */
   pluginIds?: string[],
   /** Conversation context for context-aware builtin manifests (scope, isSubAgent). */
   manifestContext?: BuiltinToolResolveContext,
+  /**
+   * This-turn attachments only. Never inferred from global messagesMap
+   * (cross-topic contamination). Omit/empty → keep files+workbook available.
+   */
+  currentTurnAttachments?: AgentToolsEngineAttachment[],
 ) => {
   const searchConfig = getSearchConfig(workingModel.model, workingModel.provider);
   const agentState = getAgentStoreState();
@@ -229,13 +239,32 @@ export const createAgentToolsEngine = (
     settingsSelectors.memoryEnabled(useUserStore.getState());
   const webBrowsingEnabled = searchConfig.useApplicationBuiltinSearchTool;
 
+  // Capability gate from explicit this-turn attachments only (no global store guess).
+  let gateFiles = true;
+  let gateWorkbook = true;
+  if (currentTurnAttachments?.length) {
+    try {
+      const { inferAttachmentCapabilities } = require('@lobechat/utils') as {
+        inferAttachmentCapabilities: (
+          files: Array<{ fileType?: string | null; name?: string | null }>,
+        ) => { hasAttachment: boolean; hasDocument: boolean; hasSpreadsheet: boolean };
+      };
+      const caps = inferAttachmentCapabilities(currentTurnAttachments);
+      if (caps.hasAttachment) {
+        gateFiles = caps.hasDocument;
+        gateWorkbook = caps.hasSpreadsheet;
+      }
+    } catch {
+      // keep both tools if utils unavailable
+    }
+  }
+
   const chatModeRules = {
     [KnowledgeBaseManifest.identifier]: kbEnabled,
     [MemoryManifest.identifier]: memoryEnabled,
     [WebBrowsingManifest.identifier]: webBrowsingEnabled,
-    // Attachment tools: always on when chat-mode whitelist includes them
-    [FilesManifest.identifier]: true,
-    [WorkbookManifest.identifier]: true,
+    [FilesManifest.identifier]: gateFiles,
+    [WorkbookManifest.identifier]: gateWorkbook,
   };
 
   const agentModeRules = {
@@ -244,8 +273,10 @@ export const createAgentToolsEngine = (
     ...(pluginIds && Object.fromEntries(pluginIds.map((id) => [id, true]))),
     // User-selected plugins (from the active agent)
     ...Object.fromEntries(userPlugins.map((id) => [id, true])),
-    // Always-on builtin tools
+    // Always-on builtin tools (files/workbook overridden by attachment gate)
     ...Object.fromEntries(alwaysOnToolIds.map((id) => [id, true])),
+    [FilesManifest.identifier]: gateFiles,
+    [WorkbookManifest.identifier]: gateWorkbook,
     // System-level rules (may override user selection for specific tools)
     [CloudSandboxManifest.identifier]: agentChatConfigSelectors.isCloudSandboxEnabled(agentState),
     [KnowledgeBaseManifest.identifier]: kbEnabled,

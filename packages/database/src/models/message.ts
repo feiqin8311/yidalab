@@ -1820,7 +1820,8 @@ export class MessageModel {
 
   /**
    * Recent dingpan upload tool rows for a topic (newest first).
-   * Used by bot delivery to attach preview_url when the model forgot the link.
+   * @deprecated Prefer findDingpanUploadsByOperation — topic-scoped lookup can
+   * cross-contaminate multi-turn bot deliveries.
    */
   findRecentDingpanUploadsInTopic = async (
     topicId: string,
@@ -1842,6 +1843,50 @@ export class MessageModel {
           eq(messages.role, 'tool'),
           eq(messagePlugins.identifier, 'lobe-dingpan'),
           inArray(messagePlugins.apiName, ['uploadHtmlToDingpan', 'uploadToDingpan']),
+          this.ownership(),
+        ),
+      )
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
+
+    return rows;
+  };
+
+  /**
+   * Dingpan uploads scoped to one agent operation (newest first).
+   * topicId is an optional ownership guard only — never a fallback scope.
+   */
+  findDingpanUploadsByOperation = async (params: {
+    limit?: number;
+    operationId: string;
+    topicId?: string | null;
+  }): Promise<
+    Array<{
+      apiName: string | null;
+      content: string | null;
+      identifier: string | null;
+      metadata: unknown;
+    }>
+  > => {
+    const { operationId, topicId, limit = 8 } = params;
+    if (!operationId?.trim()) return [];
+
+    const rows = await this.db
+      .select({
+        apiName: messagePlugins.apiName,
+        content: messages.content,
+        identifier: messagePlugins.identifier,
+        metadata: messages.metadata,
+      })
+      .from(messages)
+      .innerJoin(messagePlugins, eq(messagePlugins.id, messages.id))
+      .where(
+        and(
+          eq(messages.role, 'tool'),
+          eq(messagePlugins.identifier, 'lobe-dingpan'),
+          inArray(messagePlugins.apiName, ['uploadHtmlToDingpan', 'uploadToDingpan']),
+          sql`${messages.metadata}->>'operationId' = ${operationId}`,
+          topicId ? eq(messages.topicId, topicId) : undefined,
           this.ownership(),
         ),
       )

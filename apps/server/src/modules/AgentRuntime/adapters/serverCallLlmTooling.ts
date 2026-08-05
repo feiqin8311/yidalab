@@ -34,16 +34,24 @@ const shouldKeepDingpanOnForceFinish = (state: AgentState): boolean => {
   return mode === 'dingpan';
 };
 
-const topicHasSuccessfulDingpanUpload = (state: AgentState): boolean => {
+/** Prefer this-operation uploads; never treat topic history as forceFinish done. */
+const operationHasSuccessfulDingpanUpload = (state: AgentState, operationId?: string): boolean => {
+  if (!operationId) return false;
   const outcomes = extractDingpanUploadOutcomes(
-    (state.messages ?? []).map((message: any) => ({
-      content: message?.content,
-      plugin: message?.plugin ?? {
-        apiName: message?.apiName,
-        identifier: message?.identifier,
-      },
-      role: message?.role,
-    })),
+    (state.messages ?? [])
+      .filter((message: any) => {
+        const meta = message?.metadata as { operationId?: string } | undefined;
+        // Require explicit operationId stamp — unstamped history must not count.
+        return meta?.operationId === operationId;
+      })
+      .map((message: any) => ({
+        content: message?.content,
+        plugin: message?.plugin ?? {
+          apiName: message?.apiName,
+          identifier: message?.identifier,
+        },
+        role: message?.role,
+      })),
   );
   return outcomes.some((o) => o.success && o.previewUrl);
 };
@@ -72,7 +80,7 @@ export const resolveServerCallLlmTooling = (
   const deliveryOnly =
     !!state.forceFinish &&
     shouldKeepDingpanOnForceFinish(state) &&
-    !topicHasSuccessfulDingpanUpload(state);
+    !operationHasSuccessfulDingpanUpload(state, ctx.operationId);
 
   const stepDelta = buildStepToolDelta({
     activeDeviceId: deliveryOnly ? undefined : activeDeviceId,

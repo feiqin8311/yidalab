@@ -2,6 +2,8 @@ import { readFile, stat } from 'node:fs/promises';
 
 import * as xlsx from 'xlsx';
 
+import { normalizeWorksheetTable } from './normalizeHeaders';
+
 /** Parser version for idempotent workbook rebuilds. Bump when output shape changes. */
 export const WORKBOOK_PARSER_VERSION = 'workbook-v1';
 
@@ -169,26 +171,14 @@ export async function buildWorkbookAssetsFromPathUnlocked(
       );
     }
 
-    const jsonData = xlsx.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-      defval: '',
-      raw: false,
+    // Multi-level header normalization — avoids SheetJS __EMPTY_* column names.
+    const table = normalizeWorksheetTable(worksheet, {
+      maxCellChars: WORKBOOK_MAX_CELL_CHARS,
+      maxColumns: WORKBOOK_MAX_COLUMNS,
     });
-
-    const allHeaderKeys =
-      jsonData.length > 0
-        ? Object.keys(jsonData[0] || {})
-        : (xlsx.utils
-            .sheet_to_json<string[]>(worksheet, { header: 1, defval: '' })[0]
-            ?.map((h) => String(h ?? '').trim())
-            .filter(Boolean) ?? []);
-
-    if (allHeaderKeys.length > WORKBOOK_MAX_COLUMNS) columnsCapped = true;
-    const headerKeys = allHeaderKeys.slice(0, WORKBOOK_MAX_COLUMNS);
-
-    const columns =
-      headerKeys.length > 0
-        ? headerKeys.map((h, i) => String(h).trim() || `col_${i + 1}`)
-        : ['col_1'];
+    if (table.columns.length >= WORKBOOK_MAX_COLUMNS) columnsCapped = true;
+    const columns = table.columns.length > 0 ? table.columns : ['col_1'];
+    const jsonData = table.rows;
 
     if (jsonData.length > WORKBOOK_MAX_ROWS_PER_SHEET) {
       throw new Error(`Sheet "${sheetName}" exceeds max rows (${WORKBOOK_MAX_ROWS_PER_SHEET})`);
@@ -249,10 +239,17 @@ export const isSpreadsheetFile = (fileType: string, name?: string): boolean => {
   if (
     mime.includes('spreadsheet') ||
     mime.includes('excel') ||
+    mime.includes('csv') ||
+    mime === 'text/csv' ||
     mime === 'application/vnd.ms-excel' ||
     mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   ) {
     return true;
   }
-  return lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls') || lowerName.endsWith('.xlsm');
+  return (
+    lowerName.endsWith('.xlsx') ||
+    lowerName.endsWith('.xls') ||
+    lowerName.endsWith('.xlsm') ||
+    lowerName.endsWith('.csv')
+  );
 };

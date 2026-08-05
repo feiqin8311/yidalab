@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  findRecentDingpanUploadsInTopic,
+  findDingpanUploadsByOperation,
   getLastMainThreadSpineMessageId,
   create,
   findById,
@@ -13,7 +13,7 @@ const {
   withVaultCredEnv,
   findByIdUser,
 } = vi.hoisted(() => ({
-  findRecentDingpanUploadsInTopic: vi.fn(),
+  findDingpanUploadsByOperation: vi.fn(),
   getLastMainThreadSpineMessageId: vi.fn(),
   create: vi.fn(),
   findById: vi.fn(),
@@ -27,7 +27,7 @@ const {
 
 vi.mock('@/database/models/message', () => ({
   MessageModel: class {
-    findRecentDingpanUploadsInTopic = findRecentDingpanUploadsInTopic;
+    findDingpanUploadsByOperation = findDingpanUploadsByOperation;
     getLastMainThreadSpineMessageId = getLastMainThreadSpineMessageId;
     create = create;
     findById = findById;
@@ -66,11 +66,16 @@ const { ensureDingpanDeliverable } = await import('./ensureDingpanDeliverable');
 
 describe('ensureDingpanDeliverable', () => {
   const db = {} as any;
+  const turn = {
+    assistantMessageId: 'msg_assistant_1',
+    operationId: 'op_1',
+    topicId: 'tpc_1',
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
     shouldEnsureDingpanForBotReply.mockReturnValue(true);
-    findRecentDingpanUploadsInTopic.mockResolvedValue([]);
+    findDingpanUploadsByOperation.mockResolvedValue([]);
     findByIdUser.mockResolvedValue({ username: 'kerden' });
     wrapBotReplyAsHtml.mockReturnValue('<html><body>report</body></html>');
     withVaultCredEnv.mockImplementation(async (_u: string, _db: unknown, fn: () => unknown) =>
@@ -87,19 +92,31 @@ describe('ensureDingpanDeliverable', () => {
     const result = await ensureDingpanDeliverable({
       db,
       reply: 'ok',
-      topicId: 'tpc_1',
+      turn,
       userId: 'user_1',
     });
     expect(result).toEqual({ uploaded: false });
     expect(uploadHtmlToDingpan).not.toHaveBeenCalled();
   });
 
-  it('reuses existing successful topic upload without re-upload', async () => {
-    findRecentDingpanUploadsInTopic.mockResolvedValue([
+  it('returns early without operationId (no topic history fallback)', async () => {
+    const result = await ensureDingpanDeliverable({
+      db,
+      reply: '结论：销量上涨。',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+    expect(result).toEqual({ uploaded: false });
+    expect(findDingpanUploadsByOperation).not.toHaveBeenCalled();
+    expect(uploadHtmlToDingpan).not.toHaveBeenCalled();
+  });
+
+  it('reuses existing successful upload for the same operation only', async () => {
+    findDingpanUploadsByOperation.mockResolvedValue([
       {
         apiName: 'uploadHtmlToDingpan',
         content: JSON.stringify({
-          preview_url: 'https://qr.dingtalk.com/page/yunpan?fileId=old',
+          preview_url: 'https://qr.dingtalk.com/page/yunpan?fileId=same-op',
           success: true,
         }),
         identifier: 'lobe-dingpan',
@@ -109,19 +126,23 @@ describe('ensureDingpanDeliverable', () => {
     const result = await ensureDingpanDeliverable({
       db,
       reply: '结论：销量上涨。建议继续投放。',
-      topicId: 'tpc_1',
+      turn,
       userId: 'user_1',
     });
 
     expect(result).toEqual({
-      previewUrl: 'https://qr.dingtalk.com/page/yunpan?fileId=old',
+      previewUrl: 'https://qr.dingtalk.com/page/yunpan?fileId=same-op',
       uploaded: false,
+    });
+    expect(findDingpanUploadsByOperation).toHaveBeenCalledWith({
+      operationId: 'op_1',
+      topicId: 'tpc_1',
     });
     expect(uploadHtmlToDingpan).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
   });
 
-  it('uploads and persists message-level tool Artifact with arguments.html', async () => {
+  it('uploads and persists message-level tool Artifact with operationId', async () => {
     const previewUrl = 'https://qr.dingtalk.com/page/yunpan?fileId=new';
     uploadHtmlToDingpan.mockResolvedValue({
       content: JSON.stringify({
@@ -137,7 +158,7 @@ describe('ensureDingpanDeliverable', () => {
     const result = await ensureDingpanDeliverable({
       db,
       reply: '结论：报告内容。\n建议：继续。',
-      topicId: 'tpc_1',
+      turn,
       userId: 'user_1',
     });
 
@@ -162,9 +183,13 @@ describe('ensureDingpanDeliverable', () => {
     });
     expect(createArg.content).toContain(previewUrl);
     expect(createArg.metadata).toMatchObject({
-      source: 'bot-system-dingpan',
+      deliveryType: 'dingpan-report',
+      operationId: 'op_1',
+      source: 'system-fallback',
       systemInjected: true,
     });
+    // Prefer assistantMessageId — do not guess spine when parent is known
+    expect(getLastMainThreadSpineMessageId).not.toHaveBeenCalled();
 
     expect(update).toHaveBeenCalledWith(
       'msg_assistant_1',
@@ -191,7 +216,7 @@ describe('ensureDingpanDeliverable', () => {
     const result = await ensureDingpanDeliverable({
       db,
       reply: '结论：x',
-      topicId: 'tpc_1',
+      turn,
       userId: 'user_1',
     });
 

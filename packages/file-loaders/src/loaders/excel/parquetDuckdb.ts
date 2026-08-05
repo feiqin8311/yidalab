@@ -181,6 +181,32 @@ export async function queryParquetFile(
 
   try {
     const conn = await Promise.resolve(db.connect());
+
+    // Aggregates: materialize a scan window and reuse queryJsonlSheet (currency-aware).
+    if (input.aggregates?.length) {
+      const data = await conn.runAndReadAll(
+        `SELECT * FROM read_parquet('${pathLit}') ${where} LIMIT ${SHEET_QUERY_MAX_SCAN}`,
+      );
+      const countRows = await conn.runAndReadAll(
+        `SELECT count(*)::BIGINT AS n FROM read_parquet('${pathLit}') ${where}`,
+      );
+      const totalRows = Number(countRows.getRowObjectsJS()[0]?.n ?? 0);
+      conn.closeSync?.();
+      db.closeSync?.();
+      const lines = data.getRowObjectsJS().map((row) => {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(row)) out[k] = v == null ? '' : String(v);
+        return JSON.stringify(out);
+      });
+      const result = queryJsonlSheet(lines.join('\n'), input);
+      return {
+        ...result,
+        coverageLimited: totalRows > SHEET_QUERY_MAX_SCAN || result.coverageLimited,
+        totalRows,
+        truncated: result.truncated || totalRows > SHEET_QUERY_MAX_SCAN,
+      };
+    }
+
     const countRows = await conn.runAndReadAll(
       `SELECT count(*)::BIGINT AS n FROM read_parquet('${pathLit}') ${where}`,
     );
@@ -202,6 +228,7 @@ export async function queryParquetFile(
     const nextOffset = offset + page.length;
     const more = nextOffset < totalRows && page.length > 0;
     return {
+      hasMore: more || charTruncated,
       nextCursor: more || charTruncated ? String(offset + page.length) : undefined,
       returnedRows: page.length,
       rows: page,
@@ -245,7 +272,8 @@ export async function queryJsonlFile(
   input: SheetQueryInput = {},
 ): Promise<SheetQueryResult> {
   const orderBy = input.orderBy?.[0];
-  if (orderBy) {
+  // Aggregates / orderBy need a bounded full-scan buffer — same as in-memory path.
+  if (orderBy || input.aggregates?.length) {
     const lines: string[] = [];
     let totalRows = 0;
     const rl = createInterface({ crlfDelay: Infinity, input: createReadStream(filePath, 'utf8') });
@@ -258,7 +286,7 @@ export async function queryJsonlFile(
       ...result,
       coverageLimited: totalRows > SHEET_QUERY_MAX_SCAN || result.coverageLimited,
       totalRows,
-      truncated: result.truncated || totalRows > SHEET_QUERY_MAX_SCAN,
+      truncated: result.truncated || totalRows > SHEET_QUERY_MAX_SCAN || Boolean(result.hasMore),
     };
   }
 

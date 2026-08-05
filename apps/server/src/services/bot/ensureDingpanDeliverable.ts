@@ -4,8 +4,12 @@
  * Product invariant: report-class bot answers must end with a real 钉盘
  * preview_url (or an explicit failure). Models may skip uploadHtmlToDingpan;
  * forceFinish used to strip all tools. This module uploads a deterministic
- * HTML wrap of the final reply when the topic has no successful upload yet,
- * and persists a message-level tool Artifact (arguments.html) for Web preview.
+ * HTML wrap of the final reply when **this operation** has no successful
+ * upload yet, and persists a message-level tool Artifact (arguments.html)
+ * for Web preview.
+ *
+ * Isolation: only same operationId may be reused (idempotent). Never reuse
+ * topic-level historical uploads.
  */
 
 import { type DeliveryClaimMessage, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
@@ -24,6 +28,12 @@ import { DocumentService } from '@/server/services/document';
 import { withVaultCredEnv } from '@/server/utils/withVaultCredEnv';
 
 import { shouldEnsureDingpanForBotReply, wrapBotReplyAsHtml } from './botDingpanDeliveryHeuristic';
+import type { BotTurnContext } from './botTurnContext';
+
+/** In-process idempotency for concurrent ensure calls on the same operation. */
+const inFlightByKey = new Map<string, Promise<EnsureDingpanDeliverableResult>>();
+
+const deliveryKey = (operationId: string) => `dingpan-delivery:${operationId}:report`;
 
 const createDocumentBridge = (
   serverDB: LobeChatDatabase,
@@ -77,14 +87,18 @@ const resolveUserDisplayName = async (
   }
 };
 
-const latestSuccessfulPreview = async (params: {
+const latestSuccessfulPreviewForOperation = async (params: {
   db: LobeChatDatabase;
-  topicId: string;
+  operationId: string;
+  topicId?: string | null;
   userId: string;
   workspaceId?: string | null;
 }): Promise<string | undefined> => {
   const messageModel = new MessageModel(params.db, params.userId, params.workspaceId ?? undefined);
-  const rows = await messageModel.findRecentDingpanUploadsInTopic(params.topicId);
+  const rows = await messageModel.findDingpanUploadsByOperation({
+    operationId: params.operationId,
+    topicId: params.topicId,
+  });
   const outcomes = extractDingpanUploadOutcomes(
     rows.map((row): DeliveryClaimMessage => ({
       content: row.content ?? '',
@@ -101,21 +115,27 @@ const latestSuccessfulPreview = async (params: {
 /**
  * Persist system fallback upload as a dual-form tool message so Web history can
  * preview HTML from arguments.html (same surface as model uploadHtmlToDingpan).
- * Non-fatal: upload already succeeded for IM; missing parent spine skips quietly.
+ * Prefers explicit assistantMessageId; falls back to spine only when missing.
  */
 const persistBotDingpanToolMessage = async (params: {
+  assistantMessageId?: string;
   db: LobeChatDatabase;
   html: string;
+  operationId: string;
   previewUrl: string;
   resultContent: string;
   resultState?: Record<string, unknown>;
+  sourceMessageId?: string;
   title: string;
   topicId: string;
   userId: string;
   workspaceId?: string | null;
 }): Promise<void> => {
   const messageModel = new MessageModel(params.db, params.userId, params.workspaceId ?? undefined);
-  const parentId = await messageModel.getLastMainThreadSpineMessageId(params.topicId);
+  let parentId = params.assistantMessageId;
+  if (!parentId) {
+    parentId = (await messageModel.getLastMainThreadSpineMessageId(params.topicId)) ?? undefined;
+  }
   if (!parentId) return;
 
   const toolCallId = `call_bot_dingpan_${createNanoId(12)()}`;
@@ -134,7 +154,10 @@ const persistBotDingpanToolMessage = async (params: {
   await messageModel.create({
     content: params.resultContent,
     metadata: {
-      source: 'bot-system-dingpan',
+      deliveryType: 'dingpan-report',
+      operationId: params.operationId,
+      source: 'system-fallback',
+      sourceMessageId: params.sourceMessageId,
       systemInjected: true,
     },
     parentId,
@@ -164,101 +187,129 @@ export type EnsureDingpanDeliverableResult = {
 };
 
 /**
- * If the bot reply looks report-class and the topic has no successful dingpan
- * upload, wrap the reply as HTML and upload via the same runtime as tools.
+ * If the bot reply looks report-class and this operation has no successful
+ * dingpan upload, wrap the reply as HTML and upload via the same runtime as tools.
  */
 export async function ensureDingpanDeliverable(params: {
   db: LobeChatDatabase;
   reply: string;
+  /** @deprecated use turn.topicId — kept for call-site migration */
   topicId?: string | null;
+  turn?: BotTurnContext;
   userId: string;
   workspaceId?: string | null;
 }): Promise<EnsureDingpanDeliverableResult> {
-  const { db, userId, workspaceId, topicId } = params;
+  const { db, userId, workspaceId } = params;
   const reply = params.reply.trim();
-  if (!reply || !topicId) return { uploaded: false };
+  const topicId = params.turn?.topicId ?? params.topicId;
+  const operationId = params.turn?.operationId;
+  if (!reply || !topicId || !operationId) return { uploaded: false };
   if (!shouldEnsureDingpanForBotReply(reply)) return { uploaded: false };
 
-  try {
-    const existing = await latestSuccessfulPreview({ db, topicId, userId, workspaceId });
-    if (existing) return { previewUrl: existing, uploaded: false };
+  const key = deliveryKey(operationId);
+  const existingInFlight = inFlightByKey.get(key);
+  if (existingInFlight) return existingInFlight;
 
-    const userName = await resolveUserDisplayName(db, userId);
-    const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
-    const title = `Bot报告_${userName || 'YidaLab'}_${stamp}`;
-    const html = wrapBotReplyAsHtml(reply, title);
-
-    const bridge = createDocumentBridge(db, userId, workspaceId);
-    const runtime = new DingpanExecutionRuntime({ documentBridge: bridge });
-
-    const result = await withVaultCredEnv(userId, db, () =>
-      runtime.uploadHtmlToDingpan({
-        html,
-        taskType: 'Bot报告',
-        title,
-        topicId,
-        userName,
-      }),
-    );
-
-    if (!result.success) {
-      const err =
-        (typeof result.content === 'string' && result.content.slice(0, 200)) ||
-        result.error?.message ||
-        'upload failed';
-      console.error('[ensureDingpanDeliverable] upload failed:', err);
-      return { error: err, uploaded: false };
-    }
-
-    let previewUrl: string | undefined;
+  const work = (async (): Promise<EnsureDingpanDeliverableResult> => {
     try {
-      const payload =
-        typeof result.content === 'string'
-          ? (JSON.parse(result.content) as Record<string, unknown>)
-          : null;
-      previewUrl = String(payload?.preview_url ?? payload?.previewUrl ?? '').trim() || undefined;
-    } catch {
-      /* ignore */
-    }
-
-    if (!previewUrl) {
-      // Re-read topic in case tool content shape differs
-      previewUrl = await latestSuccessfulPreview({ db, topicId, userId, workspaceId });
-    }
-
-    if (!previewUrl) {
-      return { error: 'upload succeeded but preview_url missing', uploaded: false };
-    }
-
-    // Message-level Artifact for Web history; never write resource library.
-    try {
-      await persistBotDingpanToolMessage({
+      const existing = await latestSuccessfulPreviewForOperation({
         db,
-        html,
-        previewUrl,
-        resultContent:
-          typeof result.content === 'string'
-            ? result.content
-            : JSON.stringify({ preview_url: previewUrl, success: true }),
-        resultState:
-          result.state && typeof result.state === 'object'
-            ? (result.state as Record<string, unknown>)
-            : undefined,
-        title,
+        operationId,
         topicId,
         userId,
         workspaceId,
       });
-    } catch (error) {
-      console.error('[ensureDingpanDeliverable] persist tool message non-fatal:', error);
-    }
+      if (existing) return { previewUrl: existing, uploaded: false };
 
-    return { previewUrl, uploaded: true };
-  } catch (error) {
-    console.error('[ensureDingpanDeliverable] non-fatal:', error);
-    return {
-      error: error instanceof Error ? error.message : String(error),
-      uploaded: false,
-    };
-  }
+      const userName = await resolveUserDisplayName(db, userId);
+      const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      const title = `Bot报告_${userName || 'YidaLab'}_${stamp}`;
+      const html = wrapBotReplyAsHtml(reply, title);
+
+      const bridge = createDocumentBridge(db, userId, workspaceId);
+      const runtime = new DingpanExecutionRuntime({ documentBridge: bridge });
+
+      const result = await withVaultCredEnv(userId, db, () =>
+        runtime.uploadHtmlToDingpan({
+          html,
+          taskType: 'Bot报告',
+          title,
+          topicId,
+          userName,
+        }),
+      );
+
+      if (!result.success) {
+        const err =
+          (typeof result.content === 'string' && result.content.slice(0, 200)) ||
+          result.error?.message ||
+          'upload failed';
+        console.error('[ensureDingpanDeliverable] upload failed:', err);
+        return { error: err, uploaded: false };
+      }
+
+      let previewUrl: string | undefined;
+      try {
+        const payload =
+          typeof result.content === 'string'
+            ? (JSON.parse(result.content) as Record<string, unknown>)
+            : null;
+        previewUrl = String(payload?.preview_url ?? payload?.previewUrl ?? '').trim() || undefined;
+      } catch {
+        /* ignore */
+      }
+
+      if (!previewUrl) {
+        previewUrl = await latestSuccessfulPreviewForOperation({
+          db,
+          operationId,
+          topicId,
+          userId,
+          workspaceId,
+        });
+      }
+
+      if (!previewUrl) {
+        return { error: 'upload succeeded but preview_url missing', uploaded: false };
+      }
+
+      try {
+        await persistBotDingpanToolMessage({
+          assistantMessageId: params.turn?.assistantMessageId,
+          db,
+          html,
+          operationId,
+          previewUrl,
+          resultContent:
+            typeof result.content === 'string'
+              ? result.content
+              : JSON.stringify({ preview_url: previewUrl, success: true }),
+          resultState:
+            result.state && typeof result.state === 'object'
+              ? (result.state as Record<string, unknown>)
+              : undefined,
+          sourceMessageId: params.turn?.sourceMessageId,
+          title,
+          topicId,
+          userId,
+          workspaceId,
+        });
+      } catch (error) {
+        console.error('[ensureDingpanDeliverable] persist tool message non-fatal:', error);
+      }
+
+      return { previewUrl, uploaded: true };
+    } catch (error) {
+      console.error('[ensureDingpanDeliverable] non-fatal:', error);
+      return {
+        error: error instanceof Error ? error.message : String(error),
+        uploaded: false,
+      };
+    } finally {
+      inFlightByKey.delete(key);
+    }
+  })();
+
+  inFlightByKey.set(key, work);
+  return work;
 }

@@ -247,7 +247,16 @@ const createToolMessage = async ({
       agentId: state.metadata!.agentId!,
       content: normalizeEmptyToolContent(result.content, result.error),
       groupId: state.metadata?.groupId ?? undefined,
-      metadata: { toolExecutionTimeMs: result.executionTime ?? 0 },
+      metadata: {
+        operationId: host.operation.operationId,
+        toolExecutionTimeMs: result.executionTime ?? 0,
+        ...(tool.identifier === 'lobe-dingpan'
+          ? {
+              deliveryType: 'dingpan-report',
+              source: 'model-tool',
+            }
+          : {}),
+      },
       parentId: parentMessageId,
       plugin: tool as any,
       pluginError: result.error,
@@ -266,16 +275,27 @@ const createToolMessage = async ({
 const updateExistingToolMessage = async ({
   host,
   result,
+  tool,
   toolMessageId,
 }: {
   host: AgentRuntimeHost;
   result: ToolRunResult;
+  tool?: ChatToolPayload;
   toolMessageId: string;
 }) => {
   try {
     await host.transports.messages.updateToolMessage(toolMessageId, {
       content: normalizeEmptyToolContent(result.content, result.error),
-      metadata: { toolExecutionTimeMs: result.executionTime ?? 0 },
+      metadata: {
+        operationId: host.operation.operationId,
+        toolExecutionTimeMs: result.executionTime ?? 0,
+        ...(tool?.identifier === 'lobe-dingpan'
+          ? {
+              deliveryType: 'dingpan-report',
+              source: 'model-tool',
+            }
+          : {}),
+      },
       pluginError: result.error,
       pluginState: result.state,
     });
@@ -384,7 +404,12 @@ export const callTool =
       let toolMessageId: string;
       if (payload.skipCreateToolMessage) {
         toolMessageId = payload.parentMessageId;
-        await updateExistingToolMessage({ host, result: executionResult, toolMessageId });
+        await updateExistingToolMessage({
+          host,
+          result: executionResult,
+          tool,
+          toolMessageId,
+        });
       } else {
         const toolMessage = await createToolMessage({
           host,

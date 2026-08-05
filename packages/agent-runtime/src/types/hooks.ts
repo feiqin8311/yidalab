@@ -48,6 +48,11 @@ export interface AgentHookEvent {
   // Identification
   agentId: string;
   /**
+   * Final assistant message id for this operation (onComplete). Used by bot
+   * delivery to parent system-fallback tool Artifacts on the correct spine.
+   */
+  assistantMessageId?: string;
+  /**
    * Outbound attachments extracted from the final assistant message's
    * multimodal `content` parts (or tool messages that produced image/file
    * outputs). Set on `onComplete` events; downstream consumers (bot reply

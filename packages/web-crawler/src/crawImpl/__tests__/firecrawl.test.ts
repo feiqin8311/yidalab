@@ -57,6 +57,48 @@ describe('firecrawl crawler', () => {
     expect(withTimeout).toHaveBeenCalledWith(expect.any(Function), 30000);
   });
 
+  it('uses ALS vault API key without process.env', async () => {
+    delete process.env.FIRECRAWL_API_KEY;
+    delete process.env.FIRECRAWL_URL;
+
+    const mockResponse = createMockResponse({
+      success: true,
+      data: {
+        markdown: 'Vault firecrawl body with enough length to pass. '.repeat(5),
+        metadata: {
+          title: 'Vault',
+          description: 'Vault',
+          sourceURL: 'https://example.com',
+          statusCode: 200,
+          language: 'en',
+          keywords: 'test',
+          robots: 'index',
+        },
+      },
+    });
+
+    let fetchUrl = '';
+    let fetchInit: RequestInit | undefined;
+    global.fetch = vi.fn().mockImplementation(async (url, init) => {
+      fetchUrl = String(url);
+      fetchInit = init;
+      return mockResponse as any;
+    });
+
+    const { withTimeout } = await import('../../utils/withTimeout');
+    vi.mocked(withTimeout).mockImplementation(async (fn) => fn(new AbortController().signal));
+
+    const { runWithVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+    await runWithVaultEnv(
+      { FIRECRAWL_API_KEY: 'vault-fc-key', FIRECRAWL_URL: 'https://vault.firecrawl.test/v2' },
+      () => firecrawl('https://example.com', { filterOptions: {} }),
+    );
+
+    expect(process.env.FIRECRAWL_API_KEY).toBeUndefined();
+    expect(fetchUrl).toContain('https://vault.firecrawl.test/v2/scrape');
+    expect(fetchInit?.headers).toMatchObject({ Authorization: 'Bearer vault-fc-key' });
+  });
+
   it('should handle missing API key', async () => {
     const mockResponse = createMockResponse({
       success: true,

@@ -215,6 +215,15 @@ export class StreamingExecutorActionImpl {
       hasTopicReference,
     );
 
+    // This-turn attachments only: latest user message's fileList (may be empty).
+    // Do NOT search earlier turns for "any message with files" — that inherits
+    // DOCX capability into a later resource-library Excel turn.
+    const latestUserMessage = [...messages].reverse().find((m) => m.role === 'user');
+    const currentTurnAttachments = (latestUserMessage?.fileList ?? []).map((f) => ({
+      fileType: f.fileType,
+      name: f.name,
+    }));
+
     // Generate tools using ToolsEngine (centralized here, passed to chatService via agentConfig)
     // When disableTools is true (broadcast mode), skipDefaultTools prevents default tools from being added
     const toolsEngine = createAgentToolsEngine(
@@ -230,6 +239,7 @@ export class StreamingExecutorActionImpl {
       // sub-agent runs. Replaces the former dropSubAgentInGroup + applyPluginFilters
       // isSubAgent hard-coding.
       { isSubAgent, scope },
+      currentTurnAttachments,
     );
     // When skillActivateMode is 'manual':
     // Exclude only discovery tools (activator, skill-store) so runtime-managed defaults

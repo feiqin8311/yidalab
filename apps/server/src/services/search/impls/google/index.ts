@@ -3,6 +3,7 @@ import {
   type UniformSearchResponse,
   type UniformSearchResult,
 } from '@lobechat/types';
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import urlJoin from 'url-join';
@@ -25,11 +26,11 @@ const timeRangeMapping = {
  */
 export class GoogleImpl implements SearchServiceImpl {
   private get apiKey(): string | undefined {
-    return process.env.GOOGLE_PSE_API_KEY;
+    return getVaultEnv('GOOGLE_PSE_API_KEY');
   }
 
   private get engineId(): string | undefined {
-    return process.env.GOOGLE_PSE_ENGINE_ID;
+    return getVaultEnv('GOOGLE_PSE_ENGINE_ID');
   }
 
   private get baseUrl(): string {
@@ -100,17 +101,15 @@ export class GoogleImpl implements SearchServiceImpl {
 
       log('Parsed Google response: %o', googleResponse);
 
-      const mappedResults = (googleResponse.items || []).map(
-        (result): UniformSearchResult => ({
-          category: 'general', // Default category
-          content: result.snippet || '', // Prioritize content
-          engines: ['google'], // Use 'google' as the engine name
-          parsedUrl: result.link ? new URL(result.link).hostname : '', // Basic URL parsing
-          score: 1, // Default score to 1
-          title: result.title || '',
-          url: result.link,
-        }),
-      );
+      const mappedResults = (googleResponse.items || []).map((result): UniformSearchResult => ({
+        category: 'general', // Default category
+        content: result.snippet || '', // Prioritize content
+        engines: ['google'], // Use 'google' as the engine name
+        parsedUrl: result.link ? new URL(result.link).hostname : '', // Basic URL parsing
+        score: 1, // Default score to 1
+        title: result.title || '',
+        url: result.link,
+      }));
 
       log('Mapped %d results to SearchResult format', mappedResults.length);
 

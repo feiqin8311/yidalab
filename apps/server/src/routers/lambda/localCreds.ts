@@ -524,11 +524,15 @@ export const localCredsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // All company members can *use* company secrets at runtime; only managers view them in UI.
-      // listDecryptedKv* already merges personal-over-company (non-empty personal wins).
+      // Client TRPC must NEVER return company plaintext secrets.
+      // Members may *use* company secrets only via server-side tool runtimes
+      // (withVaultCredEnv / server inject). Browser inject is personal-only.
+      void input.sandbox;
+      void input.topicId;
+      void input.userId;
       const [envItems, headerItems] = await Promise.all([
-        ctx.userCredentialModel.listDecryptedKvEnv(ctx.companyWorkspaceId),
-        ctx.userCredentialModel.listDecryptedKvHeader(ctx.companyWorkspaceId),
+        ctx.userCredentialModel.listDecryptedKvEnv(null),
+        ctx.userCredentialModel.listDecryptedKvHeader(null),
       ]);
       const keySet = new Set(input.keys);
       const env: Record<string, string> = {};

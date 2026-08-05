@@ -3,6 +3,7 @@ import {
   type UniformSearchResponse,
   type UniformSearchResult,
 } from '@lobechat/types';
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import urlJoin from 'url-join';
@@ -18,7 +19,7 @@ const log = debug('lobe-search:Tavily');
  */
 export class TavilyImpl implements SearchServiceImpl {
   private get apiKey(): string | undefined {
-    return process.env.TAVILY_API_KEY;
+    return getVaultEnv('TAVILY_API_KEY');
   }
 
   private get baseUrl(): string {
@@ -37,7 +38,7 @@ export class TavilyImpl implements SearchServiceImpl {
       include_raw_content: false,
       max_results: 15,
       query,
-      search_depth: process.env.TAVILY_SEARCH_DEPTH || 'basic', // basic or advanced
+      search_depth: getVaultEnv('TAVILY_SEARCH_DEPTH') || 'basic', // basic or advanced
     };
 
     const body: TavilySearchParameters = {
@@ -94,17 +95,15 @@ export class TavilyImpl implements SearchServiceImpl {
 
       log('Parsed Tavily response: %o', tavilyResponse);
 
-      const mappedResults = (tavilyResponse.results || []).map(
-        (result): UniformSearchResult => ({
-          category: body.topic || 'general', // Default category
-          content: result.content || '', // Prioritize content, fallback to snippet
-          engines: ['tavily'], // Use 'tavily' as the engine name
-          parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
-          score: result.score || 0, // Default score to 0 if undefined
-          title: result.title || '',
-          url: result.url,
-        }),
-      );
+      const mappedResults = (tavilyResponse.results || []).map((result): UniformSearchResult => ({
+        category: body.topic || 'general', // Default category
+        content: result.content || '', // Prioritize content, fallback to snippet
+        engines: ['tavily'], // Use 'tavily' as the engine name
+        parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
+        score: result.score || 0, // Default score to 0 if undefined
+        title: result.title || '',
+        url: result.url,
+      }));
 
       log('Mapped %d results to SearchResult format', mappedResults.length);
 

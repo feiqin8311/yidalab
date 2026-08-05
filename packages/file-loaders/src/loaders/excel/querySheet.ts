@@ -4,10 +4,19 @@ export interface SheetQueryFilter {
   value: string | number | boolean | null;
 }
 
+export interface SheetAggregate {
+  column: string;
+  op: 'sum' | 'avg' | 'min' | 'max' | 'count';
+}
+
 export interface SheetQueryInput {
+  /** Aggregations over matched rows (optional; returns groups/summary). */
+  aggregates?: SheetAggregate[];
   columns?: string[];
   cursor?: string;
   filters?: SheetQueryFilter[];
+  /** Group keys for aggregates (omit for whole-table summary). */
+  groupBy?: string[];
   limit?: number;
   orderBy?: { column: string; direction?: 'asc' | 'desc' }[];
 }
@@ -15,10 +24,17 @@ export interface SheetQueryInput {
 export interface SheetQueryResult {
   /** True when orderBy could not scan the full table (scan cap hit). */
   coverageLimited?: boolean;
+  /** Grouped aggregate rows when aggregates requested. */
+  groups?: Array<Record<string, string | number | null>>;
+  hasMore?: boolean;
   nextCursor?: string;
   returnedRows: number;
   rows: Record<string, string>[];
   scannedRows: number;
+  /** Whole-table or per-query aggregate summary. */
+  summary?: Record<string, number | null>;
+  /** Total group count before pagination (aggregates + groupBy). */
+  totalGroups?: number;
   totalRows: number;
   truncated: boolean;
 }
@@ -148,6 +164,115 @@ const applyCharBudget = applySheetCharBudget;
  *
  * orderBy never claims full-table sort past SHEET_QUERY_MAX_SCAN — sets coverageLimited.
  */
+/**
+ * Parse common ops spreadsheet numbers: 1,200.50 / ¥1,200.50 / $300 / 12% / (1,200).
+ * Percent returns fraction (12% → 0.12). Currency symbols stripped.
+ */
+export const parseSheetNumber = (raw: string): number | null => {
+  let s = String(raw ?? '').trim();
+  if (!s) return null;
+  // Parentheses accounting: (1,200) → -1200
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) {
+    neg = true;
+    s = s.slice(1, -1).trim();
+  }
+  const isPercent = s.endsWith('%');
+  if (isPercent) s = s.slice(0, -1).trim();
+  // Strip currency / spaces / NBSP
+  s = s.replaceAll(/[¥$€£￥\s]/g, '').replaceAll(',', '');
+  if (!s || s === '-' || s === '+') return null;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  let value = neg ? -n : n;
+  if (isPercent) value = value / 100;
+  return value;
+};
+
+const toNumber = (raw: string): number | null => parseSheetNumber(raw);
+
+const aggregateKey = (agg: SheetAggregate) => `${agg.op}_${agg.column}`;
+
+const applyAggregates = (
+  rows: Record<string, string>[],
+  input: SheetQueryInput,
+): Pick<SheetQueryResult, 'groups' | 'summary'> => {
+  const aggregates = input.aggregates ?? [];
+  if (aggregates.length === 0) return {};
+
+  const groupBy = input.groupBy?.filter(Boolean) ?? [];
+  if (groupBy.length === 0) {
+    const summary: Record<string, number | null> = {};
+    for (const agg of aggregates) {
+      const key = aggregateKey(agg);
+      if (agg.op === 'count') {
+        summary[key] = rows.length;
+        continue;
+      }
+      const nums = rows
+        .map((r) => toNumber(r[agg.column] ?? ''))
+        .filter((n): n is number => n !== null);
+      if (nums.length === 0) {
+        summary[key] = null;
+        continue;
+      }
+      if (agg.op === 'sum') summary[key] = nums.reduce((a, b) => a + b, 0);
+      else if (agg.op === 'avg') summary[key] = nums.reduce((a, b) => a + b, 0) / nums.length;
+      else if (agg.op === 'min') summary[key] = Math.min(...nums);
+      else if (agg.op === 'max') summary[key] = Math.max(...nums);
+    }
+    return { summary };
+  }
+
+  const buckets = new Map<string, Record<string, string>[]>();
+  for (const row of rows) {
+    const gk = groupBy.map((c) => row[c] ?? '').join('\u0001');
+    const list = buckets.get(gk) ?? [];
+    list.push(row);
+    buckets.set(gk, list);
+  }
+
+  const groups: Array<Record<string, string | number | null>> = [];
+  for (const [, bucket] of buckets) {
+    const head = bucket[0]!;
+    const entry: Record<string, string | number | null> = {};
+    for (const c of groupBy) entry[c] = head[c] ?? '';
+    entry.count = bucket.length;
+    for (const agg of aggregates) {
+      const key = aggregateKey(agg);
+      if (agg.op === 'count') {
+        entry[key] = bucket.length;
+        continue;
+      }
+      const nums = bucket
+        .map((r) => toNumber(r[agg.column] ?? ''))
+        .filter((n): n is number => n !== null);
+      if (nums.length === 0) {
+        entry[key] = null;
+        continue;
+      }
+      if (agg.op === 'sum') entry[key] = nums.reduce((a, b) => a + b, 0);
+      else if (agg.op === 'avg') entry[key] = nums.reduce((a, b) => a + b, 0) / nums.length;
+      else if (agg.op === 'min') entry[key] = Math.min(...nums);
+      else if (agg.op === 'max') entry[key] = Math.max(...nums);
+    }
+    groups.push(entry);
+  }
+
+  // Sort groups by first aggregate desc when possible (Top-N friendly)
+  const firstAgg = aggregates[0];
+  if (firstAgg) {
+    const k = aggregateKey(firstAgg);
+    groups.sort((a, b) => {
+      const av = typeof a[k] === 'number' ? (a[k] as number) : 0;
+      const bv = typeof b[k] === 'number' ? (b[k] as number) : 0;
+      return bv - av;
+    });
+  }
+
+  return { groups };
+};
+
 export function queryJsonlSheet(jsonl: string, input: SheetQueryInput = {}): SheetQueryResult {
   const limit = Math.min(
     Math.max(1, input.limit ?? SHEET_QUERY_DEFAULT_LIMIT),
@@ -156,6 +281,43 @@ export function queryJsonlSheet(jsonl: string, input: SheetQueryInput = {}): She
   const start = decodeCursor(input.cursor);
   const { lines, totalRows } = parseJsonlLines(jsonl);
   const orderBy = input.orderBy?.[0];
+  const wantsAggregate = Boolean(input.aggregates?.length);
+
+  // Aggregate path: scan matched rows (cap), compute groups/summary, optional sample rows.
+  if (wantsAggregate) {
+    const matched: Record<string, string>[] = [];
+    let scanned = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (scanned >= SHEET_QUERY_MAX_SCAN) break;
+      scanned++;
+      const row = parseLine(lines[i]!);
+      if (!row) continue;
+      if (input.filters?.length && !input.filters.every((f) => matchFilter(row, f))) continue;
+      matched.push(row);
+    }
+    const coverageLimited = scanned >= SHEET_QUERY_MAX_SCAN && scanned < totalRows;
+    const { groups, summary } = applyAggregates(matched, input);
+    const allGroups = groups ?? [];
+    const totalGroups = allGroups.length;
+    const groupStart = start;
+    const pagedGroups = allGroups.slice(groupStart, groupStart + limit);
+    const moreGroups = groupStart + pagedGroups.length < totalGroups;
+    const sample = matched.slice(0, Math.min(limit, 20)).map((r) => projectRow(r, input.columns));
+    const hasMore = moreGroups || Boolean(coverageLimited);
+    return {
+      coverageLimited: coverageLimited || undefined,
+      groups: pagedGroups,
+      hasMore,
+      nextCursor: moreGroups ? String(groupStart + pagedGroups.length) : undefined,
+      returnedRows: sample.length,
+      rows: sample,
+      scannedRows: scanned,
+      summary,
+      totalGroups,
+      totalRows,
+      truncated: hasMore,
+    };
+  }
 
   if (orderBy) {
     const matched: Record<string, string>[] = [];
@@ -185,14 +347,16 @@ export function queryJsonlSheet(jsonl: string, input: SheetQueryInput = {}): She
     const nextCursor =
       moreInSorted || (charTruncated && kept < slice.length) ? String(nextOffset) : undefined;
 
+    const hasMore = Boolean(nextCursor) || truncated || coverageLimited;
     return {
       coverageLimited: coverageLimited || undefined,
+      hasMore,
       nextCursor,
       returnedRows: budgeted.length,
       rows: budgeted.map((r) => projectRow(r, input.columns)),
       scannedRows: scanned,
       totalRows,
-      truncated: truncated || coverageLimited,
+      truncated: hasMore,
     };
   }
 
@@ -232,13 +396,15 @@ export function queryJsonlSheet(jsonl: string, input: SheetQueryInput = {}): She
         ? String(nextCursorIndex)
         : undefined;
 
+  const hasMore = Boolean(nextCursor) || charTruncated;
   return {
+    hasMore,
     nextCursor,
     returnedRows: finalRows.length,
     rows: finalRows.map((r) => projectRow(r, input.columns)),
     scannedRows: scanned,
     totalRows,
-    truncated: Boolean(nextCursor) || charTruncated,
+    truncated: hasMore,
   };
 }
 

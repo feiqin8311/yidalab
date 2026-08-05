@@ -22,8 +22,10 @@ interface TavilyResponse {
 }
 
 export const tavily: CrawlImpl = async (url) => {
-  // Get API key from environment variable
-  const apiKey = process.env.TAVILY_API_KEY;
+  // Vault ALS first (withVaultCredEnv), then process.env deploy defaults.
+  const { getVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+  const apiKey = getVaultEnv('TAVILY_API_KEY');
+  const extractDepth = getVaultEnv('TAVILY_EXTRACT_DEPTH') || 'basic';
 
   let res: Response;
 
@@ -32,7 +34,7 @@ export const tavily: CrawlImpl = async (url) => {
       (signal) =>
         fetch('https://api.tavily.com/extract', {
           body: JSON.stringify({
-            extract_depth: process.env.TAVILY_EXTRACT_DEPTH || 'basic', // basic or advanced
+            extract_depth: extractDepth, // basic or advanced
             include_images: false,
             urls: url,
           }),

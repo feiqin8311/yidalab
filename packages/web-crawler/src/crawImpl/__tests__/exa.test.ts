@@ -52,6 +52,37 @@ describe('exa crawler', () => {
     expect(withTimeout).toHaveBeenCalledWith(expect.any(Function), 30000);
   });
 
+  it('uses ALS vault API key without process.env', async () => {
+    delete process.env.EXA_API_KEY;
+
+    const mockResponse = createMockResponse({
+      results: [
+        {
+          title: 'Vault Article',
+          url: 'https://example.com',
+          text: 'Vault-backed crawl body with enough characters. '.repeat(5),
+        },
+      ],
+    });
+
+    let fetchInit: RequestInit | undefined;
+    global.fetch = vi.fn().mockImplementation(async (_url, init) => {
+      fetchInit = init;
+      return mockResponse as any;
+    });
+
+    const { withTimeout } = await import('../../utils/withTimeout');
+    vi.mocked(withTimeout).mockImplementation(async (fn) => fn(new AbortController().signal));
+
+    const { runWithVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+    await runWithVaultEnv({ EXA_API_KEY: 'vault-exa-key' }, () =>
+      exa('https://example.com', { filterOptions: {} }),
+    );
+
+    expect(process.env.EXA_API_KEY).toBeUndefined();
+    expect(fetchInit?.headers).toMatchObject({ 'x-api-key': 'vault-exa-key' });
+  });
+
   it('should handle missing API key', async () => {
     // API key is undefined
     const mockResponse = createMockResponse({
