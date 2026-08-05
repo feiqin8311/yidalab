@@ -422,11 +422,11 @@ describe('AiAgentService.execAgent - file upload handling', () => {
         fileList: [
           {
             content:
-              'Attachment "blob.bin" could not provide inline text (no extractable text). Do not download/crawl the file URL (binary).',
+              'Attachment id=file-bin name="blob.bin" could not provide inline text (no extractable text). Do not download/crawl the file URL (binary). REQUIRED: call lobe-files/inspectAttachment then lobe-files/readAttachment with this fileId.',
             fileType: 'application/octet-stream',
             id: 'file-bin',
             name: 'blob.bin',
-            parseStatus: 'unsupported',
+            parseStatus: 'failed',
             size: 10,
             url: 'https://s3.example.com/files/test-user-id/xxx/blob.bin',
           },
