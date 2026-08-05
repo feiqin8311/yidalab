@@ -22,6 +22,11 @@ describe('buildWorkspaceAwarePath', () => {
     );
     expect(buildWorkspaceAwarePath('/group/group-1', 'acme')).toBe('/acme/group/group-1');
     expect(buildWorkspaceAwarePath('/fleet', 'acme')).toBe('/acme/fleet');
+    expect(buildWorkspaceAwarePath('/functions', 'acme')).toBe('/acme/functions');
+    expect(buildWorkspaceAwarePath('/functions/lingxing-ads', 'acme')).toBe(
+      '/acme/functions/lingxing-ads',
+    );
+    expect(buildWorkspaceAwarePath('/feedback', 'acme')).toBe('/acme/feedback');
   });
 
   it('bypasses the prefix when `escape` is true', () => {

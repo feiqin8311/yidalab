@@ -27,6 +27,11 @@ export interface FileServiceImpl {
   createPreSignedUrlForPreview: (key: string, expiresIn?: number) => Promise<string>;
 
   /**
+   * Delete all objects under a key prefix (optional — S3 impl supports it).
+   */
+  deleteByPrefix?: (prefix: string) => Promise<number>;
+
+  /**
    * Delete file
    */
   deleteFile: (key: string) => Promise<any>;

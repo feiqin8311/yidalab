@@ -213,6 +213,39 @@ export const sharedMainAreaChildren: RouteObject[] = [
     ),
   },
 
+  // Business functions center
+  {
+    children: [
+      {
+        element: dynamicElement(() => import('@/routes/(main)/functions'), 'Mobile > Functions'),
+        index: true,
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/lingxing-ads'),
+          'Mobile > Functions > Lingxing Ads',
+        ),
+        path: 'lingxing-ads',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/amazon-old-product-keyword-analysis'),
+          'Mobile > Functions > Amazon KW',
+        ),
+        path: 'amazon-old-product-keyword-analysis',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/amazon-old-product-keyword-analysis/[runId]'),
+          'Mobile > Functions > Amazon KW Run',
+        ),
+        path: 'amazon-old-product-keyword-analysis/:runId',
+      },
+    ],
+    errorElement: <ErrorBoundary />,
+    path: 'functions',
+  },
+
   ...BusinessMobileRoutesWithMainLayout,
 ];
 

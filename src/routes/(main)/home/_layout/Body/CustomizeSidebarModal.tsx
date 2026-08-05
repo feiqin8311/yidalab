@@ -57,6 +57,7 @@ export interface SidebarItemConfig {
 
 const ALL_SIDEBAR_ITEMS: SidebarItemConfig[] = [
   { id: 'tasks', labelKey: 'tab.tasks', routeId: 'tasks' },
+  { id: 'functions', labelKey: 'tab.functions', routeId: 'functions' },
   { id: 'pages', labelKey: 'tab.pages', routeId: 'page' },
   { id: 'recents', labelKey: 'recents' },
   { id: 'private', labelKey: 'navPanel.privateAgents' },

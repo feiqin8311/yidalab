@@ -3,6 +3,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -86,6 +87,36 @@ export class S3 {
     });
 
     return this.client.send(command);
+  }
+
+  /** List object keys under a prefix (paginated). */
+  public async listKeysByPrefix(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let token: string | undefined;
+    do {
+      const out = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+      for (const obj of out.Contents ?? []) {
+        if (obj.Key) keys.push(obj.Key);
+      }
+      token = out.IsTruncated ? out.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
+  }
+
+  public async deleteByPrefix(prefix: string) {
+    const keys = await this.listKeysByPrefix(prefix);
+    // delete in chunks of 1000
+    for (let i = 0; i < keys.length; i += 1000) {
+      const chunk = keys.slice(i, i + 1000);
+      if (chunk.length) await this.deleteFiles(chunk);
+    }
+    return keys.length;
   }
 
   public async getFileContent(key: string): Promise<string> {

@@ -51,6 +51,11 @@ export class FileService {
     return this.impl.deleteFiles(keys);
   }
 
+  public async deleteByPrefix(prefix: string): Promise<number> {
+    if (this.impl.deleteByPrefix) return this.impl.deleteByPrefix(prefix);
+    return 0;
+  }
+
   /**
    * Get file content
    */

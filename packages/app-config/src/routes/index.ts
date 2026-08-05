@@ -3,6 +3,7 @@ import {
   BrainCircuit,
   FilePenIcon,
   Image,
+  LayoutGridIcon,
   LibraryBigIcon,
   ListTodoIcon,
   MessageSquarePlus,
@@ -119,6 +120,16 @@ export const NAVIGATION_ROUTES: NavigationRoute[] = [
     pathPrefix: '/tasks',
   },
   {
+    cmdkKey: 'cmdk.functions',
+    electronKey: 'navigation.functions',
+    icon: LayoutGridIcon,
+    id: 'functions',
+    keywords: ['functions', 'tools', 'lingxing', 'ads', '功能', '领星'],
+    keywordsKey: 'cmdk.keywords.functions',
+    path: '/functions',
+    pathPrefix: '/functions',
+  },
+  {
     cmdkKey: 'cmdk.settings',
     electronKey: 'navigation.settings',
     icon: Settings,
@@ -148,7 +159,7 @@ export const getRouteById = (id: string): NavigationRoute | undefined =>
  */
 export const getNavigableRoutes = (): NavigationRoute[] =>
   NAVIGATION_ROUTES.filter((r) =>
-    ['community', 'image', 'resource', 'page', 'memory'].includes(r.id),
+    ['community', 'image', 'resource', 'page', 'memory', 'functions', 'tasks'].includes(r.id),
   ).map((r) =>
     r.id === 'image'
       ? {

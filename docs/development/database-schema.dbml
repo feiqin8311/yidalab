@@ -625,6 +625,63 @@ table verifications {
   }
 }
 
+table business_function_result_rows {
+  id text [pk, not null]
+  run_id text [not null]
+  user_id text [not null]
+  workspace_id text [not null]
+  view_id text [not null]
+  row_key text [not null]
+  search_text text
+  sort_orders "double precision"
+  sort_spend "double precision"
+  sort_score "double precision"
+  sort_rank "double precision"
+  data jsonb [not null, default: `{}`]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (run_id, view_id, row_key) [name: 'business_function_result_rows_run_view_key_uidx', unique]
+    (run_id, view_id) [name: 'business_function_result_rows_run_view_idx']
+    workspace_id [name: 'business_function_result_rows_workspace_id_idx']
+    user_id [name: 'business_function_result_rows_user_id_idx']
+    search_text [name: 'business_function_result_rows_search_text_idx']
+  }
+}
+
+table business_function_runs {
+  id text [pk, not null]
+  function_type text [not null]
+  user_id text [not null]
+  workspace_id text [not null]
+  main_asin text
+  category_name text
+  status text [not null, default: 'draft']
+  stage text [not null, default: 'draft']
+  cancel_requested integer [not null, default: 0]
+  config jsonb [not null, default: `{}`]
+  progress jsonb
+  summary jsonb
+  error jsonb
+  export_info jsonb
+  started_at "timestamp with time zone"
+  finished_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    user_id [name: 'business_function_runs_user_id_idx']
+    workspace_id [name: 'business_function_runs_workspace_id_idx']
+    status [name: 'business_function_runs_status_idx']
+    function_type [name: 'business_function_runs_function_type_idx']
+    (workspace_id, main_asin) [name: 'business_function_runs_workspace_asin_idx']
+    created_at [name: 'business_function_runs_created_at_idx']
+  }
+}
+
 table chat_groups {
   id text [pk, not null]
   title text
@@ -1013,7 +1070,7 @@ table files {
   parser_version text
   parse_task_id uuid
   parsed_at "timestamp with time zone"
-  processing_policy text [default: 'on_demand']
+  processing_policy text
   persist_reason text
   processing_requested_at "timestamp with time zone"
   workspace_id text

@@ -10,6 +10,7 @@ export * from './aiInfra';
 export * from './apiKey';
 export * from './asyncTask';
 export * from './betterAuth';
+export * from './businessFunction';
 export * from './chatGroup';
 export * from './companyFeedback';
 export * from './companyMarketMcp';

@@ -5,6 +5,7 @@ import {
   FilePenIcon,
   Home,
   Image,
+  LayoutGridIcon,
   LibraryBigIcon,
   MessageSquarePlus,
   Settings,
@@ -503,6 +504,57 @@ export const sharedMainAreaChildren: RouteObject[] = [
     ],
     errorElement: <ErrorBoundary />,
     path: 'feedback',
+  },
+
+  // Business functions center
+  {
+    children: [
+      {
+        element: dynamicElement(() => import('@/routes/(main)/functions'), 'Desktop > Functions'),
+        handle: {
+          meta: routeMeta({ icon: LayoutGridIcon, titleKey: 'navigation.functions' }),
+        },
+        index: true,
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/lingxing-ads'),
+          'Desktop > Functions > Lingxing Ads',
+        ),
+        handle: {
+          meta: routeMeta({ icon: LayoutGridIcon, titleKey: 'navigation.lingxingAds' }),
+        },
+        path: 'lingxing-ads',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/amazon-old-product-keyword-analysis'),
+          'Desktop > Functions > Amazon KW',
+        ),
+        handle: {
+          meta: routeMeta({
+            icon: LayoutGridIcon,
+            titleKey: 'navigation.amazonOldProductKeyword',
+          }),
+        },
+        path: 'amazon-old-product-keyword-analysis',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/amazon-old-product-keyword-analysis/[runId]'),
+          'Desktop > Functions > Amazon KW Run',
+        ),
+        handle: {
+          meta: routeMeta({
+            icon: LayoutGridIcon,
+            titleKey: 'navigation.amazonOldProductKeyword',
+          }),
+        },
+        path: 'amazon-old-product-keyword-analysis/:runId',
+      },
+    ],
+    errorElement: <ErrorBoundary />,
+    path: 'functions',
   },
 
   // Video routes

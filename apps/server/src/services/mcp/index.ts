@@ -87,11 +87,26 @@ export class MCPService {
     return { content, state, success: true };
   }
 
-  private sanitizeForLogging = <T extends Record<string, any>>(obj: T): Omit<T, 'env'> => {
+  private sanitizeForLogging = <T extends Record<string, any>>(obj: T): Record<string, unknown> => {
     if (!obj) return obj;
 
-    const { env: _, ...rest } = obj;
-    return rest as Omit<T, 'env'>;
+    const { env: _env, auth, headers, ...rest } = obj;
+    const sanitized: Record<string, unknown> = { ...rest };
+
+    // Never log bearer/oauth tokens or arbitrary header values (may carry API keys).
+    if (auth && typeof auth === 'object') {
+      sanitized.auth = {
+        type: (auth as { type?: string }).type,
+        ...(typeof (auth as { token?: string }).token === 'string' ? { token: '[redacted]' } : {}),
+      };
+    }
+    if (headers && typeof headers === 'object') {
+      sanitized.headers = Object.fromEntries(
+        Object.keys(headers as Record<string, unknown>).map((key) => [key, '[redacted]']),
+      );
+    }
+
+    return sanitized;
   };
 
   // --- MCP Interaction ---

@@ -169,6 +169,7 @@ export const SIDEBAR_SPACER_ID = '__spacer__';
 
 export const DEFAULT_SIDEBAR_ITEMS: string[] = [
   'tasks',
+  'functions',
   'pages',
   'recents',
   'private',
@@ -245,13 +246,26 @@ const withAllKnownKeys = (order: string[]): string[] => {
     }
   }
 
-  return [
+  const merged = [
     ...withSpacer.slice(0, accordionStartIdx),
     ...missingTop,
     ...withSpacer.slice(accordionStartIdx, spacerIdx + 1),
     ...missingBottom,
     ...withSpacer.slice(spacerIdx + 1),
   ];
+
+  // YidaLab: pin newly-backfilled `functions` immediately after `tasks` when
+  // both exist, so custom sidebars keep 任务 → 功能 without rewriting order.
+  if (missingTop.includes('functions')) {
+    const without = merged.filter((k) => k !== 'functions');
+    const tasksIdx = without.indexOf('tasks');
+    if (tasksIdx !== -1) {
+      without.splice(tasksIdx + 1, 0, 'functions');
+      return without;
+    }
+  }
+
+  return merged;
 };
 
 const accordionIndices = (items: string[]): number[] => {
