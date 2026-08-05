@@ -29,6 +29,7 @@ import {
   WORKBOOK_INLINE_JSONL_MAX_BYTES,
   WORKBOOK_PARQUET_MIN_BYTES,
   WORKBOOK_PARSER_VERSION,
+  type WorkbookAssetBuild,
 } from '@lobechat/file-loaders';
 import debug from 'debug';
 import { and, eq, lt, or } from 'drizzle-orm';
@@ -42,6 +43,8 @@ import {
   AsyncTaskStatus,
   AsyncTaskType,
 } from '@/types/asyncTask';
+
+import { ephemeralCacheKey, getEphemeralWorkbook, setEphemeralWorkbook } from './ephemeralCache';
 
 const log = debug('lobe-server:workbook');
 
@@ -86,15 +89,105 @@ export class WorkbookService {
   private isPersistentFile = (file: { processingPolicy?: string | null }) =>
     file.processingPolicy === 'persistent';
 
-  private rejectNonPersistent = (
+  private rejectNonSpreadsheet = (
     fileId: string,
     file: { name: string; processingPolicy?: string | null },
+    reason: string,
   ) => {
     const policy = file.processingPolicy ?? 'null';
     throw new Error(
-      `Workbook parse is only for persistent resources (fileId=${fileId} name="${file.name}" processingPolicy=${policy}). ` +
-        `Chat on_demand attachments use prompt-time preview only; upload via Resources to build Workbook assets.`,
+      `Workbook unavailable for fileId=${fileId} name="${file.name}" processingPolicy=${policy}: ${reason}`,
     );
+  };
+
+  /**
+   * Lazy parse chat on_demand spreadsheet into TTL memory cache.
+   * Never writes file_workbooks / resource library.
+   */
+  private ensureEphemeralBuild = async (file: {
+    fileHash?: string | null;
+    fileType?: string | null;
+    id: string;
+    name: string;
+    size?: number | null;
+    userId: string;
+    workspaceId?: string | null;
+  }): Promise<WorkbookAssetBuild> => {
+    if (!isSpreadsheetFile(file.fileType || '', file.name)) {
+      this.rejectNonSpreadsheet(file.id, file, 'not a spreadsheet');
+    }
+    const fileHash = file.fileHash?.trim() || `size:${file.size ?? 0}`;
+    const key = ephemeralCacheKey({
+      fileHash,
+      fileId: file.id,
+      userId: this.userId,
+      workspaceId: this.workspaceId ?? file.workspaceId,
+    });
+    const hit = getEphemeralWorkbook(key);
+    if (hit) return hit.build;
+
+    log('ephemeral parse file=%s hash=%s', file.id, fileHash);
+    const { cleanup, filePath } = await this.fileService.downloadFileToLocal(file.id);
+    let disposeIsolate: (() => Promise<void>) | undefined;
+    try {
+      const build = await buildWorkbookAssetsIsolated(filePath);
+      disposeIsolate = build.dispose;
+      // Isolate mode leaves jsonl on disk (jsonl: '') and dispose() deletes that
+      // temp dir. Materialize into memory BEFORE dispose so querySheet can run.
+      const sheets = await Promise.all(
+        build.sheets.map(async (sheet) => {
+          if (sheet.jsonl?.length) {
+            return { ...sheet, jsonlPath: undefined };
+          }
+          if (sheet.jsonlPath) {
+            const jsonl = await readFile(sheet.jsonlPath, 'utf8');
+            return { ...sheet, jsonl, jsonlPath: undefined };
+          }
+          return { ...sheet, jsonl: sheet.jsonl ?? '', jsonlPath: undefined };
+        }),
+      );
+      const rest: WorkbookAssetBuild = {
+        coverage: build.coverage,
+        parserVersion: build.parserVersion,
+        sheetCount: build.sheetCount,
+        sheets,
+        totalJsonlBytes: build.totalJsonlBytes,
+        totalRows: build.totalRows,
+        unrestrictedTokenEstimate: build.unrestrictedTokenEstimate,
+      };
+      setEphemeralWorkbook(key, {
+        build: rest,
+        fileHash,
+        fileId: file.id,
+        userId: this.userId,
+        workspaceId: this.workspaceId ?? file.workspaceId ?? undefined,
+      });
+      return rest;
+    } finally {
+      try {
+        await disposeIsolate?.();
+      } catch {
+        /* best-effort isolate temp cleanup */
+      }
+      cleanup();
+    }
+  };
+
+  private structuredQueryResult = <T extends Record<string, unknown>>(
+    result: T,
+    extra: { columns?: string[]; ephemeral?: boolean; hasMore?: boolean },
+  ) => {
+    const truncated = Boolean((result as { truncated?: boolean }).truncated);
+    const nextCursor = (result as { nextCursor?: string }).nextCursor;
+    const hasMore = (extra.hasMore ?? Boolean(nextCursor)) || truncated;
+    return {
+      ...result,
+      columns: extra.columns,
+      ephemeral: extra.ephemeral,
+      hasMore,
+      // Single source of truth — callers must not recompute truncated.
+      truncated: hasMore,
+    };
   };
 
   getReadyWorkbook = async (fileId: string): Promise<FileWorkbookItem | undefined> => {
@@ -663,9 +756,11 @@ export class WorkbookService {
 
   private querySheetOnAsset = async (asset: FileSheetAssetItem, args: WorkbookQueryArgs) => {
     const input: SheetQueryInput = {
+      aggregates: (args as any).aggregates,
       columns: args.columns,
       cursor: args.cursor,
       filters: args.filters as SheetQueryFilter[] | undefined,
+      groupBy: (args as any).groupBy,
       limit: args.limit,
       orderBy: args.orderBy,
     };
@@ -715,20 +810,58 @@ export class WorkbookService {
   /**
    * Inspect for prompt/tools. Never blocks on full parse when queued/parsing —
    * returns a status card and relies on async worker (or caller enqueue).
+   *
+   * Chat on_demand → ephemeral workbook (TTL memory, no resource library).
+   * Resource persistent → existing file_workbooks path.
    */
   inspectWorkbook = async (fileId: string) => {
     const file = await this.ownershipFile(fileId);
     if (!this.isPersistentFile(file as { processingPolicy?: string | null })) {
-      // Do not enqueue. Surface a clear card so agents use on-demand preview instead.
-      const promptCard =
-        `Spreadsheet fileId=${fileId} name="${file.name}" is chat on_demand (processingPolicy=${(file as any).processingPolicy ?? 'null'}). ` +
-        `No long-lived Workbook assets. Use prompt-time preview or upload via Resources for lobe-workbook query.`;
-      return {
-        fileId,
-        fileVersion: WORKBOOK_PARSER_VERSION,
-        parseStatus: 'unsupported' as FileParseStatus,
-        promptCard: promptCard.slice(0, ALL_FILE_CARDS_MAX_CHARS),
-      };
+      try {
+        const build = await this.ensureEphemeralBuild(file as any);
+        const card = buildWorkbookManifestCard(build, {
+          fileId: file.id,
+          fileName: file.name,
+          size: file.size ?? 0,
+        });
+        const ephemeralNote =
+          '\n[ephemeral chat attachment workbook — TTL cache, not saved to Resources. querySheet works on this fileId.]';
+        return {
+          ephemeral: true,
+          fileId,
+          fileVersion: WORKBOOK_PARSER_VERSION,
+          manifest: {
+            coverage: build.coverage,
+            fileName: file.name,
+            parserVersion: build.parserVersion,
+            sheetCount: build.sheetCount,
+            sheets: build.sheets.map((s) => ({
+              columnCount: s.columnCount,
+              columns: s.columns,
+              name: s.sheetName,
+              rowCount: s.rowCount,
+              sampleRows: s.sampleRows,
+              sheetIndex: s.sheetIndex,
+            })),
+            totalRows: build.totalRows,
+            unrestrictedTokenEstimate: build.unrestrictedTokenEstimate,
+          },
+          parseStatus: 'ready' as FileParseStatus,
+          promptCard: `${card}${ephemeralNote}`.slice(0, ALL_FILE_CARDS_MAX_CHARS),
+        };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const promptCard =
+          `Spreadsheet fileId=${fileId} name="${file.name}" ephemeral parse failed: ${reason}. ` +
+          `Retry inspectWorkbook, or upload via Resources for persistent Workbook assets.`;
+        return {
+          ephemeral: true,
+          fileId,
+          fileVersion: WORKBOOK_PARSER_VERSION,
+          parseStatus: 'failed' as FileParseStatus,
+          promptCard: promptCard.slice(0, ALL_FILE_CARDS_MAX_CHARS),
+        };
+      }
     }
 
     let workbook = await this.getReadyWorkbook(fileId);
@@ -782,13 +915,52 @@ export class WorkbookService {
   };
 
   /**
-   * Query a ready sheet. Never runs sync XLSX parse on the request thread —
-   * enqueues async work and throws a clear "not ready" error when assets missing.
+   * Query a ready sheet.
+   * - persistent: async-parsed file_sheet_assets
+   * - on_demand chat attachment: ephemeral in-memory workbook (lazy parse)
    */
   querySheet = async (args: WorkbookQueryArgs) => {
     const file = await this.ownershipFile(args.fileId);
     if (!this.isPersistentFile(file as { processingPolicy?: string | null })) {
-      this.rejectNonPersistent(args.fileId, file as any);
+      const build = await this.ensureEphemeralBuild(file as any);
+      const sheet =
+        build.sheets.find((s) => s.sheetName === args.sheet) ||
+        build.sheets.find((s) => String(s.sheetIndex) === args.sheet);
+      if (!sheet) {
+        const names = build.sheets.map((s) => s.sheetName).join(', ');
+        throw new Error(
+          `Sheet "${args.sheet}" not found in ephemeral workbook. Available: ${names || '(none)'}`,
+        );
+      }
+      const input: SheetQueryInput = {
+        aggregates: (args as any).aggregates,
+        columns: args.columns,
+        cursor: args.cursor,
+        filters: args.filters as SheetQueryFilter[] | undefined,
+        groupBy: (args as any).groupBy,
+        limit: args.limit,
+        orderBy: args.orderBy,
+      };
+      // Prefer path when isolate left jsonl on disk; else in-memory string.
+      let result;
+      if (sheet.jsonlPath) {
+        result = await queryJsonlFile(sheet.jsonlPath, input);
+      } else {
+        result = queryJsonlSheet(sheet.jsonl, input);
+      }
+      return this.structuredQueryResult(
+        {
+          ...result,
+          source: {
+            ephemeral: true,
+            fileId: args.fileId,
+            fileVersion: WORKBOOK_PARSER_VERSION,
+            format: 'jsonl' as const,
+            sheet: sheet.sheetName,
+          },
+        },
+        { columns: sheet.columns, ephemeral: true },
+      );
     }
     const assets = await this.listSheetAssets(args.fileId);
     const asset =
@@ -802,7 +974,13 @@ export class WorkbookService {
         `Sheet "${args.sheet}" not ready (parseStatus=${status}). Retry querySheet after inspectWorkbook shows ready.`,
       );
     }
-    return this.querySheetOnAsset(asset, args);
+    const result = await this.querySheetOnAsset(asset, args);
+    const cols = (
+      Array.isArray(asset.columns)
+        ? asset.columns.map((c: any) => (typeof c === 'string' ? c : c?.name)).filter(Boolean)
+        : undefined
+    ) as string[] | undefined;
+    return this.structuredQueryResult(result, { columns: cols, ephemeral: false });
   };
 
   previewSheet = async (fileId: string, sheet: string, limit = 20) => {

@@ -3,6 +3,7 @@ import {
   type UniformSearchResponse,
   type UniformSearchResult,
 } from '@lobechat/types';
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import urlJoin from 'url-join';
@@ -25,7 +26,7 @@ const timeRangeMapping = {
  */
 export class BochaImpl implements SearchServiceImpl {
   private get apiKey(): string | undefined {
-    return process.env.BOCHA_API_KEY;
+    return getVaultEnv('BOCHA_API_KEY');
   }
 
   private get baseUrl(): string {

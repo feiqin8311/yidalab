@@ -129,7 +129,7 @@ describe('tool executors', () => {
     expect(createToolMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         content: 'Tool result',
-        metadata: { toolExecutionTimeMs: 100 },
+        metadata: { operationId: 'op-1', toolExecutionTimeMs: 100 },
         parentId: 'assistant-msg-1',
         role: 'tool',
         tool_call_id: 'tool-call-1',

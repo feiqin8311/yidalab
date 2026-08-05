@@ -136,7 +136,7 @@ describe('browserless', () => {
     const originalEnv = { ...process.env };
     process.env.BROWSERLESS_TOKEN = 'test-token';
     global.fetch = vi.fn().mockImplementation((url) => {
-      // BASE_URL is captured at module load time, so we verify fetch is called with /content path
+      // Token/URL resolved at call time (getVaultEnv), not module load.
       expect(url).toContain('/content');
       return Promise.resolve({
         ok: true,
@@ -149,6 +149,41 @@ describe('browserless', () => {
     await browserless('https://example.com', { filterOptions: {} });
 
     expect(global.fetch).toHaveBeenCalled();
+
+    process.env = originalEnv;
+  });
+
+  it('uses ALS vault token and base URL without process.env', async () => {
+    const originalEnv = { ...process.env };
+    delete process.env.BROWSERLESS_TOKEN;
+    delete process.env.BROWSERLESS_URL;
+
+    let fetchUrl = '';
+    global.fetch = vi.fn().mockImplementation((url) => {
+      fetchUrl = String(url);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: () =>
+          Promise.resolve(
+            `<html><head><title>Vault Page</title></head><body><p>${'x'.repeat(120)}</p></body></html>`,
+          ),
+      });
+    });
+
+    const { runWithVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+    await runWithVaultEnv(
+      {
+        BROWSERLESS_TOKEN: 'vault-bl-token',
+        BROWSERLESS_URL: 'https://vault.browserless.test',
+      },
+      () => browserless('https://example.com', { filterOptions: {} }),
+    );
+
+    expect(process.env.BROWSERLESS_TOKEN).toBeUndefined();
+    expect(fetchUrl).toContain('https://vault.browserless.test/content');
+    expect(fetchUrl).toContain('token=vault-bl-token');
 
     process.env = originalEnv;
   });

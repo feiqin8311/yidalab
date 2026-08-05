@@ -526,14 +526,19 @@ export class BotCallbackService {
     // attachment-only path still drives `deliverFirstChunk` once.
     let chunks: string[];
     if (hasText) {
-      replyText = await prepareBotOutboundReply({
-        db: this.db,
-        reply: replyText!,
-        topicId: body.topicId,
-        userId: body.userId,
-        workspaceId: body.workspaceId,
-      });
-      const msgBody = renderFinalReply(replyText);
+      if (body.userId) {
+        replyText = await prepareBotOutboundReply({
+          db: this.db,
+          operationId: body.operationId,
+          reply: replyText!,
+          topicId: body.topicId,
+          userId: body.userId,
+          workspaceId: body.workspaceId,
+        });
+      } else {
+        log('handleCompletion: missing userId, skip dingpan outbound prepare');
+      }
+      const msgBody = renderFinalReply(replyText!);
       const formattedBody = client.formatMarkdown?.(msgBody) ?? msgBody;
       const finalText = client.formatReply?.(formattedBody, stats) ?? formattedBody;
       chunks = splitMessage(finalText, charLimit);

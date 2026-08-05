@@ -48,6 +48,7 @@ import {
 } from '@/server/services/aiAgent/deviceToolRegistry';
 
 import {
+  type InstalledPlugin,
   type ServerAgentToolsContext,
   type ServerAgentToolsEngineConfig,
   type ServerCreateAgentToolsEngineParams,
@@ -192,10 +193,18 @@ export const createServerAgentToolsEngine = (
     hasEnabledKnowledgeBases = false,
     isBotConversation = false,
     isGroupSupervisor = false,
+    attachmentCapabilities,
     manifestContext,
     model,
     provider,
   } = params;
+
+  // Attachment-driven tool schema pruning: when this turn has files, only enable
+  // the tool families that match (DOCX→files, XLSX→workbook). No attachment →
+  // keep both available for resource-library fileIds.
+  const gateFiles = !attachmentCapabilities?.hasAttachment || attachmentCapabilities.hasDocument;
+  const gateWorkbook =
+    !attachmentCapabilities?.hasAttachment || attachmentCapabilities.hasSpreadsheet;
 
   // Tools that need a user-side execution target (local-system, stdio MCP)
   // run on a device registered with the device-gateway. Desktop, CLI, and
@@ -265,9 +274,9 @@ export const createServerAgentToolsEngine = (
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,
     [MemoryManifest.identifier]: globalMemoryEnabled,
     [WebBrowsingManifest.identifier]: isSearchEnabled,
-    // Attachment tools: always on when chat-mode whitelist includes them
-    [FilesManifest.identifier]: true,
-    [WorkbookManifest.identifier]: true,
+    // Attachment tools: capability-gated when this turn has files
+    [FilesManifest.identifier]: gateFiles,
+    [WorkbookManifest.identifier]: gateWorkbook,
   };
 
   // Custom mode: the tool set is EXACTLY the agent's declared plugins — no
@@ -279,8 +288,10 @@ export const createServerAgentToolsEngine = (
   const agentModeRules = {
     // User-selected plugins
     ...Object.fromEntries((agentConfig.plugins ?? []).map((id) => [id, true])),
-    // Always-on builtin tools
+    // Always-on builtin tools (files/workbook overridden below by attachment gate)
     ...Object.fromEntries(alwaysOnToolIds.map((id) => [id, true])),
+    [FilesManifest.identifier]: gateFiles,
+    [WorkbookManifest.identifier]: gateWorkbook,
     // System-level rules (may override user selection for specific tools)
     [CloudSandboxManifest.identifier]: runtimeMode === 'cloud',
     [KnowledgeBaseManifest.identifier]: hasEnabledKnowledgeBases,

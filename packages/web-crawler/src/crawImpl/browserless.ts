@@ -7,14 +7,9 @@ import { htmlToMarkdown } from '../utils/htmlToMarkdown';
 import { createHTTPStatusError } from '../utils/response';
 import { DEFAULT_TIMEOUT, withTimeout } from '../utils/withTimeout';
 
-const BASE_URL = process.env.BROWSERLESS_URL ?? 'https://chrome.browserless.io';
 // Allowed file types: html, css, js, json, xml, webmanifest, txt, md
 const REJECT_REQUEST_PATTERN =
   '.*\\.(?!(html|css|js|json|xml|webmanifest|txt|md)(\\?|#|$))[\\w-]+(?:[\\?#].*)?$';
-const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN;
-
-const BROWSERLESS_BLOCK_ADS = process.env.BROWSERLESS_BLOCK_ADS === '1';
-const BROWSERLESS_STEALTH_MODE = process.env.BROWSERLESS_STEALTH_MODE === '1';
 
 class BrowserlessInitError extends Error {
   constructor() {
@@ -24,7 +19,14 @@ class BrowserlessInitError extends Error {
 }
 
 export const browserless: CrawlImpl = async (url, { filterOptions }) => {
-  if (!process.env.BROWSERLESS_URL && !process.env.BROWSERLESS_TOKEN) {
+  // Request-scoped vault (ALS) first; do not cache token at module load.
+  const { getVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+  const baseUrl = getVaultEnv('BROWSERLESS_URL') || 'https://chrome.browserless.io';
+  const token = getVaultEnv('BROWSERLESS_TOKEN');
+  const blockAds = getVaultEnv('BROWSERLESS_BLOCK_ADS') === '1';
+  const stealthMode = getVaultEnv('BROWSERLESS_STEALTH_MODE') === '1';
+
+  if (!getVaultEnv('BROWSERLESS_URL') && !token) {
     throw new BrowserlessInitError();
   }
 
@@ -42,11 +44,11 @@ export const browserless: CrawlImpl = async (url, { filterOptions }) => {
         fetch(
           qs.stringifyUrl({
             query: {
-              blockAds: BROWSERLESS_BLOCK_ADS,
-              launch: JSON.stringify({ stealth: BROWSERLESS_STEALTH_MODE }),
-              token: BROWSERLESS_TOKEN,
+              blockAds,
+              launch: JSON.stringify({ stealth: stealthMode }),
+              token,
             },
-            url: urlJoin(BASE_URL, '/content'),
+            url: urlJoin(baseUrl, '/content'),
           }),
           {
             body: JSON.stringify(input),

@@ -1,5 +1,6 @@
 export * from './blackList';
 export * from './loaders/excel/manifestCard';
+export * from './loaders/excel/normalizeHeaders';
 export * from './loaders/excel/parquetDuckdb';
 export * from './loaders/excel/querySheet';
 export * from './loaders/excel/workbookAsset';

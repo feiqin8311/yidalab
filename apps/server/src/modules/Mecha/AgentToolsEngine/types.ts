@@ -88,6 +88,17 @@ export interface ServerCreateAgentToolsEngineParams {
     plugins?: string[];
   };
   /**
+   * Turn attachment capabilities (from user fileList). When `hasAttachment`,
+   * lobe-files / lobe-workbook are gated by document vs spreadsheet so the
+   * model does not pay for unused tool schemas. When omitted or no attachment,
+   * both stay available (resource library / general use).
+   */
+  attachmentCapabilities?: {
+    hasAttachment: boolean;
+    hasDocument: boolean;
+    hasSpreadsheet: boolean;
+  };
+  /**
    * Whether device tools (local-system / remote-device) are allowed this turn.
    * Computed by `resolveDeviceAccessPolicy` from the caller identity:
    * first-party UI and bot-owner senders pass; external bot senders and

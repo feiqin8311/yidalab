@@ -7,8 +7,8 @@
  * - DingTalk / IM is only a **relay channel**: short conclusions + real dingpan URL
  *   (cannot render Artifacts / inline HTML).
  *
- * This module is the single post-completion transform for both local AgentBridge
- * and queue BotCallback paths.
+ * Isolation rule: only this operation's dingpan uploads may be attached.
+ * Never fall back to topic history (cross-turn report contamination).
  */
 
 import { type DeliveryClaimMessage, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
@@ -20,12 +20,16 @@ import {
   scrubFakeUploadProgressNarration,
   shouldEnsureDingpanForBotReply,
 } from './botDingpanDeliveryHeuristic';
+import type { BotTurnContext } from './botTurnContext';
 import { ensureDingpanDeliverable } from './ensureDingpanDeliverable';
 
 const MISSING_REPORT_NOTE =
   '说明：本轮未能上传钉盘报告（系统补交付也未成功）。请到 YidaLab 打开同一话题查看中间结果后重试。';
 
 const MAX_RELAY_CHARS = 1200;
+
+const DINGPAN_URL_RE =
+  /https:\/\/qr\.dingtalk\.com\/page\/yunpan[^\s)\]>"']+|https:\/\/[^\s)\]>"']*previewDentry[^\s)\]>"']*/gi;
 
 const hasDingpanUrl = (text: string) =>
   /qr\.dingtalk\.com|previewDentry|yunpan\?route=preview/i.test(text);
@@ -35,6 +39,16 @@ const extractFirstDingpanUrl = (text: string): string | undefined => {
     /https:\/\/qr\.dingtalk\.com\/page\/yunpan[^\s)\]>"']+|https:\/\/[^\s)\]>"']*previewDentry[^\s)\]>"']*/,
   );
   return m?.[0];
+};
+
+/** Strip dingpan URLs that are not in the allowlist (this-operation only). */
+const scrubUntrustedDingpanUrls = (text: string, allowed?: string): string => {
+  if (!hasDingpanUrl(text)) return text;
+  return text
+    .replaceAll(DINGPAN_URL_RE, (url) => (allowed && url === allowed ? url : ''))
+    .replaceAll(/\n{3,}/g, '\n\n')
+    .replaceAll(/钉盘报告：\s*$/gm, '')
+    .trim();
 };
 
 /**
@@ -69,56 +83,85 @@ export const compactBotRelayText = (reply: string, maxChars = MAX_RELAY_CHARS): 
   return `${text.slice(0, maxChars - 1).trim()}…`;
 };
 
+const latestOperationPreview = async (params: {
+  db: LobeChatDatabase;
+  operationId: string;
+  topicId?: string | null;
+  userId: string;
+  workspaceId?: string | null;
+}): Promise<string | undefined> => {
+  const messageModel = new MessageModel(params.db, params.userId, params.workspaceId ?? undefined);
+  const rows = await messageModel.findDingpanUploadsByOperation({
+    operationId: params.operationId,
+    topicId: params.topicId,
+  });
+  const outcomes = extractDingpanUploadOutcomes(
+    rows.map((row): DeliveryClaimMessage => ({
+      content: row.content ?? '',
+      plugin: {
+        apiName: row.apiName ?? undefined,
+        identifier: row.identifier ?? undefined,
+      },
+      role: 'tool',
+    })),
+  );
+  return [...outcomes].reverse().find((o) => o.success && o.previewUrl)?.previewUrl;
+};
+
 /**
  * Single exit for bot → IM text after agent completion.
  */
 export async function prepareBotOutboundReply(params: {
+  assistantMessageId?: string;
   db: LobeChatDatabase;
+  operationId?: string | null;
   reply: string;
+  sourceMessageId?: string;
   topicId?: string | null;
   userId: string;
   workspaceId?: string | null;
 }): Promise<string> {
-  const { db, userId, workspaceId, topicId } = params;
+  const { db, userId, workspaceId, topicId, operationId, assistantMessageId, sourceMessageId } =
+    params;
   let reply = scrubFakeUploadProgressNarration(params.reply);
   if (!reply.trim()) return reply;
 
   try {
-    if (topicId) {
-      const messageModel = new MessageModel(db, userId, workspaceId ?? undefined);
-      const rows = await messageModel.findRecentDingpanUploadsInTopic(topicId);
-      const outcomes = extractDingpanUploadOutcomes(
-        rows.map((row): DeliveryClaimMessage => ({
-          content: row.content ?? '',
-          plugin: {
-            apiName: row.apiName ?? undefined,
-            identifier: row.identifier ?? undefined,
-          },
-          role: 'tool',
-        })),
-      );
-      const latestOk = [...outcomes].reverse().find((o) => o.success && o.previewUrl);
-
-      if (latestOk?.previewUrl) {
-        if (!reply.includes(latestOk.previewUrl)) {
-          reply = `${reply.trim()}\n\n钉盘报告：\n${latestOk.previewUrl}`;
+    // 1. This operation already uploaded successfully → attach that link only.
+    //    Any other dingpan URL in prose (historical / model re-paste) is stripped.
+    if (operationId) {
+      const previewUrl = await latestOperationPreview({
+        db,
+        operationId,
+        topicId,
+        userId,
+        workspaceId,
+      });
+      if (previewUrl) {
+        reply = scrubUntrustedDingpanUrls(reply, previewUrl);
+        if (!reply.includes(previewUrl)) {
+          reply = `${reply.trim()}\n\n钉盘报告：\n${previewUrl}`;
         }
-        // Same work as Web; IM only gets a compact relay + real link.
         return compactBotRelayText(reply);
       }
     }
 
-    // Already has a dingpan URL in prose (model pasted it)
-    if (hasDingpanUrl(reply)) {
-      return compactBotRelayText(reply);
-    }
+    // 2. No this-operation upload: never trust prose dingpan URLs (history contamination).
+    reply = scrubUntrustedDingpanUrls(reply);
 
-    // Report-class without upload: system upload (not model-dependent).
-    if (shouldEnsureDingpanForBotReply(reply) && topicId) {
+    // 3. Report-class without this-turn upload: system fallback for THIS operation only.
+    if (shouldEnsureDingpanForBotReply(reply) && topicId && operationId) {
+      const turn: BotTurnContext = {
+        assistantMessageId,
+        operationId,
+        sourceMessageId,
+        startedAt: new Date(),
+        topicId,
+      };
       const ensured = await ensureDingpanDeliverable({
         db,
         reply,
-        topicId,
+        turn,
         userId,
         workspaceId,
       });
@@ -139,9 +182,10 @@ export async function prepareBotOutboundReply(params: {
       return compactBotRelayText(`${reply.trim()}\n\n${failNote}`);
     }
 
+    // 4. Non-report / missing operationId: send as-is without any dingpan links.
     return compactBotRelayText(reply);
   } catch (error) {
     console.error('[prepareBotOutboundReply] non-fatal:', error);
-    return compactBotRelayText(reply);
+    return compactBotRelayText(scrubUntrustedDingpanUrls(reply));
   }
 }

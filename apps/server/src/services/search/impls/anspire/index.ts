@@ -3,6 +3,7 @@ import {
   type UniformSearchResponse,
   type UniformSearchResult,
 } from '@lobechat/types';
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import urlJoin from 'url-join';
@@ -18,7 +19,7 @@ const log = debug('lobe-search:Anspire');
  */
 export class AnspireImpl implements SearchServiceImpl {
   private get apiKey(): string | undefined {
-    return process.env.ANSPIRE_API_KEY;
+    return getVaultEnv('ANSPIRE_API_KEY');
   }
 
   private get baseUrl(): string {
@@ -106,17 +107,15 @@ export class AnspireImpl implements SearchServiceImpl {
 
       log('Parsed Anspire response: %o', anspireResponse);
 
-      const mappedResults = (anspireResponse.results || []).map(
-        (result): UniformSearchResult => ({
-          category: 'general', // Default category
-          content: result.content || '', // Prioritize content
-          engines: ['anspire'], // Use 'anspire' as the engine name
-          parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
-          score: result.score || 0, // Default score to 0 if undefined
-          title: result.title || '',
-          url: result.url,
-        }),
-      );
+      const mappedResults = (anspireResponse.results || []).map((result): UniformSearchResult => ({
+        category: 'general', // Default category
+        content: result.content || '', // Prioritize content
+        engines: ['anspire'], // Use 'anspire' as the engine name
+        parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
+        score: result.score || 0, // Default score to 0 if undefined
+        title: result.title || '',
+        url: result.url,
+      }));
 
       log('Mapped %d results to SearchResult format', mappedResults.length);
 

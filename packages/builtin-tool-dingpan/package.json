@@ -9,7 +9,9 @@
     "./executionRuntime": "./src/ExecutionRuntime/index.ts"
   },
   "main": "./src/index.ts",
-  "dependencies": {},
+  "dependencies": {
+    "@lobechat/utils": "workspace:*"
+  },
   "devDependencies": {
     "@lobechat/types": "workspace:*"
   },

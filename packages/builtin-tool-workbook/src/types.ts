@@ -24,11 +24,18 @@ export interface QuerySheetFilter {
   value: string | number | boolean | null;
 }
 
+export interface QuerySheetAggregate {
+  column: string;
+  op: 'sum' | 'avg' | 'min' | 'max' | 'count';
+}
+
 export interface QuerySheetParams {
+  aggregates?: QuerySheetAggregate[];
   columns?: string[];
   cursor?: string;
   fileId: string;
   filters?: QuerySheetFilter[];
+  groupBy?: string[];
   limit?: number;
   orderBy?: { column: string; direction?: 'asc' | 'desc' }[];
   sheet: string;

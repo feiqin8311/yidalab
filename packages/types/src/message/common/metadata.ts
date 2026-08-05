@@ -183,6 +183,8 @@ export const MessageTaskCallbackSchema = z.object({
 export const MessageMetadataSchema = ModelUsageSchema.merge(ModelPerformanceSchema).extend({
   collapsed: z.boolean().optional(),
   contextSelections: z.array(ContextSelectionSchema).optional(),
+  /** Bot dingpan delivery type stamp on tool messages. */
+  deliveryType: z.string().optional(),
   // Hetero-agent (Claude Code) per-message provenance. Listed here so zod does
   // NOT strip them from writes going through UpdateMessageParamsSchema /
   // CreateMessageParamsSchema (the renderer executor's `messageService` path).
@@ -192,6 +194,8 @@ export const MessageMetadataSchema = ModelUsageSchema.merge(ModelPerformanceSche
   isMultimodal: z.boolean().optional(),
   isSupervisor: z.boolean().optional(),
   localSystemToolSnapshots: z.array(LocalSystemToolSnapshotSchema).optional(),
+  /** Agent operation id for isolation (dingpan delivery, tool rows). */
+  operationId: z.string().optional(),
   orchestrationRole: z.enum(['supervisor', 'member']).optional(),
   pageSelections: z.array(PageSelectionSchema).optional(),
   // Canonical nested shape — flat fields above are deprecated. Must be listed
@@ -202,7 +206,11 @@ export const MessageMetadataSchema = ModelUsageSchema.merge(ModelPerformanceSche
   scope: z.string().optional(),
   // External-signal lineage for Monitor-style callback turns ().
   signal: MessageSignalSchema.optional(),
+  /** Delivery / tool provenance: model-tool | system-fallback | bot-system-dingpan */
+  source: z.string().optional(),
+  sourceMessageId: z.string().optional(),
   subAgentId: z.string().optional(),
+  systemInjected: z.boolean().optional(),
   // role='taskCallback' card: which task delivered its handoff back to this
   // conversation, and the run outcome. The card header + jump link read this.
   taskCallback: MessageTaskCallbackSchema.optional(),
@@ -272,6 +280,10 @@ export interface MessageMetadata {
   contextSelections?: ContextSelection[];
   /** @deprecated use the top-level message `usage` field instead */
   cost?: number;
+  /**
+   * Bot dingpan delivery type on tool messages.
+   */
+  deliveryType?: string;
   /** @deprecated use `metadata.performance` instead */
   duration?: number;
   finishType?: string;
@@ -341,11 +353,15 @@ export interface MessageMetadata {
   isSupervisor?: boolean;
   /** @deprecated use `metadata.performance` instead */
   latency?: number;
+
   /**
    * Local-system tool snapshots materialized when the user sent @file mentions.
    */
   localSystemToolSnapshots?: LocalSystemToolSnapshot[];
-
+  /**
+   * Agent operation id for isolation (dingpan delivery, tool rows).
+   */
+  operationId?: string;
   /**
    * Orchestration role of the message author within a group conversation.
    * `'supervisor'` = the group's coordinating agent, `'member'` = a delegated
@@ -404,12 +420,18 @@ export interface MessageMetadata {
    */
   signal?: MessageSignal;
   /**
+   * Delivery / tool provenance: model-tool | system-fallback | bot-system-dingpan
+   */
+  source?: string;
+  sourceMessageId?: string;
+  /**
    * Sub Agent ID - behavior depends on scope
    * - scope: 'sub_agent': conversation-flow will transform message.agentId to this value for display
    * - scope: 'group' | 'group_agent': indicates the agent that generated this message in group mode
    * Used by callAgent tool (sub_agent) and group orchestration (group modes)
    */
   subAgentId?: string;
+  systemInjected?: boolean;
   /**
    * Task-callback card pointer (for role='taskCallback' messages). Identifies
    * the task whose handoff result was delivered back into this conversation and

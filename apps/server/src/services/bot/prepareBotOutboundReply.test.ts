@@ -1,6 +1,35 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment node
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { compactBotRelayText } from './prepareBotOutboundReply';
+const {
+  findDingpanUploadsByOperation,
+  ensureDingpanDeliverable,
+  shouldEnsureDingpanForBotReply,
+  scrubFakeUploadProgressNarration,
+} = vi.hoisted(() => ({
+  findDingpanUploadsByOperation: vi.fn(),
+  ensureDingpanDeliverable: vi.fn(),
+  shouldEnsureDingpanForBotReply: vi.fn(),
+  scrubFakeUploadProgressNarration: vi.fn((s: string) => s),
+}));
+
+vi.mock('@/database/models/message', () => ({
+  MessageModel: class {
+    findDingpanUploadsByOperation = findDingpanUploadsByOperation;
+  },
+}));
+
+vi.mock('./botDingpanDeliveryHeuristic', () => ({
+  scrubFakeUploadProgressNarration: (...args: unknown[]) =>
+    scrubFakeUploadProgressNarration(...(args as [string])),
+  shouldEnsureDingpanForBotReply: (...args: unknown[]) => shouldEnsureDingpanForBotReply(...args),
+}));
+
+vi.mock('./ensureDingpanDeliverable', () => ({
+  ensureDingpanDeliverable: (...args: unknown[]) => ensureDingpanDeliverable(...args),
+}));
+
+const { compactBotRelayText, prepareBotOutboundReply } = await import('./prepareBotOutboundReply');
 
 describe('compactBotRelayText', () => {
   const url =
@@ -28,5 +57,141 @@ describe('compactBotRelayText', () => {
     expect(out).toContain(url);
     expect(out.length).toBeLessThan(long.length);
     expect(out.indexOf('结论')).toBeLessThan(out.indexOf(url));
+  });
+});
+
+describe('prepareBotOutboundReply operation isolation', () => {
+  const db = {} as any;
+  const urlA = 'https://qr.dingtalk.com/page/yunpan?fileId=opA';
+  const urlB = 'https://qr.dingtalk.com/page/yunpan?fileId=opB';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scrubFakeUploadProgressNarration.mockImplementation((s: string) => s);
+    shouldEnsureDingpanForBotReply.mockReturnValue(false);
+    findDingpanUploadsByOperation.mockResolvedValue([]);
+    ensureDingpanDeliverable.mockResolvedValue({ uploaded: false });
+  });
+
+  it('attaches only this operation upload, never topic history', async () => {
+    findDingpanUploadsByOperation.mockResolvedValue([
+      {
+        apiName: 'uploadHtmlToDingpan',
+        content: JSON.stringify({ preview_url: urlB, success: true }),
+        identifier: 'lobe-dingpan',
+      },
+    ]);
+
+    const out = await prepareBotOutboundReply({
+      db,
+      operationId: 'op_B',
+      reply: '第二轮分析完成',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(findDingpanUploadsByOperation).toHaveBeenCalledWith({
+      operationId: 'op_B',
+      topicId: 'tpc_1',
+    });
+    expect(out).toContain(urlB);
+    expect(out).not.toContain(urlA);
+    expect(ensureDingpanDeliverable).not.toHaveBeenCalled();
+  });
+
+  it('does not attach any historical link when this operation has no upload and is non-report', async () => {
+    shouldEnsureDingpanForBotReply.mockReturnValue(false);
+    findDingpanUploadsByOperation.mockResolvedValue([]);
+
+    const out = await prepareBotOutboundReply({
+      db,
+      operationId: 'op_new',
+      reply: '好的，已收到表格。',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(out).toBe('好的，已收到表格。');
+    expect(out).not.toMatch(/qr\.dingtalk\.com/);
+    expect(ensureDingpanDeliverable).not.toHaveBeenCalled();
+  });
+
+  it('triggers system ensure only for this operation on report-class replies', async () => {
+    shouldEnsureDingpanForBotReply.mockReturnValue(true);
+    findDingpanUploadsByOperation.mockResolvedValue([]);
+    ensureDingpanDeliverable.mockResolvedValue({
+      previewUrl: urlA,
+      uploaded: true,
+    });
+
+    const out = await prepareBotOutboundReply({
+      assistantMessageId: 'asst_1',
+      db,
+      operationId: 'op_A',
+      reply: '结论：销量上涨。建议继续投放。',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(ensureDingpanDeliverable).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turn: expect.objectContaining({
+          assistantMessageId: 'asst_1',
+          operationId: 'op_A',
+          topicId: 'tpc_1',
+        }),
+      }),
+    );
+    expect(out).toContain(urlA);
+  });
+
+  it('never falls back to history when ensure fails', async () => {
+    shouldEnsureDingpanForBotReply.mockReturnValue(true);
+    findDingpanUploadsByOperation.mockResolvedValue([]);
+    ensureDingpanDeliverable.mockResolvedValue({
+      error: 'upload failed',
+      uploaded: false,
+    });
+
+    const out = await prepareBotOutboundReply({
+      db,
+      operationId: 'op_fail',
+      reply: '结论：报告。建议：重试。',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(out).toMatch(/未能上传钉盘报告/);
+    expect(out).not.toMatch(/qr\.dingtalk\.com/);
+  });
+
+  it('without operationId never queries topic history for auto-attach', async () => {
+    shouldEnsureDingpanForBotReply.mockReturnValue(false);
+
+    const out = await prepareBotOutboundReply({
+      db,
+      reply: '普通回复',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(findDingpanUploadsByOperation).not.toHaveBeenCalled();
+    expect(out).toBe('普通回复');
+  });
+
+  it('strips historical dingpan URL pasted in assistant prose', async () => {
+    shouldEnsureDingpanForBotReply.mockReturnValue(false);
+    findDingpanUploadsByOperation.mockResolvedValue([]);
+
+    const out = await prepareBotOutboundReply({
+      db,
+      operationId: 'op_new',
+      reply: `第二轮结论。\n钉盘报告：\n${urlA}`,
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(out).not.toContain(urlA);
+    expect(out).toMatch(/第二轮结论/);
   });
 });

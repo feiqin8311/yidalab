@@ -1,3 +1,4 @@
+export * from './attachmentCapabilities';
 export * from './base64';
 export * from './chunkers';
 export * from './client/cookie';

@@ -21,8 +21,8 @@ interface ExaResponse {
 }
 
 export const exa: CrawlImpl = async (url) => {
-  // Get API key from environment variable
-  const apiKey = process.env.EXA_API_KEY;
+  const { getVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+  const apiKey = getVaultEnv('EXA_API_KEY');
 
   let res: Response;
 

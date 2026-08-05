@@ -39,10 +39,22 @@ export const WorkbookManifest: BuiltinToolManifest = {
     },
     {
       description:
-        'Query sheet rows with optional column projection, filters, orderBy, and cursor pagination. Results are hard-capped; use nextCursor to continue. Operates on pre-built JSONL assets, not the original XLSX.',
+        'Query sheet rows with optional column projection, filters, orderBy, aggregates (sum/avg/min/max/count + groupBy), and cursor pagination. Results are hard-capped; use nextCursor / hasMore to continue. Prefer aggregates for totals/rankings instead of dumping full grids. Works on chat ephemeral workbooks and Resources persistent assets.',
       name: WorkbookApiName.querySheet,
       parameters: {
         properties: {
+          aggregates: {
+            description: 'Optional aggregations (sum/avg/min/max/count) over matched rows',
+            items: {
+              properties: {
+                column: { type: 'string' },
+                op: { enum: ['sum', 'avg', 'min', 'max', 'count'], type: 'string' },
+              },
+              required: ['column', 'op'],
+              type: 'object',
+            },
+            type: 'array',
+          },
           columns: {
             description: 'Optional column names to return',
             items: { type: 'string' },
@@ -66,6 +78,11 @@ export const WorkbookManifest: BuiltinToolManifest = {
               required: ['column', 'value'],
               type: 'object',
             },
+            type: 'array',
+          },
+          groupBy: {
+            description: 'Group keys used with aggregates (omit for whole-sheet summary)',
+            items: { type: 'string' },
             type: 'array',
           },
           limit: { default: 50, maximum: 200, minimum: 1, type: 'number' },

@@ -50,9 +50,9 @@ interface FirecrawlResponse {
 }
 
 export const firecrawl: CrawlImpl = async (url) => {
-  // Get API key from environment variable
-  const apiKey = process.env.FIRECRAWL_API_KEY;
-  const baseUrl = process.env.FIRECRAWL_URL || 'https://api.firecrawl.dev/v2';
+  const { getVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+  const apiKey = getVaultEnv('FIRECRAWL_API_KEY');
+  const baseUrl = getVaultEnv('FIRECRAWL_URL') || 'https://api.firecrawl.dev/v2';
 
   let res: Response;
 

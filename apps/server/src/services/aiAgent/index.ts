@@ -2726,6 +2726,9 @@ export class AiAgentService {
       const activeComposioManifests = dropDisabledManifests(composioManifests);
       const activeConnectorManifests = dropDisabledManifests(connectorManifests);
 
+      const { inferAttachmentCapabilities } = await import('@lobechat/utils');
+      const attachmentCapabilities = inferAttachmentCapabilities(runAttachments.fileList ?? []);
+
       const toolsEngine = createServerAgentToolsEngine(toolsContext, {
         additionalManifests: [
           ...activeLobehubSkillManifests,
@@ -2736,6 +2739,7 @@ export class AiAgentService {
           chatConfig: agentConfig.chatConfig ?? undefined,
           plugins: agentPlugins,
         },
+        attachmentCapabilities,
         canUseDevice,
         deviceContext: gatewayConfigured
           ? {

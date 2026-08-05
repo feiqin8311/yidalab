@@ -15,8 +15,8 @@ interface Search1ApiResponse {
 }
 
 export const search1api: CrawlImpl = async (url) => {
-  // Get API key from environment variable
-  const apiKey = process.env.SEARCH1API_CRAWL_API_KEY || process.env.SEARCH1API_API_KEY;
+  const { getVaultEnv } = await import('@lobechat/utils/server/vaultEnv');
+  const apiKey = getVaultEnv('SEARCH1API_CRAWL_API_KEY') || getVaultEnv('SEARCH1API_API_KEY');
 
   let res: Response;
 

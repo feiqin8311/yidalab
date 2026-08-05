@@ -1285,7 +1285,7 @@ export class AgentBridgeService {
                   // Prefer hook payload; recover from DB when Redis state emptied
                   // the final assistant turn (LOBE-11632) — otherwise IM bots show
                   // generic "Agent Execution Failed" while the app already has the reply.
-                  let lastAssistantContent = event.lastAssistantContent;
+                  let lastAssistantContent: string | undefined = event.lastAssistantContent;
                   if (!lastAssistantContent?.trim()) {
                     const recovered = await this.recoverBotReplyContent({
                       assistantMessageId: event.assistantMessageId as string | undefined,
@@ -1300,6 +1300,10 @@ export class AgentBridgeService {
                       );
                     }
                   }
+                  // Capture for async title job (control-flow narrowing does not cross .then).
+                  const titleSourceContent = lastAssistantContent?.trim()
+                    ? lastAssistantContent
+                    : undefined;
                   // Convert hook-event attachments (JSON-safe) to chat-sdk
                   // Attachment shape. Only the *last* chunk carries
                   // attachments so a multi-chunk reply doesn't repeat the
@@ -1315,7 +1319,9 @@ export class AgentBridgeService {
                     if (hasText) {
                       // Same agent work as Web; IM is relay only (short text + dingpan URL).
                       lastAssistantContent = await prepareBotOutboundReply({
+                        assistantMessageId: event.assistantMessageId as string | undefined,
                         db: this.db,
+                        operationId: event.operationId as string | undefined,
                         reply: lastAssistantContent!,
                         topicId: resolvedTopicId || (event.topicId as string | undefined),
                         userId: this.userId,
@@ -1393,8 +1399,9 @@ export class AgentBridgeService {
                     // we have text to summarize on — image-only replies skip
                     // title generation (the prompt itself still drives it on
                     // the next round).
-                    if (resolvedTopicId && prompt && lastAssistantContent) {
+                    if (resolvedTopicId && prompt && titleSourceContent) {
                       const topicModel = new TopicModel(this.db, this.userId, this.workspaceId);
+                      const assistantForTitle = titleSourceContent;
                       topicModel
                         .findById(resolvedTopicId)
                         .then(async (topic) => {
@@ -1406,7 +1413,7 @@ export class AgentBridgeService {
                             this.workspaceId,
                           );
                           const title = await systemAgent.generateTopicTitle({
-                            lastAssistantContent,
+                            lastAssistantContent: assistantForTitle,
                             userPrompt: prompt,
                           });
                           if (!title) return;

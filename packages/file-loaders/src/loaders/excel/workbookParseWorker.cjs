@@ -140,21 +140,115 @@ async function build(filePath, outDir) {
       );
     }
 
-    const jsonData = xlsx.utils.sheet_to_json(worksheet, { defval: '', raw: false });
-    const allHeaderKeys =
-      jsonData.length > 0
-        ? Object.keys(jsonData[0] || {})
-        : (xlsx.utils
-            .sheet_to_json(worksheet, { header: 1, defval: '' })[0]
-            ?.map((h) => String(h ?? '').trim())
-            .filter(Boolean) ?? []);
-
-    if (allHeaderKeys.length > WORKBOOK_MAX_COLUMNS) columnsCapped = true;
-    const headerKeys = allHeaderKeys.slice(0, WORKBOOK_MAX_COLUMNS);
-    const columns =
-      headerKeys.length > 0
-        ? headerKeys.map((h, i) => String(h).trim() || `col_${i + 1}`)
-        : ['col_1'];
+    // Multi-level header normalization (avoid SheetJS __EMPTY_* keys).
+    // Data rows use pristine matrix — never horizontal-filled.
+    const HEADER_SCAN_MAX_ROWS = 5;
+    const matrixRaw = xlsx.utils.sheet_to_json(worksheet, {
+      defval: '',
+      header: 1,
+      raw: false,
+    });
+    const colCount = Math.min(
+      WORKBOOK_MAX_COLUMNS,
+      matrixRaw.reduce((m, row) => Math.max(m, Array.isArray(row) ? row.length : 0), 0) || 1,
+    );
+    if (colCount >= WORKBOOK_MAX_COLUMNS) columnsCapped = true;
+    const dataMatrix = matrixRaw.map((row) => {
+      const arr = Array.isArray(row) ? row : [];
+      const out = [];
+      for (let c = 0; c < colCount; c++) out.push(cellToString(arr[c]).trim());
+      return out;
+    });
+    const headerMatrix = dataMatrix
+      .slice(0, Math.min(HEADER_SCAN_MAX_ROWS, dataMatrix.length))
+      .map((r) => [...r]);
+    const merges = worksheet['!merges'] || [];
+    for (const range of merges) {
+      if (!range?.s || !range?.e) continue;
+      // Only fill merges fully inside header scan zone (never into data rows).
+      if (range.s.r >= HEADER_SCAN_MAX_ROWS || range.e.r >= HEADER_SCAN_MAX_ROWS) continue;
+      const src = headerMatrix[range.s.r]?.[range.s.c] || '';
+      if (!src) continue;
+      for (let r = range.s.r; r <= range.e.r && r < headerMatrix.length; r++) {
+        for (let c = range.s.c; c <= range.e.c && c < colCount; c++) {
+          if (!headerMatrix[r][c]) headerMatrix[r][c] = src;
+        }
+      }
+    }
+    const fillMergedRow = (row) => {
+      const out = [...row];
+      let last = '';
+      for (let i = 0; i < out.length; i++) {
+        const v = (out[i] || '').trim();
+        if (v && !/^__EMPTY(?:_\d+)?$/i.test(v)) {
+          last = v;
+          out[i] = v;
+        } else if (last) out[i] = last;
+        else out[i] = '';
+      }
+      return out;
+    };
+    for (let r = 0; r < headerMatrix.length; r++)
+      headerMatrix[r] = fillMergedRow(headerMatrix[r] || []);
+    const scoreDepth = (depth) => {
+      let nonEmpty = 0;
+      let unique = 0;
+      let numericish = 0;
+      const seen = new Set();
+      for (let c = 0; c < colCount; c++) {
+        const parts = [];
+        for (let r = 0; r < depth; r++) {
+          const cell = (headerMatrix[r]?.[c] || '').trim();
+          if (cell && !/^__EMPTY(?:_\d+)?$/i.test(cell)) parts.push(cell);
+        }
+        const label = parts.join(' / ');
+        if (label) {
+          nonEmpty++;
+          if (!seen.has(label)) {
+            seen.add(label);
+            unique++;
+          }
+          if (/^-?\d+(?:\.\d+)?$/.test(label) || /\/\s*-?\d+(?:\.\d+)?$/.test(label)) numericish++;
+        }
+      }
+      return nonEmpty * 3 + unique * 2 - numericish * 8 - (depth - 1);
+    };
+    let bestDepth = 1;
+    let bestScore = -Infinity;
+    for (let d = 1; d <= headerMatrix.length; d++) {
+      const s = scoreDepth(d);
+      if (s > bestScore) {
+        bestScore = s;
+        bestDepth = d;
+      }
+    }
+    const rawNames = [];
+    for (let c = 0; c < colCount; c++) {
+      const parts = [];
+      for (let r = 0; r < bestDepth; r++) {
+        const cell = (headerMatrix[r]?.[c] || '').trim();
+        if (cell && !/^__EMPTY(?:_\d+)?$/i.test(cell) && parts.at(-1) !== cell) {
+          parts.push(cell);
+        }
+      }
+      rawNames.push(parts.join(' / ') || `col_${c + 1}`);
+    }
+    const seenNames = new Map();
+    const columns = rawNames.map((raw, i) => {
+      let base = (raw || '').trim() || `col_${i + 1}`;
+      if (/^__EMPTY(?:_\d+)?$/i.test(base)) base = `col_${i + 1}`;
+      const count = seenNames.get(base) || 0;
+      seenNames.set(base, count + 1);
+      return count === 0 ? base : `${base}_${count + 1}`;
+    });
+    const jsonData = [];
+    for (let r = bestDepth; r < dataMatrix.length; r++) {
+      const line = dataMatrix[r] || [];
+      if (line.every((c) => !String(c || '').trim())) continue;
+      const obj = {};
+      for (let c = 0; c < columns.length; c++) obj[columns[c]] = cellToString(line[c]);
+      jsonData.push(obj);
+    }
 
     if (jsonData.length > WORKBOOK_MAX_ROWS_PER_SHEET) {
       throw new Error(`Sheet "${sheetName}" exceeds max rows (${WORKBOOK_MAX_ROWS_PER_SHEET})`);

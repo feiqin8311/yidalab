@@ -86,6 +86,12 @@ vi.mock('@/database/models/topic', () => ({
   })),
 }));
 
+// Delivery / multi-chunk tests assert messenger splitting, not dingpan isolation.
+// Passthrough so compactBotRelayText does not collapse long fixtures to 1200 chars.
+vi.mock('../prepareBotOutboundReply', () => ({
+  prepareBotOutboundReply: vi.fn(async ({ reply }: { reply: string }) => reply),
+}));
+
 vi.mock('@/server/modules/KeyVaultsEncrypt', () => ({
   KeyVaultsGateKeeper: {
     initWithEnvKey: mockInitWithEnvKey,

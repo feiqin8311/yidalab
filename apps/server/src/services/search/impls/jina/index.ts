@@ -4,6 +4,7 @@ import {
   type UniformSearchResult,
 } from '@lobechat/types';
 import { getJinaSearchBaseUrl } from '@lobechat/utils';
+import { getVaultEnv } from '@lobechat/utils/server/vaultEnv';
 import { TRPCError } from '@trpc/server';
 import debug from 'debug';
 import urlJoin from 'url-join';
@@ -19,7 +20,7 @@ const log = debug('lobe-search:Jina');
  */
 export class JinaImpl implements SearchServiceImpl {
   private get apiKey(): string | undefined {
-    return process.env.JINA_READER_API_KEY || process.env.JINA_API_KEY;
+    return getVaultEnv('JINA_READER_API_KEY') || getVaultEnv('JINA_API_KEY');
   }
 
   private get baseUrl(): string {
@@ -80,17 +81,15 @@ export class JinaImpl implements SearchServiceImpl {
 
       log('Parsed Jina response: %o', jinaResponse);
 
-      const mappedResults = (jinaResponse.data || []).map(
-        (result): UniformSearchResult => ({
-          category: 'general', // Default category
-          content: result.description || '', // Prioritize content, fallback to snippet
-          engines: ['jina'], // Use 'jina' as the engine name
-          parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
-          score: 1, // Default score to 1
-          title: result.title || '',
-          url: result.url,
-        }),
-      );
+      const mappedResults = (jinaResponse.data || []).map((result): UniformSearchResult => ({
+        category: 'general', // Default category
+        content: result.description || '', // Prioritize content, fallback to snippet
+        engines: ['jina'], // Use 'jina' as the engine name
+        parsedUrl: result.url ? new URL(result.url).hostname : '', // Basic URL parsing
+        score: 1, // Default score to 1
+        title: result.title || '',
+        url: result.url,
+      }));
 
       log('Mapped %d results to SearchResult format', mappedResults.length);
 
