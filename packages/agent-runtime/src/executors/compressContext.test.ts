@@ -76,6 +76,8 @@ describe('compressContext executor', () => {
   let compressionCreateGroup: ReturnType<typeof vi.fn>;
   let compressionBuildPrompt: ReturnType<typeof vi.fn>;
   let compressionFinalizeGroup: ReturnType<typeof vi.fn>;
+  let compressionCancelGroup: ReturnType<typeof vi.fn>;
+  let compressionParseOutput: ReturnType<typeof vi.fn>;
   let llmStream: ReturnType<typeof vi.fn>;
   let lifecycleDispatch: ReturnType<typeof vi.fn>;
 
@@ -89,6 +91,20 @@ describe('compressContext executor', () => {
       messages: [{ content: 'summarize', role: 'user' }],
     });
     compressionFinalizeGroup = vi.fn().mockResolvedValue({});
+    compressionCancelGroup = vi.fn().mockResolvedValue({});
+    compressionParseOutput = vi.fn().mockImplementation(async ({ raw }: { raw: string }) => ({
+      content: typeof raw === 'string' && raw.trim() ? raw : 'summary',
+      metadata: { snapshotVersion: 2 },
+      snapshot: {
+        schemaVersion: 2,
+        overview: 'summary',
+        constraints: [],
+        decisions: [],
+        openItems: [],
+        technicalFacts: [],
+        sourceGroupIds: [],
+      },
+    }));
     llmStream = vi.fn().mockResolvedValue({ content: 'summary' });
     lifecycleDispatch = vi.fn().mockResolvedValue(undefined);
 
@@ -107,8 +123,10 @@ describe('compressContext executor', () => {
       transports: {
         compression: {
           buildPrompt: compressionBuildPrompt,
+          cancelGroup: compressionCancelGroup,
           createGroup: compressionCreateGroup,
           finalizeGroup: compressionFinalizeGroup,
+          parseOutput: compressionParseOutput,
         },
         llm: {
           stream: llmStream,
@@ -173,10 +191,12 @@ describe('compressContext executor', () => {
         workspaceId: 'workspace-123',
       }),
     );
-    expect(compressionBuildPrompt).toHaveBeenCalledWith({
-      existingSummary: undefined,
-      messages: [{ content: 'history', id: 'msg-history', role: 'user' }],
-    });
+    expect(compressionBuildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        existingSnapshot: null,
+        messages: [{ content: 'history', id: 'msg-history', role: 'user' }],
+      }),
+    );
     expect(llmStream).toHaveBeenCalledWith({
       messages: [{ content: 'summarize', role: 'user' }],
       model: 'gpt-4',
@@ -246,10 +266,42 @@ describe('compressContext executor', () => {
 
     expect(compressionFinalizeGroup).not.toHaveBeenCalled();
     expect((result.nextContext?.payload as any).skipped).toBe(true);
+    expect((result.nextContext?.payload as any).reuseOnce).toBe(true);
+    expect(result.events[0]).toMatchObject({ type: 'compression_error' });
+  });
+
+  it('cancels placeholder group and fails closed above 85% window', async () => {
+    messagesQuery.mockResolvedValue([{ content: 'history', id: 'msg-history', role: 'user' }]);
+    compressionCreateGroup.mockResolvedValue({
+      messageGroupId: 'group-orphan',
+      messagesToSummarize: [{ content: 'history', id: 'msg-history', role: 'user' }],
+    });
+    llmStream.mockRejectedValue(new Error('model down'));
+
+    const state = createState({
+      messages: [{ content: 'history', id: 'msg-history', role: 'user' }],
+    });
+    const instruction = {
+      payload: {
+        currentTokenCount: 120_000,
+        maxWindowToken: 128_000,
+        messages: state.messages,
+      },
+      type: 'compress_context' as const,
+    };
+
+    const result = await compressContext(host)(instruction, state);
+
+    expect(compressionCancelGroup).toHaveBeenCalledWith(
+      expect.objectContaining({ messageGroupId: 'group-orphan', topicId: 'topic-123' }),
+    );
+    expect(compressionFinalizeGroup).not.toHaveBeenCalled();
+    expect((result.nextContext?.payload as any).failed).toBe(true);
+    expect((result.nextContext?.payload as any).errorCode).toBe('context_compression_failed');
     expect(result.events[0]).toMatchObject({ type: 'compression_error' });
     expect(lifecycleDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: expect.objectContaining({ error: 'compression failed' }),
+        event: expect.objectContaining({ error: 'model down' }),
         type: 'onCompactError',
       }),
     );

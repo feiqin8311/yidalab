@@ -128,10 +128,21 @@ export interface GeneralAgentConfig {
 export interface GeneralAgentCompressionResultPayload {
   /** Compressed messages (summary + pinned + recent) */
   compressedMessages: any[];
+  /** Stable error code when failed (e.g. context_compression_failed). */
+  errorCode?: string;
+  errorMessage?: string;
+  /** Fatal compression failure — do not silently truncate. */
+  failed?: boolean;
   /** Compression group ID in database */
   groupId: string;
   /** Parent message ID for subsequent LLM call (last assistant message before compression) */
   parentMessageId?: string;
+  /**
+   * Compression failed but window fill is under the hard ceiling (85%).
+   * Agent may continue once with the original context; a second failure above
+   * the soft threshold should still re-attempt or fail closed.
+   */
+  reuseOnce?: boolean;
   /** Whether compression was skipped (no messages to compress) */
   skipped?: boolean;
 }

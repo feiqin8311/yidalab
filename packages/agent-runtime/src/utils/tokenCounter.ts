@@ -30,6 +30,13 @@ export const DEFAULT_MAX_CONTEXT = 128_000;
 export const DEFAULT_THRESHOLD_RATIO = 0.5;
 
 /**
+ * Hard ceiling ratio: when compression fails and adjusted fill exceeds this
+ * share of the window, abort with context_compression_failed instead of
+ * silently reusing oversized context.
+ */
+export const COMPRESSION_FAILURE_CEILING_RATIO = 0.85;
+
+/**
  * Calculate the compression threshold based on max context window
  */
 export function getCompressionThreshold(options: TokenCountOptions = {}): number {
@@ -42,6 +49,11 @@ export function getCompressionThreshold(options: TokenCountOptions = {}): number
  * Result of compression check
  */
 export interface CompressionCheckResult {
+  /**
+   * Drift-adjusted total used for threshold and failure-ceiling decisions
+   * (raw × driftMultiplier, default 1.25).
+   */
+  adjustedTokenCount: number;
   /**
    * Best raw estimate of current input tokens (sum of message content +
    * tool calls + reasoning + tool_call_id + tool definitions).
@@ -77,6 +89,7 @@ export function shouldCompress(
   const threshold = getCompressionThreshold(options);
 
   return {
+    adjustedTokenCount: accounting.adjustedTotal,
     currentTokenCount: accounting.rawTotal,
     needsCompression: accounting.adjustedTotal > threshold,
     threshold,

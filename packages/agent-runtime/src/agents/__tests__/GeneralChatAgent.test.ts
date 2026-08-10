@@ -67,9 +67,15 @@ describe('GeneralChatAgent', () => {
   const expectCompressionInstruction = (messages: AgentState['messages']) => ({
     type: 'compress_context',
     payload: {
+      adjustedTokenCount: expect.any(Number),
       currentTokenCount: expect.any(Number),
+      existingSnapshot: undefined,
       existingSummary: undefined,
+      legacySummary: undefined,
+      maxSummaryTokens: expect.any(Number),
+      maxWindowToken: expect.anything(),
       messages,
+      sourceGroupIds: [],
     },
   });
 

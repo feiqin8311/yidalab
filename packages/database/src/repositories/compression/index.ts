@@ -47,7 +47,8 @@ export class CompressionRepository {
     buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, messages);
 
   /**
-   * Create a compression group and mark messages as compressed
+   * Create a compression group and mark messages as compressed.
+   * Only messages already belonging to `topicId` are attached (cross-topic rejected).
    */
   async createCompressionGroup(params: CreateCompressionGroupParams): Promise<string> {
     const { topicId, content, editorData, messageIds, metadata } = params;
@@ -71,9 +72,9 @@ export class CompressionRepository {
 
     const group = result[0];
 
-    // 2. Mark messages as compressed
+    // 2. Mark messages as compressed — scoped to this topic only
     if (messageIds.length > 0) {
-      await this.markMessagesAsCompressed(messageIds, group.id);
+      await this.markMessagesAsCompressed(messageIds, group.id, topicId);
     }
 
     return group.id;
@@ -163,15 +164,26 @@ export class CompressionRepository {
   }
 
   /**
-   * Mark messages as compressed by associating them with a compression group
+   * Mark messages as compressed by associating them with a compression group.
+   * When `topicId` is set, only messages in that topic are updated.
    */
-  async markMessagesAsCompressed(messageIds: string[], groupId: string): Promise<void> {
+  async markMessagesAsCompressed(
+    messageIds: string[],
+    groupId: string,
+    topicId?: string,
+  ): Promise<void> {
     if (messageIds.length === 0) return;
 
     await this.db
       .update(messages)
       .set({ messageGroupId: groupId })
-      .where(and(this.messagesOwnership(), inArray(messages.id, messageIds)));
+      .where(
+        and(
+          this.messagesOwnership(),
+          ...(topicId ? [eq(messages.topicId, topicId)] : []),
+          inArray(messages.id, messageIds),
+        ),
+      );
   }
 
   /**
@@ -236,18 +248,171 @@ export class CompressionRepository {
   }
 
   /**
-   * Delete a compression group and unmark all associated messages
+   * Delete a compression group and unmark all associated messages.
+   * When `topicId` is set, the group must belong to that topic or the call is a no-op / error.
    */
-  async deleteCompressionGroup(groupId: string): Promise<void> {
-    // 1. Unmark all messages
+  async deleteCompressionGroup(groupId: string, topicId?: string): Promise<void> {
+    if (topicId) {
+      const [group] = await this.db
+        .select({ id: messageGroups.id, topicId: messageGroups.topicId })
+        .from(messageGroups)
+        .where(
+          and(
+            eq(messageGroups.id, groupId),
+            this.groupsOwnership(),
+            eq(messageGroups.type, MessageGroupType.Compression),
+          ),
+        );
+      if (!group || group.topicId !== topicId) {
+        throw new Error(`Compression group not found in topic: ${groupId}`);
+      }
+    }
+
+    // 1. Unmark all messages (optionally topic-scoped)
     await this.db
       .update(messages)
       .set({ messageGroupId: null })
-      .where(and(this.messagesOwnership(), eq(messages.messageGroupId, groupId)));
+      .where(
+        and(
+          this.messagesOwnership(),
+          eq(messages.messageGroupId, groupId),
+          ...(topicId ? [eq(messages.topicId, topicId)] : []),
+        ),
+      );
 
     // 2. Delete the group
     await this.db
       .delete(messageGroups)
-      .where(and(eq(messageGroups.id, groupId), this.groupsOwnership()));
+      .where(
+        and(
+          eq(messageGroups.id, groupId),
+          this.groupsOwnership(),
+          ...(topicId ? [eq(messageGroups.topicId, topicId)] : []),
+        ),
+      );
+  }
+
+  /**
+   * Atomically commit a rolling compression checkpoint:
+   * - write content + metadata (description + metadata jsonb)
+   * - reassign all messageIds to the checkpoint group
+   * - delete merged prior compression groups (without unmarking — messages already reassigned)
+   *
+   * Does not run until model output is ready; call only after validation succeeds.
+   */
+  async commitCompressionCheckpoint(params: {
+    content: string;
+    groupId: string;
+    mergeGroupIds?: string[];
+    messageIds?: string[];
+    metadata?: Partial<CompressionGroupMetadata>;
+    /** Required session boundary — messages/groups outside this topic are rejected. */
+    topicId: string;
+  }): Promise<void> {
+    const { content, groupId, mergeGroupIds = [], messageIds = [], metadata, topicId } = params;
+
+    await this.db.transaction(async (tx) => {
+      // 1. Load target group and enforce topic scope
+      const existing = await tx
+        .select({
+          description: messageGroups.description,
+          metadata: messageGroups.metadata,
+          topicId: messageGroups.topicId,
+          type: messageGroups.type,
+        })
+        .from(messageGroups)
+        .where(and(eq(messageGroups.id, groupId), this.groupsOwnership()));
+
+      if (!existing[0]) {
+        throw new Error(`Compression group not found: ${groupId}`);
+      }
+      if (existing[0].topicId !== topicId) {
+        throw new Error(`Compression group topic mismatch: ${groupId}`);
+      }
+      if (existing[0].type !== MessageGroupType.Compression) {
+        throw new Error(`Not a compression group: ${groupId}`);
+      }
+
+      const existingDescriptionMeta = existing[0].description
+        ? (JSON.parse(existing[0].description) as Record<string, unknown>)
+        : {};
+      const existingMetadataCol = (existing[0].metadata as Record<string, unknown> | null) || {};
+
+      const mergedMeta: CompressionGroupMetadata = {
+        ...existingDescriptionMeta,
+        ...existingMetadataCol,
+        ...metadata,
+      } as CompressionGroupMetadata;
+
+      const descriptionPayload = { ...mergedMeta };
+      await tx
+        .update(messageGroups)
+        .set({
+          content,
+          description: JSON.stringify(descriptionPayload),
+          metadata: mergedMeta as unknown as Record<string, unknown>,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(messageGroups.id, groupId), this.groupsOwnership()));
+
+      // 2. Reassign this-pass message ids — only messages already in this topic
+      if (messageIds.length > 0) {
+        await tx
+          .update(messages)
+          .set({ messageGroupId: groupId })
+          .where(
+            and(
+              this.messagesOwnership(),
+              eq(messages.topicId, topicId),
+              inArray(messages.id, messageIds),
+            ),
+          );
+      }
+
+      // 3. ALWAYS migrate every message still under merge groups BEFORE delete.
+      // messageGroupId has ON DELETE CASCADE — deleting a group without moving
+      // its children physically deletes historical originals.
+      const toDelete = mergeGroupIds.filter((id) => id && id !== groupId);
+      if (toDelete.length > 0) {
+        // Only merge compression groups that belong to the same topic
+        const scopedMerge = await tx
+          .select({ id: messageGroups.id })
+          .from(messageGroups)
+          .where(
+            and(
+              this.groupsOwnership(),
+              eq(messageGroups.topicId, topicId),
+              eq(messageGroups.type, MessageGroupType.Compression),
+              inArray(messageGroups.id, toDelete),
+            ),
+          );
+        const scopedIds = scopedMerge.map((g) => g.id);
+        if (scopedIds.length === 0) {
+          // nothing safe to merge/delete
+        } else {
+          await tx
+            .update(messages)
+            .set({ messageGroupId: groupId })
+            .where(
+              and(
+                this.messagesOwnership(),
+                eq(messages.topicId, topicId),
+                inArray(messages.messageGroupId, scopedIds),
+              ),
+            );
+
+          await tx
+            .delete(messageGroups)
+            .where(
+              and(
+                this.groupsOwnership(),
+                eq(messageGroups.topicId, topicId),
+                eq(messageGroups.type, MessageGroupType.Compression),
+                inArray(messageGroups.id, scopedIds),
+              ),
+            );
+        }
+      }
+    });
   }
 }
