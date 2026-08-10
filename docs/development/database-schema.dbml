@@ -395,6 +395,100 @@ table agent_operations {
   }
 }
 
+table agent_runtime_checkpoints {
+  id text [pk, not null]
+  operation_id text [not null]
+  step_id text [not null]
+  sequence integer [not null]
+  reason text
+  agent_state jsonb [not null]
+  context_manifest jsonb
+  pending_calls jsonb [not null, default: `[]`]
+  pending_intervention jsonb
+  created_at_event "timestamp with time zone" [not null]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    operation_id [name: 'agent_runtime_checkpoints_operation_id_idx']
+    (operation_id, sequence) [name: 'agent_runtime_checkpoints_op_sequence_idx']
+    (operation_id, step_id, sequence) [name: 'agent_runtime_checkpoints_op_step_sequence_uidx', unique]
+  }
+}
+
+table agent_runtime_execution_edges {
+  id text [pk, not null]
+  parent_operation_id text [not null]
+  child_operation_id text [not null]
+  call_id text [not null]
+  relationship text [not null]
+  status text [not null, default: 'open']
+  closed_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    child_operation_id [name: 'agent_runtime_execution_edges_child_uidx', unique]
+    parent_operation_id [name: 'agent_runtime_execution_edges_parent_idx']
+    call_id [name: 'agent_runtime_execution_edges_call_id_idx']
+  }
+}
+
+table agent_runtime_interventions {
+  id text [pk, not null]
+  operation_id text [not null]
+  intervention_id text [not null]
+  step_id text [not null]
+  type text [not null]
+  status text [not null]
+  request jsonb [not null]
+  response jsonb
+  resolved_by_command_id text
+  created_at_event "timestamp with time zone" [not null]
+  resolved_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (operation_id, intervention_id) [name: 'agent_runtime_interventions_op_intervention_uidx', unique]
+    operation_id [name: 'agent_runtime_interventions_operation_id_idx']
+    status [name: 'agent_runtime_interventions_status_idx']
+  }
+}
+
+table agent_runtime_journal {
+  id text [pk, not null]
+  operation_id text [not null]
+  event_id text [not null]
+  sequence integer [not null]
+  type text [not null]
+  payload jsonb
+  turn_id text
+  step_id text
+  event_timestamp "timestamp with time zone" [not null]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (operation_id, sequence) [name: 'agent_runtime_journal_op_sequence_uidx', unique]
+    (operation_id, event_id) [name: 'agent_runtime_journal_op_event_id_uidx', unique]
+    operation_id [name: 'agent_runtime_journal_operation_id_idx']
+    (operation_id, sequence) [name: 'agent_runtime_journal_operation_id_sequence_idx']
+  }
+}
+
+table agent_runtime_journal_counters {
+  operation_id text [pk, not null]
+  next_sequence integer [not null, default: 1]
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+}
+
 table agent_shares {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   agent_id text [not null]

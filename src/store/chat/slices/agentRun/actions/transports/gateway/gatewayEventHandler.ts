@@ -22,6 +22,7 @@ import type {
   AgentRunLifecycle,
   RunScope,
 } from '@/store/chat/slices/agentRun/actions/lifecycle/types';
+import { createGatewayWireEventMapper } from '@/store/chat/slices/agentRun/actions/transports/gateway/gatewayProtocolAdapter';
 import { dbMessageSelectors } from '@/store/chat/slices/message/selectors';
 import type { ChatStore } from '@/store/chat/store';
 import { notifyDesktopHumanApprovalRequired } from '@/store/chat/utils/desktopNotification';
@@ -438,6 +439,9 @@ export const createGatewayEventHandler = (
     processingChain = processingChain.then(fn, fn);
   };
 
+  // Protocol dual-path: wire → AgentRuntimeEvent (sequenced). UI still uses wire.
+  const protocolMapper = createGatewayWireEventMapper(operationId);
+
   return (event: AgentStreamEvent) => {
     if (terminalState) return;
 
@@ -447,6 +451,9 @@ export const createGatewayEventHandler = (
     // mid-stream until the terminal fetch corrects it. The local executor drops
     // them before forwarding; the gateway path doesn't. (DB is unaffected.)
     if ((event.data as { subagent?: unknown } | undefined)?.subagent) return;
+
+    // Dual-path protocol map (control plane). Side effects remain on wire switch.
+    protocolMapper.mapWireEvents(event);
 
     if (event.type === 'agent_runtime_end' || event.type === 'error') {
       terminalState = event.type === 'error' ? 'error' : 'completed';

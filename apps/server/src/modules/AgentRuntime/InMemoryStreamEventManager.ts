@@ -1,5 +1,6 @@
 import debug from 'debug';
 
+import { mapWireEventToProtocolAndJournal } from './protocolJournal';
 import {
   type StreamChunkData,
   type StreamEvent,
@@ -70,6 +71,17 @@ export class InMemoryStreamEventManager implements IStreamEventManager {
     }
 
     log('Published event %s for operation %s:%d', eventData.type, operationId, eventData.stepIndex);
+
+    // Protocol dual-path (in-memory journal only — no Postgres in unit tests).
+    void mapWireEventToProtocolAndJournal({
+      data: eventData.data,
+      id: eventId,
+      journal: null,
+      operationId,
+      stepIndex: eventData.stepIndex,
+      timestamp: eventData.timestamp,
+      type: eventData.type,
+    }).catch(() => {});
 
     // Notify subscribers
     const callbacks = this.subscribers.get(operationId);

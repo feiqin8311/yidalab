@@ -85,6 +85,14 @@ export const getAppConfig = () => {
        * @default false
        */
       enableQueueAgentRuntime: z.boolean().optional(),
+      /**
+       * Dual-write wire control events to durable Operation Journal (Postgres).
+       * Kill switch for gray deploy: set AGENT_RUNTIME_PROTOCOL_JOURNAL=0 to stop
+       * all journal appends (no code change; process restart required — appEnv is
+       * fixed at module load). Redis stream remains live UI path.
+       * @default true (unset or any value other than "0")
+       */
+      enableAgentRuntimeProtocolJournal: z.boolean().optional(),
       TELEMETRY_DISABLED: z.boolean().optional(),
     },
     runtimeEnv: {
@@ -125,6 +133,8 @@ export const getAppConfig = () => {
       ENABLE_AGENT_GATEWAY: process.env.ENABLE_AGENT_GATEWAY === '1',
       AGENT_GATEWAY_URL: process.env.AGENT_GATEWAY_URL,
       enableQueueAgentRuntime: process.env.AGENT_RUNTIME_MODE === 'queue',
+      // Kill with AGENT_RUNTIME_PROTOCOL_JOURNAL=0; default on when unset.
+      enableAgentRuntimeProtocolJournal: process.env.AGENT_RUNTIME_PROTOCOL_JOURNAL !== '0',
       TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED === '1',
     },
   });

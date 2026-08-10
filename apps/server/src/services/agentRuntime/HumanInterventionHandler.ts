@@ -1,8 +1,10 @@
 import type { AgentRuntimeContext } from '@lobechat/agent-runtime';
+import { approvalInterventionId, stableResolveCommandId } from '@lobechat/agent-runtime';
 import debug from 'debug';
 
 import type { MessageModel } from '@/database/models/message';
 import type { LobeChatDatabase } from '@/database/type';
+import { persistInterventionResolve } from '@/server/modules/AgentRuntime/protocolRecovery';
 
 import { hookDispatcher } from './hooks';
 
@@ -16,10 +18,18 @@ export interface InterventionInput {
   toolMessageId?: string;
 }
 
-export interface InterventionResult {
-  newState: any;
-  nextContext: AgentRuntimeContext | undefined;
-}
+/**
+ * Discriminated result so AgentRuntimeService can short-circuit without
+ * calling runtime.step (which would invent an init context when nextContext
+ * is undefined and still run the agent/LLM).
+ */
+export type InterventionResult =
+  | { kind: 'resume'; newState: any; nextContext: AgentRuntimeContext }
+  | { kind: 'parked'; newState: any }
+  | { kind: 'halted'; newState: any }
+  | { kind: 'duplicate'; newState: any }
+  | { kind: 'failed'; newState: any; error: string }
+  | { kind: 'passthrough' };
 
 /**
  * Owns the three branches of human intervention on a `waiting_for_human`
@@ -55,14 +65,12 @@ export class HumanInterventionHandler {
       return this.reject(state, { rejectAndContinue, rejectionReason, toolMessageId });
     }
 
-    // human_prompt / human_select (submitToolInteraction) — out of scope for
-    // this codepath; the call site treats unrecognized intervention inputs as
-    // a no-op and lets the regular step loop run.
+    // human_prompt / human_select — out of scope; let the regular step loop run.
     if (humanInput) {
-      return { newState: state, nextContext: undefined };
+      return { kind: 'passthrough' };
     }
 
-    return { newState: state, nextContext: undefined };
+    return { kind: 'passthrough' };
   }
 
   private async approve(
@@ -72,7 +80,39 @@ export class HumanInterventionHandler {
   ): Promise<InterventionResult> {
     if (!toolMessageId) {
       log('approve requires toolMessageId, got undefined');
-      return { newState: state, nextContext: undefined };
+      return { kind: 'failed', newState: state, error: 'missing_tool_message_id' };
+    }
+
+    const operationId = state.metadata?.operationId ?? state.operationId ?? '';
+    const toolCallId = approvedToolCall.id ?? toolMessageId;
+    const interventionId = approvalInterventionId(toolCallId);
+    // Stable commandId (no Date.now) — retries of the same logical approve share it.
+    const commandId = stableResolveCommandId(operationId, interventionId, 'approved');
+    // Protocol first: atomic resolve before product side effects.
+    // !ok → abort; duplicate → idempotent no-op (do not re-run tools).
+    const resolveResult = await persistInterventionResolve({
+      commandId,
+      db: this.serverDB,
+      interventionId,
+      operationId,
+      resolution: { decision: 'approved', toolCallId, toolMessageId },
+    });
+    if (!resolveResult.ok) {
+      log(
+        'approve resolve failed op=%s intervention=%s: %s',
+        operationId,
+        interventionId,
+        resolveResult.error,
+      );
+      return {
+        kind: 'failed',
+        newState: state,
+        error: resolveResult.error ?? 'resolve_failed',
+      };
+    }
+    if (resolveResult.duplicate) {
+      log('approve duplicate no-op op=%s intervention=%s', operationId, interventionId);
+      return { kind: 'duplicate', newState: state };
     }
 
     await this.messageModel.updateMessagePlugin(toolMessageId, {
@@ -103,6 +143,7 @@ export class HumanInterventionHandler {
       .catch(() => {});
 
     return {
+      kind: 'resume',
       newState,
       nextContext: {
         payload: {
@@ -127,23 +168,58 @@ export class HumanInterventionHandler {
 
     if (!toolMessageId) {
       log('reject requires toolMessageId, got undefined');
-      return { newState: state, nextContext: undefined };
+      return { kind: 'failed', newState: state, error: 'missing_tool_message_id' };
     }
 
     const rejectionContent = rejectionReason
       ? `User reject this tool calling with reason: ${rejectionReason}`
       : 'User reject this tool calling without reason';
 
-    await this.messageModel.updateToolMessage(toolMessageId, { content: rejectionContent });
-    await this.messageModel.updateMessagePlugin(toolMessageId, {
-      intervention: { rejectedReason: rejectionReason, status: 'rejected' },
-    });
-
     // Find the tool_call_id for this tool message so we can drop it from
     // pendingToolsCalling. pendingToolsCalling holds ChatToolPayload[] whose
     // id === tool_call_id; the mapping lives in messagePlugins (plugin id
     // === message id, toolCallId is a separate column).
     const rejectedToolCallId = await this.lookupToolCallId(toolMessageId);
+
+    const operationId = state.metadata?.operationId ?? state.operationId ?? '';
+    const interventionId = approvalInterventionId(rejectedToolCallId ?? toolMessageId);
+    const decision = rejectAndContinue ? 'rejected_continue' : 'rejected';
+    const commandId = stableResolveCommandId(operationId, interventionId, decision);
+    // Protocol first: atomic resolve before product side effects.
+    const resolveResult = await persistInterventionResolve({
+      commandId,
+      db: this.serverDB,
+      interventionId,
+      operationId,
+      resolution: {
+        decision,
+        rejectionReason,
+        toolCallId: rejectedToolCallId,
+        toolMessageId,
+      },
+    });
+    if (!resolveResult.ok) {
+      log(
+        'reject resolve failed op=%s intervention=%s: %s',
+        operationId,
+        interventionId,
+        resolveResult.error,
+      );
+      return {
+        kind: 'failed',
+        newState: state,
+        error: resolveResult.error ?? 'resolve_failed',
+      };
+    }
+    if (resolveResult.duplicate) {
+      log('reject duplicate no-op op=%s intervention=%s', operationId, interventionId);
+      return { kind: 'duplicate', newState: state };
+    }
+
+    await this.messageModel.updateToolMessage(toolMessageId, { content: rejectionContent });
+    await this.messageModel.updateMessagePlugin(toolMessageId, {
+      intervention: { rejectedReason: rejectionReason, status: 'rejected' },
+    });
 
     const newState = structuredClone(state);
     newState.lastModified = new Date().toISOString();
@@ -161,9 +237,6 @@ export class HumanInterventionHandler {
   /**
    * Persist the rejection, then either (a) wait for the remaining pending
    * tools to be resolved or (b) resume LLM once this is the last one.
-   * Returning a `phase: 'user_input'` nextContext while pendingToolsCalling
-   * is non-empty would cause executeStep to run runtime.step immediately,
-   * resuming the LLM with an unresolved batch — see review P1.
    */
   private rejectAndContinue(
     state: any,
@@ -188,11 +261,12 @@ export class HumanInterventionHandler {
 
     if (newState.pendingToolsCalling.length > 0) {
       newState.status = 'waiting_for_human';
-      return { newState, nextContext: undefined };
+      // Must not call runtime.step — would invent init context and resume LLM.
+      return { kind: 'parked', newState };
     }
 
     newState.status = 'running';
-    return { newState, nextContext: { phase: 'user_input' } };
+    return { kind: 'resume', newState, nextContext: { phase: 'user_input' } };
   }
 
   /**
@@ -225,7 +299,7 @@ export class HumanInterventionHandler {
       interruptedAt: new Date().toISOString(),
       reason: 'human_rejected',
     };
-    return { newState, nextContext: undefined };
+    return { kind: 'halted', newState };
   }
 
   private async lookupToolCallId(toolMessageId: string): Promise<string | undefined> {
