@@ -2,10 +2,10 @@
 
 import { Block, Flexbox, Icon, Text } from '@lobehub/ui';
 import { createStaticStyles, cssVar } from 'antd-style';
-import { LayoutGridIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import NavHeader from '@/features/NavHeader';
 import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 
 import { getEnabledBusinessFunctions } from './registry';
@@ -42,9 +42,9 @@ const styles = createStaticStyles(({ css }) => ({
     align-items: center;
     justify-content: center;
 
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
 
     color: ${cssVar.colorPrimary};
 
@@ -55,11 +55,14 @@ const styles = createStaticStyles(({ css }) => ({
     text-decoration: none;
   `,
   page: css`
+    overflow-y: auto;
+    flex: 1;
+
     width: 100%;
     max-width: 1080px;
     margin-block: 0;
     margin-inline: auto;
-    padding-block: 24px 48px;
+    padding-block: 16px 48px;
     padding-inline: 16px;
   `,
 }));
@@ -69,27 +72,28 @@ const FunctionsCenter = memo(() => {
   const items = getEnabledBusinessFunctions();
 
   return (
-    <div className={styles.page}>
-      <Flexbox gap={24}>
-        <Flexbox horizontal align={'flex-start'} gap={8}>
-          <div className={styles.iconWrap}>
-            <Icon icon={LayoutGridIcon} size={22} />
-          </div>
-          <Flexbox gap={4}>
-            <Text as={'h1'} fontSize={22} weight={600}>
-              {t('businessFunctions.centerTitle')}
-            </Text>
-            <Text type={'secondary'}>{t('businessFunctions.centerDesc')}</Text>
-          </Flexbox>
-        </Flexbox>
-
+    <Flexbox flex={1} height={'100%'}>
+      <NavHeader
+        left={
+          <Text style={{ paddingInlineStart: 4 }} weight={500}>
+            {t('tab.functions')}
+          </Text>
+        }
+        styles={{
+          left: {
+            gap: 8,
+            paddingLeft: 4,
+          },
+        }}
+      />
+      <div className={styles.page}>
         <div className={styles.grid}>
           {items.map((item) => (
             <WorkspaceLink className={styles.link} key={item.id} to={item.path}>
               <Block className={styles.card} padding={20} variant={'outlined'}>
                 <Flexbox horizontal gap={14}>
                   <div className={styles.iconWrap}>
-                    <Icon icon={item.icon} size={22} />
+                    <Icon icon={item.icon} size={20} />
                   </div>
                   <Flexbox flex={1} gap={6}>
                     <Text fontSize={16} weight={600}>
@@ -104,8 +108,8 @@ const FunctionsCenter = memo(() => {
             </WorkspaceLink>
           ))}
         </div>
-      </Flexbox>
-    </div>
+      </div>
+    </Flexbox>
   );
 });
 

@@ -168,9 +168,8 @@ const sidebarExpandedKeys =
 export const SIDEBAR_SPACER_ID = '__spacer__';
 
 export const DEFAULT_SIDEBAR_ITEMS: string[] = [
-  'tasks',
+  // tasks / pages temporarily hidden (see useNavLayout hidden flags)
   'functions',
-  'pages',
   'recents',
   'private',
   'agent',

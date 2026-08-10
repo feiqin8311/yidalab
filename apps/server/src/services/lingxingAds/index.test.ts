@@ -45,8 +45,22 @@ const sampleResult = {
   trend: { label: '持续变差' },
 };
 
+const baseInput = {
+  campaignName: 'camp',
+  country: 'US',
+  model: { model: 'gpt-4o-mini', provider: 'openai' },
+  sku: 'SKU1',
+  workspaceId: 'ws-1',
+};
+
+vi.mock('@/server/services/aiGeneration', () => ({
+  AiGenerationService: class {
+    generateObject = vi.fn().mockRejectedValue(new Error('skip polish in unit tests'));
+  },
+}));
+
 describe('LingxingAdsService', () => {
-  const service = new LingxingAdsService({} as any);
+  const service = new LingxingAdsService({} as any, 'user-1');
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -63,19 +77,25 @@ describe('LingxingAdsService', () => {
   });
 
   it('rejects empty inputs after trim', async () => {
-    await expect(
-      service.analyze({ campaignName: '  ', country: 'US', sku: 'S', workspaceId: 'ws-1' }),
-    ).rejects.toMatchObject({ message: 'LINGXING_INPUT_REQUIRED' });
+    await expect(service.analyze({ ...baseInput, campaignName: '  ' })).rejects.toMatchObject({
+      message: 'LINGXING_INPUT_REQUIRED',
+    });
     expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing model', async () => {
+    await expect(
+      service.analyze({ ...baseInput, model: { model: '', provider: 'openai' } }),
+    ).rejects.toMatchObject({ message: 'LINGXING_MODEL_REQUIRED' });
   });
 
   it('isolates workspace and errors when MCP missing', async () => {
     findByIdentifier.mockResolvedValueOnce(undefined);
     await expect(
       service.analyze({
+        ...baseInput,
         campaignName: 'camp',
         country: '美国',
-        sku: 'SKU1',
         workspaceId: 'ws-missing',
       }),
     ).rejects.toMatchObject({ message: 'LINGXING_MCP_NOT_CONFIGURED' });
@@ -84,10 +104,10 @@ describe('LingxingAdsService', () => {
 
   it('maps params and calls analyze_campaign once', async () => {
     const out = await service.analyze({
+      ...baseInput,
       campaignName: ' 活动A ',
       country: ' 美国 ',
       sku: ' SKU1 ',
-      workspaceId: 'ws-1',
     });
 
     expect(callTool).toHaveBeenCalledTimes(1);
@@ -106,14 +126,9 @@ describe('LingxingAdsService', () => {
 
   it('surfaces transport errors', async () => {
     callTool.mockRejectedValueOnce(new Error('ECONNRESET'));
-    await expect(
-      service.analyze({
-        campaignName: 'c',
-        country: 'US',
-        sku: 's',
-        workspaceId: 'ws-1',
-      }),
-    ).rejects.toMatchObject({ message: expect.stringContaining('LINGXING_MCP_CALL_FAILED') });
+    await expect(service.analyze(baseInput)).rejects.toMatchObject({
+      message: expect.stringContaining('LINGXING_MCP_CALL_FAILED'),
+    });
   });
 
   it('surfaces business isError from MCP', async () => {
@@ -122,14 +137,9 @@ describe('LingxingAdsService', () => {
       state: { isError: true },
       success: true,
     });
-    await expect(
-      service.analyze({
-        campaignName: 'c',
-        country: 'US',
-        sku: 's',
-        workspaceId: 'ws-1',
-      }),
-    ).rejects.toMatchObject({ message: expect.stringContaining('LINGXING_ANALYZE_FAILED') });
+    await expect(service.analyze(baseInput)).rejects.toMatchObject({
+      message: expect.stringContaining('LINGXING_ANALYZE_FAILED'),
+    });
   });
 
   it('rejects incomplete payload', async () => {
@@ -138,13 +148,8 @@ describe('LingxingAdsService', () => {
       state: { isError: false },
       success: true,
     });
-    await expect(
-      service.analyze({
-        campaignName: 'c',
-        country: 'US',
-        sku: 's',
-        workspaceId: 'ws-1',
-      }),
-    ).rejects.toMatchObject({ message: 'LINGXING_INCOMPLETE_PAYLOAD' });
+    await expect(service.analyze(baseInput)).rejects.toMatchObject({
+      message: 'LINGXING_INCOMPLETE_PAYLOAD',
+    });
   });
 });

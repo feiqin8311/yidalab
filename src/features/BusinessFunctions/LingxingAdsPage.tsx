@@ -6,15 +6,17 @@ import {
   formatNegativeLines,
   resolveCpoCaps,
 } from '@lobechat/utils';
-import { Block, Flexbox, Highlighter, Icon, Input, Text } from '@lobehub/ui';
+import { Block, Flexbox, Highlighter, Input, Text } from '@lobehub/ui';
 import { Button, toast } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
-import { ArrowLeftIcon, BarChart3Icon, CopyIcon } from 'lucide-react';
+import { ArrowLeftIcon, CopyIcon } from 'lucide-react';
 import { memo, type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import NeuralNetworkLoading from '@/components/NeuralNetworkLoading';
+import ModelSelect from '@/features/ModelSelect';
+import NavHeader from '@/features/NavHeader';
 import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { businessFunctionService } from '@/services/businessFunction';
 
@@ -35,26 +37,15 @@ const styles = createStaticStyles(({ css }) => ({
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   `,
-  iconWrap: css`
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-
-    color: ${cssVar.colorPrimary};
-
-    background: ${cssVar.colorPrimaryBg};
-  `,
   page: css`
+    overflow-y: auto;
+    flex: 1;
+
     width: 100%;
     max-width: 920px;
     margin-block: 0;
     margin-inline: auto;
-    padding-block: 24px 48px;
+    padding-block: 16px 48px;
     padding-inline: 16px;
   `,
   section: css`
@@ -168,13 +159,26 @@ const LingxingAdsPage = memo(() => {
   const [country, setCountry] = useState('');
   const [campaignName, setCampaignName] = useState('');
   const [sku, setSku] = useState('');
+  const [model, setModel] = useState<{ model: string; provider: string }>({
+    model: '',
+    provider: '',
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisPayload | null>(null);
 
   const canSubmit = useMemo(
-    () => Boolean(workspaceId && country.trim() && campaignName.trim() && sku.trim() && !loading),
-    [workspaceId, country, campaignName, sku, loading],
+    () =>
+      Boolean(
+        workspaceId &&
+        country.trim() &&
+        campaignName.trim() &&
+        sku.trim() &&
+        model.model &&
+        model.provider &&
+        !loading,
+      ),
+    [workspaceId, country, campaignName, sku, model, loading],
   );
 
   const mapError = useCallback(
@@ -211,7 +215,7 @@ const LingxingAdsPage = memo(() => {
       setError(t('businessFunctions.lingxingAds.error.workspaceOnly'));
       return;
     }
-    if (!country.trim() || !campaignName.trim() || !sku.trim()) {
+    if (!country.trim() || !campaignName.trim() || !sku.trim() || !model.model || !model.provider) {
       setError(t('businessFunctions.lingxingAds.error.required'));
       return;
     }
@@ -222,6 +226,7 @@ const LingxingAdsPage = memo(() => {
       const data = await businessFunctionService.lingxingAdsAnalyze({
         campaignName: campaignName.trim(),
         country: country.trim(),
+        model: { model: model.model, provider: model.provider },
         sku: sku.trim(),
         workspaceId,
       });
@@ -232,7 +237,7 @@ const LingxingAdsPage = memo(() => {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, country, campaignName, sku, t, mapError]);
+  }, [workspaceId, country, campaignName, sku, model, t, mapError]);
 
   const copyMarkdown = useCallback(async () => {
     if (!result?.markdown) return;
@@ -245,110 +250,118 @@ const LingxingAdsPage = memo(() => {
   }, [result, t]);
 
   return (
-    <div className={styles.page}>
-      <Flexbox gap={20}>
-        <Flexbox horizontal align={'center'} gap={8}>
-          <WorkspaceLink to={'/functions'}>
-            <Button icon={ArrowLeftIcon} size={'small'} type={'text'}>
-              {t('businessFunctions.centerTitle')}
-            </Button>
-          </WorkspaceLink>
-        </Flexbox>
-
-        <Flexbox horizontal align={'flex-start'} gap={10}>
-          <div className={styles.iconWrap}>
-            <Icon icon={BarChart3Icon} size={20} />
-          </div>
-          <Flexbox gap={4}>
-            <Text as={'h1'} fontSize={20} weight={600}>
-              {t('businessFunctions.lingxingAds.name')}
-            </Text>
-            <Text type={'secondary'}>{t('businessFunctions.lingxingAds.detailDesc')}</Text>
+    <Flexbox flex={1} height={'100%'}>
+      <NavHeader
+        styles={{ left: { gap: 4, paddingLeft: 4 } }}
+        left={
+          <Flexbox horizontal align={'center'} gap={4}>
+            <WorkspaceLink to={'/functions'}>
+              <Button icon={ArrowLeftIcon} size={'small'} type={'text'} />
+            </WorkspaceLink>
+            <Text weight={500}>{t('businessFunctions.lingxingAds.name')}</Text>
           </Flexbox>
-        </Flexbox>
+        }
+      />
+      <div className={styles.page}>
+        <Flexbox gap={20}>
+          <Block padding={16} variant={'outlined'}>
+            <Flexbox gap={14}>
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <Text fontSize={13} weight={500}>
+                    {t('businessFunctions.lingxingAds.form.country')}
+                  </Text>
+                  <Input
+                    disabled={loading}
+                    placeholder={t('businessFunctions.lingxingAds.form.countryPlaceholder')}
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <Text fontSize={13} weight={500}>
+                    {t('businessFunctions.lingxingAds.form.campaign')}
+                  </Text>
+                  <Input
+                    disabled={loading}
+                    placeholder={t('businessFunctions.lingxingAds.form.campaignPlaceholder')}
+                    value={campaignName}
+                    onChange={(e) => setCampaignName(e.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <Text fontSize={13} weight={500}>
+                    {t('businessFunctions.lingxingAds.form.sku')}
+                  </Text>
+                  <Input
+                    disabled={loading}
+                    placeholder={t('businessFunctions.lingxingAds.form.skuPlaceholder')}
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <Text fontSize={13} weight={500}>
+                    {t('businessFunctions.lingxingAds.form.model')}
+                  </Text>
+                  <ModelSelect
+                    disabled={loading}
+                    value={model.model ? model : undefined}
+                    onChange={(v) => setModel({ model: v.model, provider: v.provider })}
+                  />
+                </label>
+              </div>
 
-        <Block padding={16} variant={'outlined'}>
-          <Flexbox gap={14}>
-            <div className={styles.formGrid}>
-              <label className={styles.field}>
-                <Text fontSize={13} weight={500}>
-                  {t('businessFunctions.lingxingAds.form.country')}
-                </Text>
-                <Input
-                  disabled={loading}
-                  placeholder={t('businessFunctions.lingxingAds.form.countryPlaceholder')}
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                />
-              </label>
-              <label className={styles.field}>
-                <Text fontSize={13} weight={500}>
-                  {t('businessFunctions.lingxingAds.form.campaign')}
-                </Text>
-                <Input
-                  disabled={loading}
-                  placeholder={t('businessFunctions.lingxingAds.form.campaignPlaceholder')}
-                  value={campaignName}
-                  onChange={(e) => setCampaignName(e.target.value)}
-                />
-              </label>
-              <label className={styles.field}>
-                <Text fontSize={13} weight={500}>
-                  {t('businessFunctions.lingxingAds.form.sku')}
-                </Text>
-                <Input
-                  disabled={loading}
-                  placeholder={t('businessFunctions.lingxingAds.form.skuPlaceholder')}
-                  value={sku}
-                  onChange={(e) => setSku(e.target.value)}
-                />
-              </label>
-            </div>
-
-            <Flexbox horizontal gap={10}>
-              <Button disabled={!canSubmit} loading={loading} type={'primary'} onClick={runAnalyze}>
-                {t('businessFunctions.lingxingAds.form.submit')}
-              </Button>
-              {error ? (
-                <Button disabled={loading} type={'default'} onClick={runAnalyze}>
-                  {t('businessFunctions.lingxingAds.form.retry')}
+              <Flexbox horizontal gap={10}>
+                <Button
+                  disabled={!canSubmit}
+                  loading={loading}
+                  type={'primary'}
+                  onClick={runAnalyze}
+                >
+                  {t('businessFunctions.lingxingAds.form.submit')}
                 </Button>
-              ) : null}
+                {error ? (
+                  <Button disabled={loading} type={'default'} onClick={runAnalyze}>
+                    {t('businessFunctions.lingxingAds.form.retry')}
+                  </Button>
+                ) : null}
+              </Flexbox>
+
+              {error ? <Text style={{ color: cssVar.colorError }}>{error}</Text> : null}
             </Flexbox>
+          </Block>
 
-            {error ? <Text style={{ color: cssVar.colorError }}>{error}</Text> : null}
-          </Flexbox>
-        </Block>
-
-        {loading ? (
-          <Flexbox align={'center'} gap={12} justify={'center'} padding={48}>
-            <NeuralNetworkLoading size={36} />
-            <Text type={'secondary'}>{t('businessFunctions.lingxingAds.loading')}</Text>
-          </Flexbox>
-        ) : null}
-
-        {!loading && result?.analysis ? (
-          <Flexbox gap={14}>
-            <Flexbox horizontal align={'center'} justify={'space-between'}>
-              <Text fontSize={16} weight={600}>
-                {t('businessFunctions.lingxingAds.results')}
-              </Text>
-              <Button icon={CopyIcon} size={'small'} type={'default'} onClick={copyMarkdown}>
-                {t('businessFunctions.lingxingAds.copyMarkdown')}
-              </Button>
+          {loading ? (
+            <Flexbox align={'center'} gap={12} justify={'center'} padding={48}>
+              <NeuralNetworkLoading size={36} />
+              <Text type={'secondary'}>{t('businessFunctions.lingxingAds.loading')}</Text>
             </Flexbox>
+          ) : null}
 
-            <AnalysisBody analysis={result.analysis} />
+          {!loading && result?.analysis ? (
+            <Flexbox gap={14}>
+              <Flexbox horizontal align={'center'} justify={'space-between'}>
+                <Text fontSize={16} weight={600}>
+                  {t('businessFunctions.lingxingAds.results')}
+                </Text>
+                <Button icon={CopyIcon} size={'small'} type={'default'} onClick={copyMarkdown}>
+                  {t('businessFunctions.lingxingAds.copyMarkdown')}
+                </Button>
+              </Flexbox>
 
-            <SectionCard title={t('businessFunctions.lingxingAds.markdownPreview')}>
-              <Highlighter language={'markdown'} variant={'borderless'}>
-                {result.markdown}
-              </Highlighter>
-            </SectionCard>
-          </Flexbox>
-        ) : null}
-      </Flexbox>
-    </div>
+              <AnalysisBody analysis={result.analysis} />
+
+              <SectionCard title={t('businessFunctions.lingxingAds.markdownPreview')}>
+                <Highlighter language={'markdown'} variant={'borderless'}>
+                  {result.markdown}
+                </Highlighter>
+              </SectionCard>
+            </Flexbox>
+          ) : null}
+        </Flexbox>
+      </div>
+    </Flexbox>
   );
 });
 
