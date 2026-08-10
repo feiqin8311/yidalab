@@ -206,12 +206,22 @@ export interface BeforeCompactHookEvent {
 }
 
 export interface AfterCompactHookEvent {
+  activeHardConstraintCount?: number;
+  /** compressedTokenCount / originalTokenCount when both known. */
+  compressionRatio?: number;
+  degraded?: string[];
   groupId: string;
+  mergedGroupCount?: number;
   messagesAfter: number;
   messagesBefore: number;
+  newConstraintCount?: number;
   operationId: string;
+  parseRetries?: number;
+  /** Snapshot schema version (2 when structured checkpoint is used). */
+  snapshotVersion?: number;
   stepIndex: number;
   summary: string;
+  supersededConstraintCount?: number;
   userId?: string;
 }
 

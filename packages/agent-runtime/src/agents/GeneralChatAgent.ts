@@ -1,5 +1,6 @@
 import {
   type ChatToolPayload,
+  type CompressionSnapshotV2,
   type ExtendedHumanInterventionConfig,
   type HumanInterventionConfig,
   type HumanInterventionPolicy,
@@ -359,23 +360,53 @@ export class GeneralChatAgent implements Agent {
   }
 
   /**
-   * Find existing compression summary from messages
-   * Looks for MessageGroup with type 'compression' and extracts its content
+   * Collect prior compression checkpoints from messages.
+   * Real injected nodes use role='compressedGroup' (see message model query).
    */
-  private findExistingSummary(messages: any[]): string | undefined {
-    // Look for compression group summary in messages
-    // The summary is typically stored as a system message with compression metadata
-    // or as a MessageGroup content field
-    for (const msg of messages) {
-      if (msg.role === 'system' && msg.metadata?.compressionSummary) {
-        return msg.content;
-      }
-      // Check for MessageGroup type compression
-      if (msg.messageGroupType === 'compression' && msg.content) {
-        return msg.content;
+  private findExistingCompression(messages: any[]): {
+    existingSnapshot?: CompressionSnapshotV2 | null;
+    legacySummary?: string;
+    existingSummary?: string;
+    sourceGroupIds: string[];
+  } {
+    const groups = messages.filter(
+      (msg) =>
+        msg?.role === 'compressedGroup' ||
+        msg?.messageGroupType === 'compression' ||
+        (msg?.role === 'system' && msg?.metadata?.compressionSummary),
+    );
+
+    if (groups.length === 0) {
+      return { sourceGroupIds: [] };
+    }
+
+    const sourceGroupIds = groups.map((g) => g.id).filter(Boolean) as string[];
+
+    // Prefer the latest group with a V2 snapshot in metadata
+    for (let i = groups.length - 1; i >= 0; i--) {
+      const g = groups[i];
+      const snapshot = g?.metadata?.snapshot;
+      if (snapshot && typeof snapshot === 'object' && snapshot.schemaVersion === 2) {
+        return {
+          existingSnapshot: snapshot,
+          existingSummary: typeof g.content === 'string' ? g.content : undefined,
+          legacySummary: undefined,
+          sourceGroupIds,
+        };
       }
     }
-    return undefined;
+
+    // Fall back to latest plain-text summary (legacy)
+    const latest = groups.at(-1);
+    const legacySummary =
+      typeof latest?.content === 'string' && latest.content.trim() ? latest.content : undefined;
+
+    return {
+      existingSnapshot: null,
+      existingSummary: legacySummary,
+      legacySummary,
+      sourceGroupIds,
+    };
   }
 
   /**
@@ -412,11 +443,23 @@ export class GeneralChatAgent implements Agent {
       const compressionCheck = shouldCompress(messages, compressionOptions);
 
       if (compressionCheck.needsCompression) {
+        const prior = this.findExistingCompression(messages);
+        const maxWindow = this.config.compressionConfig?.maxWindowToken;
+        const maxSummaryTokens =
+          maxWindow && maxWindow > 0
+            ? Math.min(8192, Math.max(1024, Math.floor(maxWindow * 0.08)))
+            : 2048;
         return {
           payload: {
+            adjustedTokenCount: compressionCheck.adjustedTokenCount,
             currentTokenCount: compressionCheck.currentTokenCount,
-            existingSummary: this.findExistingSummary(messages),
+            existingSnapshot: prior.existingSnapshot,
+            existingSummary: prior.existingSummary,
+            legacySummary: prior.legacySummary,
+            maxSummaryTokens,
+            maxWindowToken: maxWindow,
             messages,
+            sourceGroupIds: prior.sourceGroupIds,
           },
           type: 'compress_context',
         };
@@ -491,12 +534,23 @@ export class GeneralChatAgent implements Agent {
           const compressionCheck = shouldCompress(state.messages, compressionOptions);
 
           if (compressionCheck.needsCompression) {
-            // Context exceeds threshold, compress ALL messages into a single summary
+            const prior = this.findExistingCompression(state.messages);
+            const maxWindow = this.config.compressionConfig?.maxWindowToken;
+            const maxSummaryTokens =
+              maxWindow && maxWindow > 0
+                ? Math.min(8192, Math.max(1024, Math.floor(maxWindow * 0.08)))
+                : 2048;
             return {
               payload: {
+                adjustedTokenCount: compressionCheck.adjustedTokenCount,
                 currentTokenCount: compressionCheck.currentTokenCount,
-                existingSummary: this.findExistingSummary(state.messages),
+                existingSnapshot: prior.existingSnapshot,
+                existingSummary: prior.existingSummary,
+                legacySummary: prior.legacySummary,
+                maxSummaryTokens,
+                maxWindowToken: maxWindow,
                 messages: state.messages,
+                sourceGroupIds: prior.sourceGroupIds,
               },
               type: 'compress_context',
             } as AgentInstructionCompressContext;
@@ -794,6 +848,18 @@ export class GeneralChatAgent implements Agent {
         const compressionPayload = context.payload as GeneralAgentCompressionResultPayload;
         const tools = this.getTools(state);
 
+        // Above 85% window with failed compression: do not silently truncate.
+        if (compressionPayload.failed) {
+          return {
+            reason: 'error_recovery',
+            reasonDetail:
+              compressionPayload.errorMessage ||
+              compressionPayload.errorCode ||
+              'context_compression_failed',
+            type: 'finish',
+          };
+        }
+
         // A tool-first resume seeds an assistant placeholder that the first
         // post-tool LLM turn must fill. When that turn is large enough to
         // compress first, the compress_context step (not a call_llm) leaves the
@@ -804,14 +870,17 @@ export class GeneralChatAgent implements Agent {
         // If compression was skipped (no messages to compress), just call LLM.
         // Otherwise, messages have been updated with compressed content, and a
         // normal turn forces a fresh assistant message.
+        // reuseOnce: keep original messages and continue once under the ceiling.
         const seededAssistantMessageId = state.pendingAssistantMessageId;
 
         return {
           payload: {
             ...(seededAssistantMessageId
               ? { assistantMessageId: seededAssistantMessageId }
-              : // Force create new assistant message after compression
-                { createAssistantMessage: true }),
+              : compressionPayload.skipped
+                ? {}
+                : // Force create new assistant message after successful compression
+                  { createAssistantMessage: true }),
             messages: compressionPayload.compressedMessages,
             model: this.config.modelRuntimeConfig?.model,
             parentMessageId: compressionPayload.parentMessageId,

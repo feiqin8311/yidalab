@@ -1,6 +1,7 @@
 import { type LobeChatDatabase } from '@lobechat/database';
 import { CompressionRepository } from '@lobechat/database';
 import {
+  type CompressionGroupMetadata,
   type CreateMessageParams,
   type QueryMessageParams,
   type UIChatMessage,
@@ -419,14 +420,21 @@ export class MessageService {
       this.getQueryOptions(),
     );
 
-    const messagesToSummarize = allMessages.filter((msg) => messageIds.includes(msg.id));
+    // Only attach messages that actually belong to this topic (drop cross-topic ids)
+    const scopedIds = new Set(allMessages.map((m) => m.id));
+    const safeMessageIds = messageIds.filter((id) => scopedIds.has(id));
+    // Reject empty placeholder groups when the caller supplied ids but none are in-topic
+    if (messageIds.length > 0 && safeMessageIds.length === 0) {
+      throw new Error('No messages in topic for compression group');
+    }
+    const messagesToSummarize = allMessages.filter((msg) => safeMessageIds.includes(msg.id));
 
     // 2. Create compression group with placeholder content
     const messageGroupId = await this.compressionRepository.createCompressionGroup({
       content: '...', // Placeholder content
-      messageIds,
+      messageIds: safeMessageIds,
       metadata: {
-        originalMessageCount: messageIds.length,
+        originalMessageCount: safeMessageIds.length,
       },
       topicId,
     });
@@ -443,11 +451,8 @@ export class MessageService {
   }
 
   /**
-   * Finalize compression by updating the group with actual summary content
-   *
-   * @param messageGroupId - The compression group ID
-   * @param content - The generated summary content
-   * @param params - Parameters for querying messages
+   * Finalize compression by updating the group with actual summary content.
+   * When messageIds / mergeGroupIds are provided, uses atomic rolling checkpoint commit.
    */
   async finalizeCompression(
     messageGroupId: string,
@@ -455,16 +460,31 @@ export class MessageService {
     params: {
       agentId: string;
       groupId?: string | null;
+      mergeGroupIds?: string[];
+      messageIds?: string[];
+      metadata?: Partial<CompressionGroupMetadata>;
       threadId?: string | null;
       topicId: string;
     },
   ): Promise<{ messages?: UIChatMessage[]; success: boolean }> {
-    const { agentId, groupId, threadId, topicId } = params;
+    const { agentId, groupId, threadId, topicId, mergeGroupIds, messageIds, metadata } = params;
 
-    // 1. Update compression group with actual content
-    await this.compressionRepository.updateCompressionContent(messageGroupId, content);
+    if (messageIds?.length || mergeGroupIds?.length || metadata) {
+      await this.compressionRepository.commitCompressionCheckpoint({
+        content,
+        groupId: messageGroupId,
+        mergeGroupIds,
+        messageIds,
+        metadata: {
+          compressedAt: new Date().toISOString(),
+          ...metadata,
+        },
+        topicId,
+      });
+    } else {
+      await this.compressionRepository.updateCompressionContent(messageGroupId, content, metadata);
+    }
 
-    // 2. Query final messages
     const queryOptions = { agentId, groupId, threadId, topicId };
     const finalMessages = await this.messageModel.query(queryOptions, this.getQueryOptions());
 
@@ -499,8 +519,11 @@ export class MessageService {
     messageGroupId: string,
     context: QueryOptions,
   ): Promise<{ messages: UIChatMessage[]; success: boolean }> {
-    // Delete compression group (this also unmarks messages)
-    await this.compressionRepository.deleteCompressionGroup(messageGroupId);
+    // Delete only if the group belongs to the caller's topic (when provided)
+    await this.compressionRepository.deleteCompressionGroup(
+      messageGroupId,
+      context.topicId ?? undefined,
+    );
 
     // Query updated messages
     const messages = await this.messageModel.query(context, this.getQueryOptions());

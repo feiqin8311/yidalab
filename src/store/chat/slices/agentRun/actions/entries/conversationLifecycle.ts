@@ -7,7 +7,11 @@ import {
 } from '@lobechat/builtin-tool-agent-management';
 import { isDesktop, LOADING_FLAT } from '@lobechat/const';
 import { formatSelectedSkillsContext, formatSelectedToolsContext } from '@lobechat/context-engine';
-import { chainCompressContext } from '@lobechat/prompts';
+import {
+  chainCompressContext,
+  finalizeCompressionOutput,
+  resolveMaxSummaryTokens,
+} from '@lobechat/prompts';
 import type {
   ChatImageItem,
   ChatThreadType,
@@ -1671,6 +1675,7 @@ export class ConversationLifecycleActionImpl {
       { operationId },
     );
 
+    let createdGroupId: string | undefined;
     try {
       // 1. Create compression group on server
       const result = await messageService.createCompressionGroup({
@@ -1679,25 +1684,43 @@ export class ConversationLifecycleActionImpl {
         topicId,
       });
       const { messageGroupId, messages: serverMessages, messagesToSummarize } = result;
+      createdGroupId = messageGroupId;
 
       // Replace local pending group with server compression group
       this.#get().replaceMessages(serverMessages, { context: context as any });
       this.#get().associateMessageWithOperation(messageGroupId, operationId);
 
-      // 2. Generate summary via LLM
+      // 2. Generate structured summary via LLM (rolling checkpoint if prior groups exist)
       const { model, provider } = agentSelectors.getAgentConfigById(agentId)(getAgentStoreState());
-      const compressionPayload = chainCompressContext(messagesToSummarize);
-      let summaryContent = '';
+      const priorGroups = dbMessages.filter((m) => m.role === 'compressedGroup');
+      const priorGroupIds = priorGroups.map((g) => g.id).filter(Boolean);
+      const latestPrior = priorGroups.at(-1);
+      const existingSnapshot =
+        (latestPrior?.metadata as any)?.snapshot?.schemaVersion === 2
+          ? (latestPrior?.metadata as any).snapshot
+          : null;
+      const legacySummary =
+        !existingSnapshot && typeof latestPrior?.content === 'string'
+          ? latestPrior.content
+          : undefined;
+
+      const compressionPayload = chainCompressContext({
+        existingSnapshot,
+        legacySummary,
+        maxSummaryTokens: resolveMaxSummaryTokens(),
+        messages: messagesToSummarize.map((m) => ({
+          content: typeof m.content === 'string' ? m.content : '',
+          id: m.id,
+          role: m.role,
+        })),
+      });
+      let rawModelOutput = '';
 
       await chatService.fetchPresetTaskResult({
         abortController,
         onMessageHandle: (chunk) => {
           if (chunk.type === 'text') {
-            summaryContent += chunk.text || '';
-            this.#get().internal_dispatchMessage(
-              { id: messageGroupId, type: 'updateMessage', value: { content: summaryContent } },
-              { operationId },
-            );
+            rawModelOutput += chunk.text || '';
           }
         },
         params: { ...compressionPayload, model, provider },
@@ -1705,13 +1728,55 @@ export class ConversationLifecycleActionImpl {
 
       if (abortController.signal.aborted) throw createAbortError();
 
+      let displayContent = rawModelOutput;
+      let metadata: Record<string, unknown> | undefined;
+      try {
+        const userMessages = messagesToSummarize
+          .filter((m) => m.role === 'user' && m.id)
+          .map((m) => ({
+            content: typeof m.content === 'string' ? m.content : '',
+            id: m.id,
+          }));
+        const parsed = finalizeCompressionOutput({
+          currentUserMessageIds: userMessages.map((m) => m.id),
+          previousSnapshot: existingSnapshot,
+          raw: rawModelOutput,
+          sourceGroupIds: priorGroupIds,
+          userMessages,
+        });
+        displayContent = parsed.content;
+        metadata = {
+          activeHardConstraintCount: parsed.activeHardConstraintCount,
+          compressedAt: new Date().toISOString(),
+          degraded: parsed.repaired ? ['validation_repaired'] : undefined,
+          mergedGroupIds: priorGroupIds,
+          newConstraintCount: parsed.newConstraintCount,
+          originalMessageCount: messageIds.length,
+          snapshot: parsed.snapshot,
+          snapshotVersion: 2,
+          supersededConstraintCount: parsed.supersededConstraintCount,
+        };
+      } catch {
+        // Manual /compact: cancel placeholder rather than commit free-form invalid output
+        throw new Error('context_compression_failed');
+      }
+
+      this.#get().internal_dispatchMessage(
+        { id: messageGroupId, type: 'updateMessage', value: { content: displayContent } },
+        { operationId },
+      );
+
       // 3. Finalize compression
       const finalResult = await messageService.finalizeCompression({
         agentId,
-        content: summaryContent,
+        content: displayContent,
         messageGroupId,
+        messageIds,
+        mergeGroupIds: priorGroupIds.filter((id) => id !== messageGroupId),
+        metadata,
         topicId,
       });
+      createdGroupId = undefined;
 
       if (finalResult.messages) {
         this.#get().replaceMessages(finalResult.messages, { context: context as any });
@@ -1719,6 +1784,18 @@ export class ConversationLifecycleActionImpl {
 
       this.#get().completeOperation(operationId);
     } catch (error) {
+      if (createdGroupId) {
+        try {
+          await messageService.cancelCompression({
+            agentId,
+            messageGroupId: createdGroupId,
+            topicId,
+          });
+        } catch {
+          // ignore cancel errors
+        }
+      }
+
       if (isAbortError(error, abortController)) {
         this.#get().internal_dispatchMessage(
           { type: 'deleteMessages', ids: [tempId] },

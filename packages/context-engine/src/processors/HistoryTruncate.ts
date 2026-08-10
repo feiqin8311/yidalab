@@ -229,8 +229,23 @@ export const getSlicedMessages = (
   // if historyCount is not enabled, return all messages
   if (!options.enableHistoryCount || options.historyCount === undefined) return messages;
 
-  // if historyCount is negative or set to 0, return empty array
-  if (options.historyCount <= 0) return [];
+  // Always retain active compression checkpoints. Also keep the current user turn
+  // when it is the trailing message (the prompt that triggered this request).
+  // Do not re-attach earlier user messages — that would defeat historyCount.
+  const protectedIds = new Set<string>();
+  for (const msg of messages as MinimalMessage[]) {
+    if (msg.role === 'compressedGroup') protectedIds.add(msg.id);
+  }
+  const trailing = messages.at(-1) as MinimalMessage | undefined;
+  if (trailing?.role === 'user') {
+    protectedIds.add(trailing.id);
+  }
+
+  // if historyCount is negative or set to 0, keep only protected anchors
+  if (options.historyCount <= 0) {
+    if (protectedIds.size === 0) return [];
+    return messages.filter((msg: any) => protectedIds.has(msg.id));
+  }
 
   // Build message relationship maps
   const { messageMap, childrenMap } = buildMessageMaps(messages as MinimalMessage[]);
@@ -280,8 +295,8 @@ export const getSlicedMessages = (
     }
   }
 
-  // Step 3: Collect all message IDs from selected groups
-  const selectedIds = new Set<string>();
+  // Step 3: Collect all message IDs from selected groups + protected anchors
+  const selectedIds = new Set<string>(protectedIds);
   for (const groupIdx of selectedGroupIndices) {
     const group = groups[groupIdx];
     if (group) {
@@ -294,7 +309,7 @@ export const getSlicedMessages = (
   const result = messages.filter((msg: any) => selectedIds.has(msg.id));
 
   log(
-    `Group-aware truncation: ${messages.length} messages → ${groups.length} groups → kept ${selectedGroupIndices.size} groups (${result.length} messages)`,
+    `Group-aware truncation: ${messages.length} messages → ${groups.length} groups → kept ${selectedGroupIndices.size} groups + ${protectedIds.size} anchors (${result.length} messages)`,
   );
 
   return result;

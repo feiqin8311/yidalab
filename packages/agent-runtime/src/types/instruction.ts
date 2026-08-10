@@ -1,5 +1,6 @@
 import type {
   ChatToolPayload,
+  CompressionSnapshotV2,
   ModelUsage,
   RuntimeInitialContext,
   RuntimeStepContext,
@@ -356,10 +357,28 @@ export interface AgentInstructionRequestHumanApprove extends AgentInstructionBas
 
 export interface AgentInstructionCompressContext extends AgentInstructionBase {
   payload: {
-    /** Current token count before compression */
+    /** Raw token estimate before compression (stats / metadata). */
     currentTokenCount: number;
-    /** Existing summary to incorporate (for incremental compression) */
+    /**
+     * Drift-adjusted token count (raw × ~1.25). Used for the 85% failure
+     * ceiling so we do not reuse context that already overflows the window.
+     */
+    adjustedTokenCount?: number;
+    /**
+     * @deprecated Prefer existingSnapshot. Plain-text prior summary for
+     * incremental compression / legacy groups.
+     */
     existingSummary?: string;
+    /** Structured V2 checkpoint already active in this topic. */
+    existingSnapshot?: CompressionSnapshotV2 | null;
+    /** Prior plain summary when no V2 snapshot is available. */
+    legacySummary?: string | null;
+    /** Compression group ids to merge into the rolling checkpoint. */
+    sourceGroupIds?: string[];
+    /** Soft token budget for the rendered summary. */
+    maxSummaryTokens?: number;
+    /** Model context window (for 85% failure ceiling). */
+    maxWindowToken?: number;
     /** Messages to compress */
     messages: any[];
   };

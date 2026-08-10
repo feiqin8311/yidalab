@@ -19,7 +19,11 @@ import type {
 } from '@lobechat/agent-runtime';
 import { UsageCounter } from '@lobechat/agent-runtime';
 import { countContextTokens, type ToolsEngine } from '@lobechat/context-engine';
-import { chainCompressContext } from '@lobechat/prompts';
+import {
+  chainCompressContext,
+  finalizeCompressionOutput,
+  resolveMaxSummaryTokens,
+} from '@lobechat/prompts';
 import {
   type ChatMessageError,
   type ChatToolPayload,
@@ -1899,16 +1903,24 @@ export const createAgentExecutors = (context: {
       const sessionLogId = `${state.operationId}:${state.stepCount}`;
       const stagePrefix = `[${sessionLogId}][compress_context]`;
 
-      const { messages, currentTokenCount } = (instruction as AgentInstructionCompressContext)
-        .payload;
+      const {
+        messages,
+        currentTokenCount,
+        existingSnapshot,
+        existingSummary,
+        legacySummary,
+        sourceGroupIds,
+        maxSummaryTokens,
+      } = (instruction as AgentInstructionCompressContext).payload;
 
       // Get topicId from operation context (same as agentId)
       const { topicId } = getOperationContext();
 
       log(
-        `${stagePrefix} Starting compression. displayMessages=%d, tokens=%d`,
+        `${stagePrefix} Starting compression. displayMessages=%d, tokens=%d, hasSnapshot=%s`,
         messages.length,
         currentTokenCount,
+        Boolean(existingSnapshot),
       );
 
       const events: AgentEvent[] = [];
@@ -1968,6 +1980,7 @@ export const createAgentExecutors = (context: {
         type: 'contextCompression',
       });
 
+      let createdGroupId: string | undefined;
       try {
         const opContext = getOperationContext();
         // agentId is guaranteed to exist in compression context
@@ -1980,6 +1993,7 @@ export const createAgentExecutors = (context: {
           topicId,
         });
         const { messageGroupId, messages: initialCompressedMessages, messagesToSummarize } = result;
+        createdGroupId = messageGroupId;
 
         // 2. Update UI with compressed messages immediately
         context.get().replaceMessages(initialCompressedMessages, { context: opContext });
@@ -1994,9 +2008,26 @@ export const createAgentExecutors = (context: {
           `${provider}/${model}`,
         );
 
-        // 4. Build compression prompt and generate summary with streaming UI updates
-        const compressionPayload = chainCompressContext(messagesToSummarize);
-        let summaryContent = '';
+        // 4. Build compression prompt (recursive: prior snapshot/legacy + new messages)
+        const resolvedLegacy =
+          legacySummary ?? (existingSnapshot ? undefined : existingSummary) ?? undefined;
+        const priorGroupIds =
+          sourceGroupIds && sourceGroupIds.length > 0
+            ? sourceGroupIds
+            : dbMessages.filter((m) => m.role === 'compressedGroup' && m.id).map((m) => m.id);
+
+        const compressionPayload = chainCompressContext({
+          existingSnapshot: existingSnapshot ?? null,
+          legacySummary: resolvedLegacy,
+          maxSummaryTokens: maxSummaryTokens ?? resolveMaxSummaryTokens(),
+          messages: messagesToSummarize.map((m) => ({
+            content: typeof m.content === 'string' ? m.content : '',
+            id: m.id,
+            role: m.role,
+          })),
+        });
+        let rawModelOutput = '';
+        let displayContent = '';
 
         // Start generateSummary operation attached to the compressed group message
         const { abortController: summaryAbortController, operationId: summaryOperationId } = context
@@ -2007,40 +2038,121 @@ export const createAgentExecutors = (context: {
             parentOperationId: compressOperationId,
           });
 
-        await chatService.fetchPresetTaskResult({
-          abortController: summaryAbortController,
-          params: { ...compressionPayload, model, provider },
-          onMessageHandle: (chunk) => {
-            if (chunk.type === 'text') {
-              summaryContent += chunk.text || '';
-              // Stream update the compression group message content
-              context
-                .get()
-                .internal_dispatchMessage(
-                  { id: messageGroupId, type: 'updateMessage', value: { content: summaryContent } },
-                  { operationId: summaryOperationId },
-                );
-            }
-          },
-          onError: (e) => {
-            console.error(e);
-            context.get().completeOperation(summaryOperationId, {
-              error: { message: String(e), type: 'summary_generation_failed' },
+        const runSummaryOnce = async (extraUser?: string) => {
+          rawModelOutput = '';
+          const messages = extraUser
+            ? [
+                ...(compressionPayload.messages || []),
+                { content: extraUser, role: 'user' as const },
+              ]
+            : compressionPayload.messages;
+
+          await chatService.fetchPresetTaskResult({
+            abortController: summaryAbortController,
+            params: { ...compressionPayload, messages, model, provider },
+            onMessageHandle: (chunk) => {
+              if (chunk.type === 'text') {
+                rawModelOutput += chunk.text || '';
+                // Do not stream raw JSON into the UI; keep placeholder until validated
+              }
+            },
+            onError: (e) => {
+              console.error(e);
+              context.get().completeOperation(summaryOperationId, {
+                error: { message: String(e), type: 'summary_generation_failed' },
+              });
+            },
+          });
+        };
+
+        await runSummaryOnce();
+
+        let parsedSnapshot: ReturnType<typeof finalizeCompressionOutput> | undefined;
+        let parseRetries = 0;
+        try {
+          const userMessages = messagesToSummarize
+            .filter((m) => m.role === 'user' && m.id)
+            .map((m) => ({
+              content: typeof m.content === 'string' ? m.content : '',
+              id: m.id,
+            }));
+          parsedSnapshot = finalizeCompressionOutput({
+            currentUserMessageIds: userMessages.map((m) => m.id),
+            maxSummaryTokens: maxSummaryTokens ?? resolveMaxSummaryTokens(),
+            previousSnapshot: existingSnapshot ?? null,
+            raw: rawModelOutput,
+            sourceGroupIds: priorGroupIds,
+            userMessages,
+          });
+          displayContent = parsedSnapshot.content;
+        } catch {
+          parseRetries = 1;
+          await runSummaryOnce(
+            `Previous output was invalid. Fix and return ONLY a valid CompressionSnapshotV2 JSON object.\n\nPrevious output:\n${rawModelOutput.slice(0, 4000)}`,
+          );
+          try {
+            const userMessages = messagesToSummarize
+              .filter((m) => m.role === 'user' && m.id)
+              .map((m) => ({
+                content: typeof m.content === 'string' ? m.content : '',
+                id: m.id,
+              }));
+            parsedSnapshot = finalizeCompressionOutput({
+              currentUserMessageIds: userMessages.map((m) => m.id),
+              maxSummaryTokens: maxSummaryTokens ?? resolveMaxSummaryTokens(),
+              previousSnapshot: existingSnapshot ?? null,
+              raw: rawModelOutput,
+              sourceGroupIds: priorGroupIds,
+              userMessages,
             });
-          },
-        });
+            displayContent = parsedSnapshot.content;
+          } catch {
+            throw new Error('context_compression_failed');
+          }
+        }
 
         if (summaryAbortController.signal.aborted) throw createAbortError();
 
-        log(`${stagePrefix} Generated summary: %d chars`, summaryContent.length);
+        // Show validated markdown (not raw JSON) on the group
+        context
+          .get()
+          .internal_dispatchMessage(
+            { id: messageGroupId, type: 'updateMessage', value: { content: displayContent } },
+            { operationId: summaryOperationId },
+          );
 
-        // 5. Finalize compression with actual content
+        log(`${stagePrefix} Generated summary: %d chars`, displayContent.length);
+
+        // 5. Finalize compression with structured metadata + rolling merge
         const finalResult = await messageService.finalizeCompression({
           agentId,
-          content: summaryContent,
+          content: displayContent,
           messageGroupId,
+          messageIds,
+          mergeGroupIds: priorGroupIds.filter((id) => id !== messageGroupId),
+          metadata: {
+            activeHardConstraintCount: parsedSnapshot?.activeHardConstraintCount,
+            compressedAt: new Date().toISOString(),
+            degraded: (() => {
+              const flags = [
+                ...(parsedSnapshot?.repaired ? (['validation_repaired'] as const) : []),
+                ...(parsedSnapshot?.budgetTrimmed ? (['budget_trimmed'] as const) : []),
+              ];
+              return flags.length > 0 ? [...flags] : undefined;
+            })(),
+            mergedGroupIds: priorGroupIds,
+            newConstraintCount: parsedSnapshot?.newConstraintCount,
+            originalMessageCount: messageIds.length,
+            originalTokenCount: currentTokenCount,
+            parseRetries,
+            snapshot: parsedSnapshot?.snapshot,
+            snapshotVersion: 2,
+            supersededConstraintCount: parsedSnapshot?.supersededConstraintCount,
+            tokensBefore: currentTokenCount,
+          },
           topicId,
         });
+        createdGroupId = undefined;
         // Complete the generateSummary operation
         context.get().completeOperation(summaryOperationId);
 
@@ -2089,6 +2201,20 @@ export const createAgentExecutors = (context: {
           } as AgentRuntimeContext,
         };
       } catch (error) {
+        // Always drop placeholder group on any non-commit exit
+        if (createdGroupId) {
+          try {
+            const agentId = getEffectiveAgentId()!;
+            await messageService.cancelCompression({
+              agentId,
+              messageGroupId: createdGroupId,
+              topicId,
+            });
+          } catch {
+            // ignore cancel errors
+          }
+        }
+
         if (isAbortError(error)) {
           log(`${stagePrefix} Compression cancelled`);
 
@@ -2127,8 +2253,15 @@ export const createAgentExecutors = (context: {
           },
         });
 
-        // On error, continue without compression
         events.push({ type: 'compression_error', error });
+
+        // Above 85% of window: fail closed. Below: reuse original context once.
+        // Prefer adjusted (drift) count when the instruction carries it.
+        const compressPayload = (instruction as AgentInstructionCompressContext).payload;
+        const maxWindow = compressPayload.maxWindowToken ?? 128_000;
+        const fill = compressPayload.adjustedTokenCount ?? currentTokenCount;
+        const overCeiling = fill > Math.floor(maxWindow * 0.85);
+        const errorMessage = error instanceof Error ? error.message : String(error);
 
         return {
           events,
@@ -2136,6 +2269,13 @@ export const createAgentExecutors = (context: {
           nextContext: {
             payload: {
               compressedMessages: messages,
+              ...(overCeiling
+                ? {
+                    errorCode: 'context_compression_failed',
+                    errorMessage,
+                    failed: true,
+                  }
+                : { reuseOnce: true }),
               skipped: true,
             } as GeneralAgentCompressionResultPayload,
             phase: 'compression_result',

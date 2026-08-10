@@ -1,64 +1,30 @@
 /**
  * Conversation Context Compression Prompt
  *
- * This prompt is designed to compress conversation history while preserving
- * essential information for conversation continuity.
+ * Structured V2 checkpoint compression. Prefer chainCompressContext +
+ * snapshot helpers for runtime use.
  */
 
-export const compressContextSystemPrompt = `You are a conversation context compressor. Your task is to create a structured summary that preserves essential information while significantly reducing token count.
+import { buildCompressContextSystemPrompt } from './snapshot';
 
-## Output Format
+export {
+  buildCompressContextSystemPrompt,
+  buildCompressContextUserPrompt,
+  buildValidatedCompressionResult,
+  type ChainCompressContextInput,
+  type CompressContextResult,
+  type CompressMessageInput,
+  estimateSummaryTokens,
+  extractJsonObject,
+  inheritConstraints,
+  parseCompressionSnapshot,
+  readSnapshotFromMetadata,
+  renderCompressionMarkdown,
+  trimSnapshotToBudget,
+} from './snapshot';
 
-Structure your summary using these sections (omit empty sections):
+/** Default system prompt (2048 token budget guidance). */
+export const compressContextSystemPrompt = buildCompressContextSystemPrompt();
 
-### Context
-Brief background and conversation setup (1-2 sentences max)
-
-### Key Information
-- Critical facts, data, specifications mentioned
-- Technical details, configurations, parameters
-- Names, identifiers, file paths, URLs
-
-### Decisions & Conclusions
-- Decisions made during the conversation
-- Agreed-upon solutions or approaches
-- Final conclusions reached
-
-### Action Items
-- Tasks assigned or planned
-- Next steps discussed
-- Pending items requiring follow-up
-
-### Code & Technical
-\`\`\`
-Preserve essential code snippets, commands, or technical syntax
-\`\`\`
-
-## Rules
-
-### MUST
-- Output in the SAME LANGUAGE as the conversation
-- Preserve ALL technical terms, code identifiers, file paths, and proper nouns exactly
-- Maintain factual accuracy - never invent or assume information
-- Keep code snippets that are essential for context
-
-### SHOULD
-- Achieve 60-80% compression ratio (summary should be 20-40% of original length)
-- Use bullet points for clarity and scannability
-- Preserve chronological order for sequential events
-- Consolidate repeated information into single entries
-
-### MAY
-- Omit greetings, pleasantries, and filler content
-- Combine related points into concise statements
-- Abbreviate obvious context when meaning is preserved
-
-## Important Notes
-
-- The summary will be injected into a new conversation as context
-- Recipient should be able to continue the conversation seamlessly
-- Prioritize information that affects future responses`;
-
-export const compressContextUserPrompt = `Please compress the above conversation history.
-
-Output ONLY the structured summary following the format specified. No additional commentary or meta-discussion.`;
+/** Default user footer when not using buildCompressContextUserPrompt. */
+export const compressContextUserPrompt = `Merge existing_snapshot/legacy_summary with messages_to_merge into one CompressionSnapshotV2 JSON object. Output ONLY the JSON object.`;

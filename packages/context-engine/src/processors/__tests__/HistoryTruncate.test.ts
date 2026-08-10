@@ -49,20 +49,45 @@ describe('HistoryTruncateProcessor', () => {
       ]);
     });
 
-    it('should return empty array when historyCount is 0', () => {
+    it('should keep trailing user message when historyCount is 0', () => {
       const result = getSlicedMessages(messages, {
         enableHistoryCount: true,
         historyCount: 0,
       });
-      expect(result).toEqual([]);
+      // Current user turn (trailing user) is protected even at historyCount 0
+      expect(result).toEqual([{ id: '5', content: 'Fifth', role: 'user' }]);
     });
 
-    it('should return empty array when historyCount is negative', () => {
+    it('should keep compressedGroup + trailing user when historyCount is 0', () => {
+      const withCheckpoint = [
+        { id: 'cg1', content: 'summary', role: 'compressedGroup' },
+        { id: 'u1', content: 'follow up', role: 'user' },
+      ];
+      const result = getSlicedMessages(withCheckpoint, {
+        enableHistoryCount: true,
+        historyCount: 0,
+      });
+      expect(result.map((m) => m.id)).toEqual(['cg1', 'u1']);
+    });
+
+    it('should keep compressedGroup when historyCount is 0 and trailing is assistant', () => {
+      const withCheckpoint = [
+        { id: 'cg1', content: 'summary', role: 'compressedGroup' },
+        { id: 'a1', content: 'reply', role: 'assistant' },
+      ];
+      const result = getSlicedMessages(withCheckpoint, {
+        enableHistoryCount: true,
+        historyCount: 0,
+      });
+      expect(result.map((m) => m.id)).toEqual(['cg1']);
+    });
+
+    it('should keep protected anchors when historyCount is negative', () => {
       const result = getSlicedMessages(messages, {
         enableHistoryCount: true,
         historyCount: -1,
       });
-      expect(result).toEqual([]);
+      expect(result).toEqual([{ id: '5', content: 'Fifth', role: 'user' }]);
     });
 
     it('should return all messages when historyCount exceeds array length', () => {
@@ -210,7 +235,13 @@ describe('HistoryTruncateProcessor', () => {
       it('should count Compare group as a single unit', () => {
         const messagesWithCompare = [
           { id: '1', content: 'User message', role: 'user' },
-          { content: 'Compare message', id: '2', metadata: { compare: true }, parentId: '1', role: 'user' },
+          {
+            content: 'Compare message',
+            id: '2',
+            metadata: { compare: true },
+            parentId: '1',
+            role: 'user',
+          },
           { content: 'Column 1', id: '3', parentId: '2', role: 'assistant' },
           { content: 'Column 2', id: '4', parentId: '2', role: 'assistant' },
         ];
@@ -239,7 +270,13 @@ describe('HistoryTruncateProcessor', () => {
             tools: [{ id: '5' }],
           },
           { id: '5', parentId: '4', role: 'tool' },
-          { agentId: 'agent-1', content: 'Final assistant', id: '6', parentId: '5', role: 'assistant' },
+          {
+            agentId: 'agent-1',
+            content: 'Final assistant',
+            id: '6',
+            parentId: '5',
+            role: 'assistant',
+          },
           { id: '7', content: 'User 3', role: 'user' },
         ];
 

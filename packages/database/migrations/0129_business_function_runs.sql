@@ -39,23 +39,43 @@ CREATE TABLE IF NOT EXISTS "business_function_runs" (
 );
 --> statement-breakpoint
 ALTER TABLE "business_function_result_rows" DROP CONSTRAINT IF EXISTS "business_function_result_rows_run_id_business_function_runs_id_fk";
-ALTER TABLE "business_function_result_rows" ADD CONSTRAINT "business_function_result_rows_run_id_business_function_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."business_function_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+--> statement-breakpoint
+ALTER TABLE "business_function_result_rows" ADD CONSTRAINT "business_function_result_rows_run_id_business_function_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."business_function_runs"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
 ALTER TABLE "business_function_result_rows" DROP CONSTRAINT IF EXISTS "business_function_result_rows_user_id_users_id_fk";
-ALTER TABLE "business_function_result_rows" ADD CONSTRAINT "business_function_result_rows_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+--> statement-breakpoint
+ALTER TABLE "business_function_result_rows" ADD CONSTRAINT "business_function_result_rows_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
 ALTER TABLE "business_function_result_rows" DROP CONSTRAINT IF EXISTS "business_function_result_rows_workspace_id_workspaces_id_fk";
-ALTER TABLE "business_function_result_rows" ADD CONSTRAINT "business_function_result_rows_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+--> statement-breakpoint
+ALTER TABLE "business_function_result_rows" ADD CONSTRAINT "business_function_result_rows_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
 ALTER TABLE "business_function_runs" DROP CONSTRAINT IF EXISTS "business_function_runs_user_id_users_id_fk";
-ALTER TABLE "business_function_runs" ADD CONSTRAINT "business_function_runs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+--> statement-breakpoint
+ALTER TABLE "business_function_runs" ADD CONSTRAINT "business_function_runs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
 ALTER TABLE "business_function_runs" DROP CONSTRAINT IF EXISTS "business_function_runs_workspace_id_workspaces_id_fk";
-ALTER TABLE "business_function_runs" ADD CONSTRAINT "business_function_runs_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "business_function_result_rows_run_view_key_uidx" ON "business_function_result_rows" USING btree ("run_id","view_id","row_key");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_result_rows_run_view_idx" ON "business_function_result_rows" USING btree ("run_id","view_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_result_rows_workspace_id_idx" ON "business_function_result_rows" USING btree ("workspace_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_result_rows_user_id_idx" ON "business_function_result_rows" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_result_rows_search_text_idx" ON "business_function_result_rows" USING btree ("search_text");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_runs_user_id_idx" ON "business_function_runs" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_runs_workspace_id_idx" ON "business_function_runs" USING btree ("workspace_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_runs_status_idx" ON "business_function_runs" USING btree ("status");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_runs_function_type_idx" ON "business_function_runs" USING btree ("function_type");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "business_function_runs_workspace_asin_idx" ON "business_function_runs" USING btree ("workspace_id","main_asin");--> statement-breakpoint
+--> statement-breakpoint
+ALTER TABLE "business_function_runs" ADD CONSTRAINT "business_function_runs_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "business_function_result_rows_run_view_key_uidx" ON "business_function_result_rows" USING btree ("run_id","view_id","row_key");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_result_rows_run_view_idx" ON "business_function_result_rows" USING btree ("run_id","view_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_result_rows_workspace_id_idx" ON "business_function_result_rows" USING btree ("workspace_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_result_rows_user_id_idx" ON "business_function_result_rows" USING btree ("user_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_result_rows_search_text_idx" ON "business_function_result_rows" USING btree ("search_text");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_runs_user_id_idx" ON "business_function_runs" USING btree ("user_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_runs_workspace_id_idx" ON "business_function_runs" USING btree ("workspace_id");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_runs_status_idx" ON "business_function_runs" USING btree ("status");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_runs_function_type_idx" ON "business_function_runs" USING btree ("function_type");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "business_function_runs_workspace_asin_idx" ON "business_function_runs" USING btree ("workspace_id","main_asin");
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "business_function_runs_created_at_idx" ON "business_function_runs" USING btree ("created_at");

@@ -1,4 +1,4 @@
-import { type LobeChatDatabase } from '@lobechat/database';
+import { CompressionRepository, type LobeChatDatabase } from '@lobechat/database';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageModel } from '@/database/models/message';
@@ -8,12 +8,23 @@ import { MessageService } from '../index';
 
 vi.mock('@/database/models/message');
 vi.mock('@/server/services/file');
+vi.mock('@lobechat/database', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    CompressionRepository: vi.fn(),
+  };
+});
 
 describe('MessageService', () => {
   let messageService: MessageService;
   let mockDB: LobeChatDatabase;
   let mockMessageModel: MessageModel;
   let mockFileService: FileService;
+  let mockCompressionRepo: {
+    createCompressionGroup: ReturnType<typeof vi.fn>;
+    deleteCompressionGroup: ReturnType<typeof vi.fn>;
+  };
   const userId = 'test-user-id';
 
   beforeEach(() => {
@@ -35,9 +46,15 @@ describe('MessageService', () => {
       getFullFileUrl: vi.fn().mockImplementation((path) => Promise.resolve(`/files${path}`)),
     } as any;
 
+    mockCompressionRepo = {
+      createCompressionGroup: vi.fn().mockResolvedValue('group-1'),
+      deleteCompressionGroup: vi.fn().mockResolvedValue(undefined),
+    };
+
     // Mock constructors
     vi.mocked(MessageModel).mockImplementation(() => mockMessageModel);
     vi.mocked(FileService).mockImplementation(() => mockFileService);
+    vi.mocked(CompressionRepository).mockImplementation(() => mockCompressionRepo as any);
 
     messageService = new MessageService(mockDB, userId);
   });
@@ -588,6 +605,44 @@ describe('MessageService', () => {
         }),
       );
       expect(result).toEqual({ messages: mockMessages, success: true });
+    });
+  });
+
+  describe('createCompressionGroup topic isolation', () => {
+    it('rejects when all provided message ids are outside the topic', async () => {
+      // Topic query returns only in-topic messages; caller ids are all foreign
+      vi.mocked(mockMessageModel.query).mockResolvedValue([
+        { id: 'msg-in-topic', content: 'ok', role: 'user' },
+      ] as any);
+
+      await expect(
+        messageService.createCompressionGroup('topic-1', ['msg-other-1', 'msg-other-2'], {
+          topicId: 'topic-1',
+        }),
+      ).rejects.toThrow(/No messages in topic for compression group/);
+
+      expect(mockCompressionRepo.createCompressionGroup).not.toHaveBeenCalled();
+    });
+
+    it('only passes in-topic message ids to the repository', async () => {
+      vi.mocked(mockMessageModel.query)
+        .mockResolvedValueOnce([{ id: 'msg-in-topic', content: 'ok', role: 'user' }] as any)
+        .mockResolvedValueOnce([{ id: 'group-node', role: 'compressedGroup' }] as any);
+
+      const result = await messageService.createCompressionGroup(
+        'topic-1',
+        ['msg-in-topic', 'msg-other'],
+        { topicId: 'topic-1' },
+      );
+
+      expect(mockCompressionRepo.createCompressionGroup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageIds: ['msg-in-topic'],
+          topicId: 'topic-1',
+        }),
+      );
+      expect(result.messagesToSummarize.map((m) => m.id)).toEqual(['msg-in-topic']);
+      expect(result.success).toBe(true);
     });
   });
 });

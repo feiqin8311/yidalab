@@ -11,6 +11,14 @@ declare module '../types' {
 
 const log = debug('context-engine:processor:CompressedGroupRoleTransformProcessor');
 
+const escapeXml = (value: unknown): string =>
+  String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+
 /**
  * Compressed Group Role Transform Processor
  *
@@ -51,10 +59,39 @@ export class CompressedGroupRoleTransformProcessor extends BaseProcessor {
         processedCount++;
         log(`Transforming compressedGroup message to user role`);
 
-        // Wrap the compressed summary content in a context block
-        const wrappedContent = msg.content
-          ? `<compressed_history_summary>\n${msg.content}\n</compressed_history_summary>`
+        const meta = (msg as any).metadata as
+          { snapshot?: { constraints?: any[]; decisions?: any[]; openItems?: any[] } } | undefined;
+        const snapshot = meta?.snapshot;
+        const anchorParts: string[] = [];
+
+        if (snapshot?.constraints?.length) {
+          const active = snapshot.constraints.filter((c: any) => c.status === 'active');
+          const hard = active.filter((c: any) => c.strength === 'hard');
+          const soft = active.filter((c: any) => c.strength === 'soft');
+          if (hard.length || soft.length) {
+            const lines = [
+              ...hard.map((c: any) => `- [HARD] ${escapeXml(c.text)}`),
+              ...soft.map((c: any) => `- [soft] ${escapeXml(c.text)}`),
+            ];
+            anchorParts.push(`<active_constraints>\n${lines.join('\n')}\n</active_constraints>`);
+          }
+        }
+        if (snapshot?.decisions?.length) {
+          anchorParts.push(
+            `<confirmed_decisions>\n${snapshot.decisions.map((d: any) => `- ${escapeXml(d.text)}`).join('\n')}\n</confirmed_decisions>`,
+          );
+        }
+        if (snapshot?.openItems?.length) {
+          anchorParts.push(
+            `<open_items>\n${snapshot.openItems.map((i: any) => `- ${escapeXml(i.text)}`).join('\n')}\n</open_items>`,
+          );
+        }
+
+        // History summary is background; active anchors sit above it when present
+        const summaryBlock = msg.content
+          ? `<compressed_history_summary>\n${escapeXml(msg.content)}\n</compressed_history_summary>`
           : '';
+        const wrappedContent = [...anchorParts, summaryBlock].filter(Boolean).join('\n\n');
 
         return {
           ...msg,

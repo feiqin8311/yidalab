@@ -296,7 +296,10 @@ export class MessageService {
     agentId: string;
     content: string;
     groupId?: string | null;
+    mergeGroupIds?: string[];
     messageGroupId: string;
+    messageIds?: string[];
+    metadata?: Record<string, unknown>;
     threadId?: string | null;
     topicId: string;
   }): Promise<{ messages?: UIChatMessage[] }> => {

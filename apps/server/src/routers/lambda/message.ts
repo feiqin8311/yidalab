@@ -266,7 +266,10 @@ export const messageRouter = router({
         agentId: z.string(),
         content: z.string(),
         groupId: z.string().nullish(),
+        mergeGroupIds: z.array(z.string()).optional(),
         messageGroupId: z.string(),
+        messageIds: z.array(z.string()).optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
         threadId: z.string().nullish(),
         topicId: z.string(),
       }),
@@ -274,7 +277,7 @@ export const messageRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { messageGroupId, content, ...params } = input;
 
-      return ctx.messageService.finalizeCompression(messageGroupId, content, params);
+      return ctx.messageService.finalizeCompression(messageGroupId, content, params as any);
     }),
 
   getHeatmaps: messageProcedure.query(async ({ ctx }) => {

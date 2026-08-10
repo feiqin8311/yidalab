@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { MessageGroupType } from '@lobechat/types';
+import { inArray } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
@@ -362,6 +363,176 @@ describe('CompressionRepository', () => {
       // Verify messages are uncompressed
       const uncompressed = await compressionRepo.getUncompressedMessages(topicId);
       expect(uncompressed).toHaveLength(2);
+    });
+  });
+
+  describe('topic isolation', () => {
+    const otherTopicId = 'test-topic-other';
+
+    beforeEach(async () => {
+      await serverDB.insert(topics).values({ id: otherTopicId, userId });
+    });
+
+    it('create only attaches messages that belong to the target topic', async () => {
+      await serverDB.insert(messages).values([
+        { id: 'msg-here-1', content: 'in topic', role: 'user', topicId, userId },
+        { id: 'msg-there-1', content: 'other topic', role: 'user', topicId: otherTopicId, userId },
+      ]);
+
+      const groupId = await compressionRepo.createCompressionGroup({
+        content: '...',
+        messageIds: ['msg-here-1', 'msg-there-1'],
+        metadata: {},
+        topicId,
+      });
+
+      const compressed = await compressionRepo.getCompressedMessages(groupId);
+      expect(compressed.map((m) => m.id)).toEqual(['msg-here-1']);
+
+      // Other-topic message remains ungrouped
+      const [other] = await serverDB
+        .select({ messageGroupId: messages.messageGroupId })
+        .from(messages)
+        .where(inArray(messages.id, ['msg-there-1']));
+      expect(other.messageGroupId).toBeNull();
+    });
+
+    it('cancel with wrong topic throws and leaves group + messages intact', async () => {
+      await serverDB
+        .insert(messages)
+        .values([{ id: 'msg-cancel-1', content: 'keep me', role: 'user', topicId, userId }]);
+
+      const groupId = await compressionRepo.createCompressionGroup({
+        content: '...',
+        messageIds: ['msg-cancel-1'],
+        metadata: {},
+        topicId,
+      });
+
+      await expect(compressionRepo.deleteCompressionGroup(groupId, otherTopicId)).rejects.toThrow(
+        /not found in topic/,
+      );
+
+      const groups = await compressionRepo.getCompressionGroups(topicId);
+      expect(groups).toHaveLength(1);
+      const compressed = await compressionRepo.getCompressedMessages(groupId);
+      expect(compressed).toHaveLength(1);
+    });
+
+    it('cancel with correct topic removes group and unmarks messages', async () => {
+      await serverDB
+        .insert(messages)
+        .values([{ id: 'msg-cancel-ok', content: 'ok', role: 'user', topicId, userId }]);
+
+      const groupId = await compressionRepo.createCompressionGroup({
+        content: '...',
+        messageIds: ['msg-cancel-ok'],
+        metadata: {},
+        topicId,
+      });
+
+      await compressionRepo.deleteCompressionGroup(groupId, topicId);
+      expect(await compressionRepo.getCompressionGroups(topicId)).toHaveLength(0);
+      const uncompressed = await compressionRepo.getUncompressedMessages(topicId);
+      expect(uncompressed.map((m) => m.id)).toContain('msg-cancel-ok');
+    });
+  });
+
+  describe('commitCompressionCheckpoint', () => {
+    it('merges prior groups into a single rolling checkpoint', async () => {
+      await serverDB.insert(messages).values([
+        { id: 'msg-roll-1', content: 'Message 1', role: 'user', topicId, userId },
+        { id: 'msg-roll-2', content: 'Message 2', role: 'assistant', topicId, userId },
+        { id: 'msg-roll-3', content: 'Message 3', role: 'user', topicId, userId },
+      ]);
+
+      const oldGroupId = await compressionRepo.createCompressionGroup({
+        content: 'Old summary',
+        messageIds: ['msg-roll-1', 'msg-roll-2'],
+        metadata: { originalMessageCount: 2 },
+        topicId,
+      });
+
+      const newGroupId = await compressionRepo.createCompressionGroup({
+        content: '...',
+        messageIds: ['msg-roll-3'],
+        metadata: { originalMessageCount: 1 },
+        topicId,
+      });
+
+      await compressionRepo.commitCompressionCheckpoint({
+        content: '### Context\nMerged',
+        groupId: newGroupId,
+        mergeGroupIds: [oldGroupId],
+        messageIds: ['msg-roll-1', 'msg-roll-2', 'msg-roll-3'],
+        metadata: {
+          snapshotVersion: 2,
+          mergedGroupIds: [oldGroupId],
+        },
+        topicId,
+      });
+
+      const groups = await compressionRepo.getCompressionGroups(topicId);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe(newGroupId);
+      expect(groups[0].content).toBe('### Context\nMerged');
+
+      const compressed = await compressionRepo.getCompressedMessages(newGroupId);
+      expect(compressed.map((m) => m.id).sort()).toEqual([
+        'msg-roll-1',
+        'msg-roll-2',
+        'msg-roll-3',
+      ]);
+    });
+
+    it('migrates old-group originals when only new message ids are provided (production shape)', async () => {
+      await serverDB.insert(messages).values([
+        { id: 'msg-prod-1', content: 'Old 1', role: 'user', topicId, userId },
+        { id: 'msg-prod-2', content: 'Old 2', role: 'assistant', topicId, userId },
+        { id: 'msg-prod-3', content: 'New', role: 'user', topicId, userId },
+      ]);
+
+      const oldGroupId = await compressionRepo.createCompressionGroup({
+        content: 'Old summary',
+        messageIds: ['msg-prod-1', 'msg-prod-2'],
+        metadata: { originalMessageCount: 2 },
+        topicId,
+      });
+
+      const newGroupId = await compressionRepo.createCompressionGroup({
+        content: '...',
+        messageIds: ['msg-prod-3'],
+        metadata: { originalMessageCount: 1 },
+        topicId,
+      });
+
+      // Production path: executor only knows uncompressed ids + mergeGroupIds
+      await compressionRepo.commitCompressionCheckpoint({
+        content: '### Context\nMerged prod',
+        groupId: newGroupId,
+        mergeGroupIds: [oldGroupId],
+        messageIds: ['msg-prod-3'],
+        metadata: { snapshotVersion: 2, mergedGroupIds: [oldGroupId] },
+        topicId,
+      });
+
+      const groups = await compressionRepo.getCompressionGroups(topicId);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe(newGroupId);
+
+      const compressed = await compressionRepo.getCompressedMessages(newGroupId);
+      expect(compressed.map((m) => m.id).sort()).toEqual([
+        'msg-prod-1',
+        'msg-prod-2',
+        'msg-prod-3',
+      ]);
+
+      // Originals must still exist in messages table (not cascade-deleted)
+      const remaining = await serverDB
+        .select({ id: messages.id })
+        .from(messages)
+        .where(inArray(messages.id, ['msg-prod-1', 'msg-prod-2', 'msg-prod-3']));
+      expect(remaining).toHaveLength(3);
     });
   });
 

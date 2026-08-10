@@ -13,10 +13,11 @@
     "test:update": "vitest -u"
   },
   "dependencies": {
-    "@lobechat/const": "workspace:*"
+    "@lobechat/const": "workspace:*",
+    "@lobechat/types": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@lobechat/types": "workspace:*",
     "tsx": "^4.22.4"
   }
 }

@@ -1428,13 +1428,25 @@ export class MessageModel {
         // Get the last message ID for parent-child linking in conversation-flow
         const lastMessageId = groupMsgIds.at(-1);
 
+        // Prefer metadata jsonb; merge description JSON for legacy stats / snapshot readers
+        let compressionMeta =
+          (group.metadata as Record<string, unknown> | null) || ({} as Record<string, unknown>);
+        if (group.description) {
+          try {
+            const fromDescription = JSON.parse(group.description) as Record<string, unknown>;
+            compressionMeta = { ...fromDescription, ...compressionMeta };
+          } catch {
+            // ignore non-JSON description
+          }
+        }
+
         return {
           compressedMessages,
           content: group.content,
           createdAt: group.createdAt,
           id: group.id,
           lastMessageId,
-          metadata: group.metadata,
+          metadata: compressionMeta,
           pinnedMessages,
           role: 'compressedGroup',
           topicId: group.topicId,
