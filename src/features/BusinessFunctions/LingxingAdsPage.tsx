@@ -6,7 +6,7 @@ import {
   formatNegativeLines,
   resolveCpoCaps,
 } from '@lobechat/utils';
-import { Block, Flexbox, Highlighter, Input, Text } from '@lobehub/ui';
+import { Block, Flexbox, Input, Text } from '@lobehub/ui';
 import { Button, toast } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { ArrowLeftIcon, CopyIcon } from 'lucide-react';
@@ -351,12 +351,6 @@ const LingxingAdsPage = memo(() => {
               </Flexbox>
 
               <AnalysisBody analysis={result.analysis} />
-
-              <SectionCard title={t('businessFunctions.lingxingAds.markdownPreview')}>
-                <Highlighter language={'markdown'} variant={'borderless'}>
-                  {result.markdown}
-                </Highlighter>
-              </SectionCard>
             </Flexbox>
           ) : null}
         </Flexbox>
