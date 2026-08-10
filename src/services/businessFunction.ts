@@ -3,6 +3,7 @@ import { lambdaClient } from '@/libs/trpc/client';
 export type LingxingAnalyzeParams = {
   campaignName: string;
   country: string;
+  model: { model: string; provider: string };
   sku: string;
   workspaceId: string;
 };

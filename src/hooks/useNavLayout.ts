@@ -63,6 +63,8 @@ export const useNavLayout = (): NavLayout => {
           url: '/',
         },
         {
+          // Temporarily hide tasks entry; deep links /tasks still work.
+          hidden: true,
           icon: getRouteById('tasks')!.icon,
           key: SidebarTabKey.Tasks,
           title: t('tab.tasks'),
@@ -75,6 +77,8 @@ export const useNavLayout = (): NavLayout => {
           url: '/functions',
         },
         {
+          // Temporarily hide pages (文稿) entry; deep links still work.
+          hidden: true,
           icon: getRouteById('page')!.icon,
           key: SidebarTabKey.Pages,
           title: t('tab.pages'),

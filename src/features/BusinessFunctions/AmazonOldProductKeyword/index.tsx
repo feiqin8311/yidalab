@@ -7,7 +7,6 @@ import { createStaticStyles, cssVar } from 'antd-style';
 import {
   ArrowLeftIcon,
   DownloadIcon,
-  FileSpreadsheetIcon,
   Loader2Icon,
   PlusIcon,
   RefreshCwIcon,
@@ -22,6 +21,7 @@ import useSWR from 'swr';
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
 import ModelSelect from '@/features/ModelSelect';
+import NavHeader from '@/features/NavHeader';
 import { buildWorkspaceAwarePath } from '@/features/Workspace/workspaceAwarePath';
 import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -29,11 +29,14 @@ import { businessFunctionService } from '@/services/businessFunction';
 
 const styles = createStaticStyles(({ css }) => ({
   page: css`
+    overflow-y: auto;
+    flex: 1;
+
     width: 100%;
     max-width: 1200px;
     margin-block: 0;
     margin-inline: auto;
-    padding-block: 24px 48px;
+    padding-block: 16px 48px;
     padding-inline: 16px;
   `,
   wide: css`
@@ -119,20 +122,6 @@ const styles = createStaticStyles(({ css }) => ({
   navBtn: css`
     font-size: 12px;
   `,
-  iconWrap: css`
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
-
-    color: ${cssVar.colorPrimary};
-
-    background: ${cssVar.colorPrimaryBg};
-  `,
   statusBadge: css`
     display: inline-flex;
 
@@ -213,107 +202,117 @@ export const AmazonOldProductKeywordPage = memo(() => {
 
   if (!workspaceId) {
     return (
-      <div className={styles.page}>
-        <Text type={'secondary'}>{t('businessFunctions.amazonKw.error.workspaceOnly')}</Text>
-      </div>
+      <Flexbox flex={1} height={'100%'}>
+        <NavHeader
+          styles={{ left: { paddingLeft: 4 } }}
+          left={
+            <Text style={{ paddingInlineStart: 4 }} weight={500}>
+              {t('businessFunctions.amazonKw.name')}
+            </Text>
+          }
+        />
+        <div className={styles.page}>
+          <Text type={'secondary'}>{t('businessFunctions.amazonKw.error.workspaceOnly')}</Text>
+        </div>
+      </Flexbox>
     );
   }
 
   return (
-    <div className={styles.page}>
-      <Flexbox gap={20}>
-        <Flexbox horizontal align={'center'} gap={12}>
-          <WorkspaceLink to="/functions">
-            <Button icon={ArrowLeftIcon} size={'small'} type={'text'} />
-          </WorkspaceLink>
-          <div className={styles.iconWrap}>
-            <Icon icon={FileSpreadsheetIcon} size={20} />
-          </div>
-          <Flexbox flex={1} gap={2}>
-            <Text fontSize={18} weight={600}>
-              {t('businessFunctions.amazonKw.name')}
-            </Text>
-            <Text fontSize={13} type={'secondary'}>
-              {t('businessFunctions.amazonKw.detailDesc')}
-            </Text>
+    <Flexbox flex={1} height={'100%'}>
+      <NavHeader
+        styles={{ left: { gap: 4, paddingLeft: 4 } }}
+        left={
+          <Flexbox horizontal align={'center'} gap={4}>
+            <WorkspaceLink to={'/functions'}>
+              <Button icon={ArrowLeftIcon} size={'small'} type={'text'} />
+            </WorkspaceLink>
+            <Text weight={500}>{t('businessFunctions.amazonKw.name')}</Text>
           </Flexbox>
-          {!mobile && (
+        }
+        right={
+          !mobile ? (
             <Button icon={PlusIcon} type={'primary'} onClick={openCreate}>
               {t('businessFunctions.amazonKw.create')}
             </Button>
+          ) : undefined
+        }
+      />
+      <div className={styles.page}>
+        <Flexbox gap={20}>
+          {creating && !mobile && (
+            <CreateWizard
+              workspaceId={workspaceId}
+              onCancel={() => setCreating(false)}
+              onStarted={(runId) => {
+                setCreating(false);
+                void mutate();
+                navigate(
+                  buildWorkspaceAwarePath(
+                    `/functions/amazon-old-product-keyword-analysis/${runId}`,
+                    workspaceSlug,
+                  ),
+                );
+              }}
+            />
           )}
-        </Flexbox>
 
-        {creating && !mobile && (
-          <CreateWizard
-            workspaceId={workspaceId}
-            onCancel={() => setCreating(false)}
-            onStarted={(runId) => {
-              setCreating(false);
-              void mutate();
-              navigate(
-                buildWorkspaceAwarePath(
-                  `/functions/amazon-old-product-keyword-analysis/${runId}`,
-                  workspaceSlug,
-                ),
-              );
-            }}
-          />
-        )}
-
-        <Card
-          title={t('businessFunctions.amazonKw.history')}
-          extra={
-            <Button icon={RefreshCwIcon} size={'small'} type={'text'} onClick={() => mutate()} />
-          }
-        >
-          {isLoading && <Text type={'secondary'}>…</Text>}
-          {!isLoading && !data?.rows?.length && (
-            <Text type={'secondary'}>{t('businessFunctions.amazonKw.emptyHistory')}</Text>
-          )}
-          <Flexbox gap={8}>
-            {(data?.rows ?? []).map((run: any) => (
-              <Block key={run.id} padding={12} variant={'outlined'}>
-                <Flexbox horizontal align={'center'} gap={12} justify={'space-between'}>
-                  <Flexbox gap={4}>
-                    <Text weight={600}>
-                      {run.categoryName || '-'} · {run.mainAsin || '-'}
-                    </Text>
-                    <Flexbox horizontal gap={8}>
-                      <StatusText status={run.status} />
-                      <Text fontSize={12} type={'secondary'}>
-                        {run.progress?.message || run.stage}
+          <Card
+            title={t('businessFunctions.amazonKw.history')}
+            extra={
+              <Button icon={RefreshCwIcon} size={'small'} type={'text'} onClick={() => mutate()} />
+            }
+          >
+            {isLoading && <Text type={'secondary'}>…</Text>}
+            {!isLoading && !data?.rows?.length && (
+              <Text type={'secondary'}>{t('businessFunctions.amazonKw.emptyHistory')}</Text>
+            )}
+            <Flexbox gap={8}>
+              {(data?.rows ?? []).map((run: any) => (
+                <Block key={run.id} padding={12} variant={'outlined'}>
+                  <Flexbox horizontal align={'center'} gap={12} justify={'space-between'}>
+                    <Flexbox gap={4}>
+                      <Text weight={600}>
+                        {run.categoryName || '-'} · {run.mainAsin || '-'}
                       </Text>
+                      <Flexbox horizontal gap={8}>
+                        <StatusText status={run.status} />
+                        <Text fontSize={12} type={'secondary'}>
+                          {run.progress?.message || run.stage}
+                        </Text>
+                      </Flexbox>
+                    </Flexbox>
+                    <Flexbox horizontal gap={8}>
+                      <WorkspaceLink
+                        to={`/functions/amazon-old-product-keyword-analysis/${run.id}`}
+                      >
+                        <Button size={'small'}>{t('businessFunctions.amazonKw.open')}</Button>
+                      </WorkspaceLink>
+                      {['draft', 'failed', 'succeeded', 'canceled'].includes(run.status) && (
+                        <Button
+                          danger
+                          icon={Trash2Icon}
+                          size={'small'}
+                          type={'text'}
+                          onClick={async () => {
+                            if (!confirm(t('businessFunctions.amazonKw.confirmDelete'))) return;
+                            await businessFunctionService.amazonKw.delete({
+                              workspaceId,
+                              runId: run.id,
+                            });
+                            void mutate();
+                          }}
+                        />
+                      )}
                     </Flexbox>
                   </Flexbox>
-                  <Flexbox horizontal gap={8}>
-                    <WorkspaceLink to={`/functions/amazon-old-product-keyword-analysis/${run.id}`}>
-                      <Button size={'small'}>{t('businessFunctions.amazonKw.open')}</Button>
-                    </WorkspaceLink>
-                    {['draft', 'failed', 'succeeded', 'canceled'].includes(run.status) && (
-                      <Button
-                        danger
-                        icon={Trash2Icon}
-                        size={'small'}
-                        type={'text'}
-                        onClick={async () => {
-                          if (!confirm(t('businessFunctions.amazonKw.confirmDelete'))) return;
-                          await businessFunctionService.amazonKw.delete({
-                            workspaceId,
-                            runId: run.id,
-                          });
-                          void mutate();
-                        }}
-                      />
-                    )}
-                  </Flexbox>
-                </Flexbox>
-              </Block>
-            ))}
-          </Flexbox>
-        </Card>
-      </Flexbox>
-    </div>
+                </Block>
+              ))}
+            </Flexbox>
+          </Card>
+        </Flexbox>
+      </div>
+    </Flexbox>
   );
 });
 
@@ -687,226 +686,248 @@ export const AmazonOldProductKeywordRunPage = memo(() => {
 
   if (!workspaceId || !runId) {
     return (
-      <div className={styles.page}>
-        <Text type={'secondary'}>{t('businessFunctions.amazonKw.error.workspaceOnly')}</Text>
-      </div>
+      <Flexbox flex={1} height={'100%'}>
+        <NavHeader
+          styles={{ left: { paddingLeft: 4 } }}
+          left={
+            <Text style={{ paddingInlineStart: 4 }} weight={500}>
+              {t('businessFunctions.amazonKw.name')}
+            </Text>
+          }
+        />
+        <div className={styles.page}>
+          <Text type={'secondary'}>{t('businessFunctions.amazonKw.error.workspaceOnly')}</Text>
+        </div>
+      </Flexbox>
     );
   }
 
   const isRunning = run && active.includes(run.status);
+  const titleText = `${run?.categoryName || t('businessFunctions.amazonKw.name')} · ${run?.mainAsin || ''}`;
 
   return (
-    <div className={`${styles.page} ${styles.wide}`}>
-      <Flexbox gap={16}>
-        <Flexbox horizontal align={'center'} gap={12}>
-          <WorkspaceLink to="/functions/amazon-old-product-keyword-analysis">
-            <Button icon={ArrowLeftIcon} size={'small'} type={'text'} />
-          </WorkspaceLink>
-          <Flexbox flex={1} gap={2}>
-            <Text fontSize={18} weight={600}>
-              {run?.categoryName || t('businessFunctions.amazonKw.name')} · {run?.mainAsin}
-            </Text>
-            <Flexbox horizontal gap={8}>
-              <StatusText status={run?.status || '…'} />
-              <Text fontSize={12} type={'secondary'}>
-                {run?.progress?.message || run?.stage}
-                {run?.progress?.batchTotal
-                  ? ` · batch ${run.progress.batchIndex ?? 0}/${run.progress.batchTotal}`
-                  : ''}
-              </Text>
+    <Flexbox flex={1} height={'100%'}>
+      <NavHeader
+        styles={{ left: { gap: 4, paddingLeft: 4 } }}
+        left={
+          <Flexbox horizontal align={'center'} gap={4}>
+            <WorkspaceLink to={'/functions/amazon-old-product-keyword-analysis'}>
+              <Button icon={ArrowLeftIcon} size={'small'} type={'text'} />
+            </WorkspaceLink>
+            <Flexbox gap={0}>
+              <Text weight={500}>{titleText}</Text>
+              <Flexbox horizontal gap={8}>
+                <StatusText status={run?.status || '…'} />
+                <Text fontSize={12} type={'secondary'}>
+                  {run?.progress?.message || run?.stage}
+                  {run?.progress?.batchTotal
+                    ? ` · batch ${run.progress.batchIndex ?? 0}/${run.progress.batchTotal}`
+                    : ''}
+                </Text>
+              </Flexbox>
             </Flexbox>
           </Flexbox>
+        }
+        right={
+          <Flexbox horizontal gap={8}>
+            {isRunning && (
+              <Button
+                size={'small'}
+                onClick={async () => {
+                  await businessFunctionService.amazonKw.cancel({ workspaceId, runId });
+                  void mutate();
+                }}
+              >
+                {t('businessFunctions.amazonKw.cancel')}
+              </Button>
+            )}
+            {run?.status === 'failed' && (
+              <Button
+                icon={RefreshCwIcon}
+                size={'small'}
+                onClick={async () => {
+                  await businessFunctionService.amazonKw.retry({ workspaceId, runId });
+                  void mutate();
+                }}
+              >
+                {t('businessFunctions.amazonKw.retry')}
+              </Button>
+            )}
+            {run?.status === 'succeeded' && (
+              <Button
+                icon={DownloadIcon}
+                loading={exporting}
+                size={'small'}
+                type={'primary'}
+                onClick={() => void onExport()}
+              >
+                {t('businessFunctions.amazonKw.export')}
+              </Button>
+            )}
+          </Flexbox>
+        }
+      />
+      <div className={`${styles.page} ${styles.wide}`}>
+        <Flexbox gap={16}>
           {isRunning && (
-            <Button
-              onClick={async () => {
-                await businessFunctionService.amazonKw.cancel({ workspaceId, runId });
-                void mutate();
-              }}
-            >
-              {t('businessFunctions.amazonKw.cancel')}
-            </Button>
-          )}
-          {run?.status === 'failed' && (
-            <Button
-              icon={RefreshCwIcon}
-              onClick={async () => {
-                await businessFunctionService.amazonKw.retry({ workspaceId, runId });
-                void mutate();
-              }}
-            >
-              {t('businessFunctions.amazonKw.retry')}
-            </Button>
-          )}
-          {run?.status === 'succeeded' && (
-            <Button
-              icon={DownloadIcon}
-              loading={exporting}
-              type={'primary'}
-              onClick={() => void onExport()}
-            >
-              {t('businessFunctions.amazonKw.export')}
-            </Button>
-          )}
-        </Flexbox>
-
-        {isRunning && (
-          <Card title={t('businessFunctions.amazonKw.progress')}>
-            <Flexbox horizontal align={'center'} gap={12}>
-              <Icon spin icon={Loader2Icon} />
-              <Text>
-                {run?.progress?.percent ?? 0}% · {run?.progress?.message}
-              </Text>
-            </Flexbox>
-          </Card>
-        )}
-
-        {run?.status === 'failed' && (
-          <Card title="Error">
-            <Text type={'danger'}>{run.error?.message || 'failed'}</Text>
-          </Card>
-        )}
-
-        {run?.status === 'succeeded' && (
-          <>
-            <Card title={t('businessFunctions.amazonKw.views')}>
-              <Flexbox gap={10}>
-                <Text fontSize={12} type={'secondary'}>
-                  决策
+            <Card title={t('businessFunctions.amazonKw.progress')}>
+              <Flexbox horizontal align={'center'} gap={12}>
+                <Icon spin icon={Loader2Icon} />
+                <Text>
+                  {run?.progress?.percent ?? 0}% · {run?.progress?.message}
                 </Text>
-                <div className={styles.nav}>
-                  {DECISION_VIEWS.map((id) => (
-                    <Button
-                      className={styles.navBtn}
-                      key={id}
-                      size={'small'}
-                      type={viewId === id ? 'primary' : 'default'}
-                      onClick={() => {
-                        setViewId(id);
-                        setPage(0);
-                      }}
-                    >
-                      {VIEW_SHEET_NAMES[id]}
-                    </Button>
-                  ))}
-                </div>
-                <Text fontSize={12} type={'secondary'}>
-                  分析
-                </Text>
-                <div className={styles.nav}>
-                  {ANALYSIS_VIEWS.map((id) => (
-                    <Button
-                      className={styles.navBtn}
-                      key={id}
-                      size={'small'}
-                      type={viewId === id ? 'primary' : 'default'}
-                      onClick={() => {
-                        setViewId(id);
-                        setPage(0);
-                      }}
-                    >
-                      {VIEW_SHEET_NAMES[id]}
-                    </Button>
-                  ))}
-                </div>
-                <Text fontSize={12} type={'secondary'}>
-                  说明
-                </Text>
-                <div className={styles.nav}>
-                  {META_VIEWS.map((id) => (
-                    <Button
-                      className={styles.navBtn}
-                      key={id}
-                      size={'small'}
-                      type={viewId === id ? 'primary' : 'default'}
-                      onClick={() => {
-                        setViewId(id);
-                        setPage(0);
-                      }}
-                    >
-                      {VIEW_SHEET_NAMES[id]}
-                    </Button>
-                  ))}
-                </div>
               </Flexbox>
             </Card>
+          )}
 
-            <Card
-              title={VIEW_SHEET_NAMES[viewId]}
-              extra={
-                <Input
-                  placeholder="搜索"
-                  prefix={<Icon icon={SearchIcon} size={14} />}
-                  style={{ width: 200 }}
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(0);
-                  }}
-                />
-              }
-            >
-              {viewId === 'overview' && rowsData?.rows?.[0]?.data ? (
-                <OverviewPanel data={rowsData.rows[0].data as any} />
-              ) : (
-                <>
-                  <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                      <thead>
-                        <tr>
-                          {columns.map((c) => (
-                            <th key={c}>{c}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rowsLoading && (
+          {run?.status === 'failed' && (
+            <Card title="Error">
+              <Text type={'danger'}>{run.error?.message || 'failed'}</Text>
+            </Card>
+          )}
+
+          {run?.status === 'succeeded' && (
+            <>
+              <Card title={t('businessFunctions.amazonKw.views')}>
+                <Flexbox gap={10}>
+                  <Text fontSize={12} type={'secondary'}>
+                    决策
+                  </Text>
+                  <div className={styles.nav}>
+                    {DECISION_VIEWS.map((id) => (
+                      <Button
+                        className={styles.navBtn}
+                        key={id}
+                        size={'small'}
+                        type={viewId === id ? 'primary' : 'default'}
+                        onClick={() => {
+                          setViewId(id);
+                          setPage(0);
+                        }}
+                      >
+                        {VIEW_SHEET_NAMES[id]}
+                      </Button>
+                    ))}
+                  </div>
+                  <Text fontSize={12} type={'secondary'}>
+                    分析
+                  </Text>
+                  <div className={styles.nav}>
+                    {ANALYSIS_VIEWS.map((id) => (
+                      <Button
+                        className={styles.navBtn}
+                        key={id}
+                        size={'small'}
+                        type={viewId === id ? 'primary' : 'default'}
+                        onClick={() => {
+                          setViewId(id);
+                          setPage(0);
+                        }}
+                      >
+                        {VIEW_SHEET_NAMES[id]}
+                      </Button>
+                    ))}
+                  </div>
+                  <Text fontSize={12} type={'secondary'}>
+                    说明
+                  </Text>
+                  <div className={styles.nav}>
+                    {META_VIEWS.map((id) => (
+                      <Button
+                        className={styles.navBtn}
+                        key={id}
+                        size={'small'}
+                        type={viewId === id ? 'primary' : 'default'}
+                        onClick={() => {
+                          setViewId(id);
+                          setPage(0);
+                        }}
+                      >
+                        {VIEW_SHEET_NAMES[id]}
+                      </Button>
+                    ))}
+                  </div>
+                </Flexbox>
+              </Card>
+
+              <Card
+                title={VIEW_SHEET_NAMES[viewId]}
+                extra={
+                  <Input
+                    placeholder="搜索"
+                    prefix={<Icon icon={SearchIcon} size={14} />}
+                    style={{ width: 200 }}
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(0);
+                    }}
+                  />
+                }
+              >
+                {viewId === 'overview' && rowsData?.rows?.[0]?.data ? (
+                  <OverviewPanel data={rowsData.rows[0].data as any} />
+                ) : (
+                  <>
+                    <div className={styles.tableWrap}>
+                      <table className={styles.table}>
+                        <thead>
                           <tr>
-                            <td colSpan={columns.length || 1}>…</td>
-                          </tr>
-                        )}
-                        {(rowsData?.rows ?? []).map((row: any) => (
-                          <tr key={row.id}>
                             {columns.map((c) => (
-                              <td key={c} title={String(getPath(row.data, c) ?? '')}>
-                                {formatCell(getPath(row.data, c))}
-                              </td>
+                              <th key={c}>{c}</th>
                             ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <Flexbox horizontal gap={8} justify={'space-between'} style={{ marginTop: 12 }}>
-                    <Text fontSize={12} type={'secondary'}>
-                      共 {rowsData?.total ?? 0} 行
-                    </Text>
-                    <Flexbox horizontal gap={8}>
-                      <Button
-                        disabled={page <= 0}
-                        size={'small'}
-                        onClick={() => setPage((p) => Math.max(0, p - 1))}
-                      >
-                        上一页
-                      </Button>
-                      <Text fontSize={12}>
-                        {page + 1} / {Math.max(1, Math.ceil((rowsData?.total ?? 0) / pageSize))}
+                        </thead>
+                        <tbody>
+                          {rowsLoading && (
+                            <tr>
+                              <td colSpan={columns.length || 1}>…</td>
+                            </tr>
+                          )}
+                          {(rowsData?.rows ?? []).map((row: any) => (
+                            <tr key={row.id}>
+                              {columns.map((c) => (
+                                <td key={c} title={String(getPath(row.data, c) ?? '')}>
+                                  {formatCell(getPath(row.data, c))}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <Flexbox horizontal gap={8} justify={'space-between'} style={{ marginTop: 12 }}>
+                      <Text fontSize={12} type={'secondary'}>
+                        共 {rowsData?.total ?? 0} 行
                       </Text>
-                      <Button
-                        disabled={(page + 1) * pageSize >= (rowsData?.total ?? 0)}
-                        size={'small'}
-                        onClick={() => setPage((p) => p + 1)}
-                      >
-                        下一页
-                      </Button>
+                      <Flexbox horizontal gap={8}>
+                        <Button
+                          disabled={page <= 0}
+                          size={'small'}
+                          onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        >
+                          上一页
+                        </Button>
+                        <Text fontSize={12}>
+                          {page + 1} / {Math.max(1, Math.ceil((rowsData?.total ?? 0) / pageSize))}
+                        </Text>
+                        <Button
+                          disabled={(page + 1) * pageSize >= (rowsData?.total ?? 0)}
+                          size={'small'}
+                          onClick={() => setPage((p) => p + 1)}
+                        >
+                          下一页
+                        </Button>
+                      </Flexbox>
                     </Flexbox>
-                  </Flexbox>
-                </>
-              )}
-            </Card>
-          </>
-        )}
-      </Flexbox>
-    </div>
+                  </>
+                )}
+              </Card>
+            </>
+          )}
+        </Flexbox>
+      </div>
+    </Flexbox>
   );
 });
 

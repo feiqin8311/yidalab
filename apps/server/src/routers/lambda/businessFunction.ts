@@ -13,7 +13,7 @@ const businessProcedure = authedProcedure.use(serverDatabase).use(async ({ ctx, 
   next({
     ctx: {
       companyModel: new CompanyModel(ctx.serverDB, ctx.userId),
-      lingxingAdsService: new LingxingAdsService(ctx.serverDB),
+      lingxingAdsService: new LingxingAdsService(ctx.serverDB, ctx.userId),
     },
   }),
 );
@@ -40,6 +40,7 @@ export const businessFunctionRouter = router({
         workspaceIdSchema.extend({
           campaignName: nonEmpty.max(500),
           country: nonEmpty.max(100),
+          model: z.object({ provider: nonEmpty.max(100), model: nonEmpty.max(200) }),
           sku: nonEmpty.max(200),
         }),
       )
@@ -48,6 +49,7 @@ export const businessFunctionRouter = router({
         const data = await ctx.lingxingAdsService.analyze({
           campaignName: input.campaignName,
           country: input.country,
+          model: input.model,
           sku: input.sku,
           workspaceId: input.workspaceId,
         });

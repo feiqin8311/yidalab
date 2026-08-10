@@ -587,6 +587,7 @@ export default {
   'businessFunctions.lingxingAds.form.campaignPlaceholder': 'Full campaign name or ID',
   'businessFunctions.lingxingAds.form.sku': 'SKU',
   'businessFunctions.lingxingAds.form.skuPlaceholder': 'SKU',
+  'businessFunctions.lingxingAds.form.model': 'AI model',
   'businessFunctions.lingxingAds.form.submit': 'Analyze',
   'businessFunctions.lingxingAds.form.retry': 'Retry',
   'businessFunctions.lingxingAds.loading': 'Analyzing campaign…',
@@ -605,7 +606,8 @@ export default {
   'businessFunctions.lingxingAds.sections.negativeAd': '6) Campaign negatives',
   'businessFunctions.lingxingAds.sections.negativeAdGroups': '7) SKU-wide negatives',
   'businessFunctions.lingxingAds.sections.restore': '8) Restore recommended params',
-  'businessFunctions.lingxingAds.error.required': 'Country, campaign, and SKU are required.',
+  'businessFunctions.lingxingAds.error.required':
+    'Country, campaign, SKU, and AI model are required.',
   'businessFunctions.lingxingAds.error.workspaceOnly':
     'Open a company workspace with lingxing MCP configured.',
   'businessFunctions.lingxingAds.error.notConfigured':
