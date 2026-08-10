@@ -112,7 +112,7 @@ describe('LingxingAdsService', () => {
 
     expect(callTool).toHaveBeenCalledTimes(1);
     expect(callTool).toHaveBeenCalledWith({
-      argsStr: { campaign_name: '活动A', country: '美国', sku: 'SKU1' },
+      argsStr: JSON.stringify({ campaign_name: '活动A', country: '美国', sku: 'SKU1' }),
       clientParams: {
         name: 'company.mcp.lingxing-mcp',
         type: 'http',

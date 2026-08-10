@@ -111,12 +111,13 @@ export class LingxingAdsService {
 
     let toolResult: unknown;
     try {
+      // argsStr must be a JSON string — objects are not re-stringified by safeParseJSON
       toolResult = await mcpService.callTool({
-        argsStr: {
+        argsStr: JSON.stringify({
           campaign_name: campaignName,
           country,
           sku,
-        },
+        }),
         clientParams,
         toolName: LINGXING_ANALYZE_TOOL,
       });
