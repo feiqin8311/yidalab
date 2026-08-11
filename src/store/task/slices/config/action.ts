@@ -190,9 +190,18 @@ export class TaskConfigSliceActionImpl {
       if (!detail?.schedule?.pattern) {
         update.schedulePattern = DEFAULT_SCHEDULE_PATTERN;
         update.scheduleTimezone = resolveDefaultTimezone();
+        update.scheduleKind = 'cron';
       } else if (!detail?.schedule?.timezone) {
         update.scheduleTimezone = resolveDefaultTimezone();
       }
+      if (!(detail as { scheduleKind?: string } | undefined)?.scheduleKind) {
+        update.scheduleKind = 'cron';
+      }
+    }
+    if (mode === 'event') {
+      update.eventSourceType =
+        (detail as { eventSourceType?: string } | undefined)?.eventSourceType ??
+        'agent_run_completed';
     }
 
     // Run through OptimisticEngine so concurrent toggles for the same task

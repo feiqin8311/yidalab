@@ -325,7 +325,40 @@ export class TaskLifecycleService {
     // been mutated by the branches above) and decide whether to publish the
     // next tick.
     const finalTask = await this.taskModel.findById(taskId);
-    if (finalTask) await this.maybeRearmHeartbeat(finalTask, reason);
+
+    // Always try V2 ledger completion first (works in off/drain too so in-flight
+    // ops can close). Then legacy heartbeat re-arm only if V2 does not own the
+    // workspace.
+    if (finalTask) {
+      try {
+        const { onAutomationOperationComplete, shouldV2BlockLegacy } =
+          await import('@/server/services/taskAutomation');
+        const closedByV2 = await onAutomationOperationComplete({
+          db: this.db,
+          errorMessage,
+          operationId: params.operationId,
+          reason,
+          task: finalTask,
+        });
+        if (!closedByV2 && !shouldV2BlockLegacy(finalTask.workspaceId)) {
+          await this.maybeRearmHeartbeat(finalTask, reason);
+        }
+      } catch (error) {
+        log('automation completion hook failed for task=%s: %O', taskIdentifier, error);
+        // Fall back to legacy re-arm only when V2 does not own this workspace.
+        try {
+          const { shouldV2BlockLegacy } = await import('@/server/services/taskAutomation/mode');
+          if (
+            finalTask.automationMode === 'heartbeat' &&
+            !shouldV2BlockLegacy(finalTask.workspaceId)
+          ) {
+            await this.maybeRearmHeartbeat(finalTask, reason);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   }
 
   /**
@@ -454,6 +487,10 @@ export class TaskLifecycleService {
    *     resolves the urgent error brief)
    */
   private async maybeRearmHeartbeat(task: TaskItem, reason: string): Promise<void> {
+    // Defense-in-depth: V2 owns next_run_at for in-scope workspaces.
+    const { shouldV2BlockLegacy } = await import('@/server/services/taskAutomation/mode');
+    if (shouldV2BlockLegacy(task.workspaceId)) return;
+
     if (task.automationMode !== 'heartbeat') return;
     if (!task.heartbeatInterval || task.heartbeatInterval <= 0) return;
     if (isTerminal(task.status)) return;
@@ -505,6 +542,7 @@ export class TaskLifecycleService {
         delay: task.heartbeatInterval,
         taskId: task.id,
         userId: this.userId,
+        workspaceId: task.workspaceId,
       });
 
       await this.taskModel.updateContext(task.id, {

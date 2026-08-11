@@ -392,6 +392,11 @@ export interface OperationCreationParams {
    * Registered once, auto-adapt to local (in-memory) or production (webhook) mode
    */
   hooks?: AgentHook[];
+  /**
+   * Optional stable idempotency key written to agent_operations.idempotency_key.
+   * Concurrent createOperation with the same key reuses the existing operation.
+   */
+  idempotencyKey?: string;
   initialContext: AgentRuntimeContext;
   initialMessages?: any[];
   /** Initial step count offset for resumed operations (accumulated from previous runs) */

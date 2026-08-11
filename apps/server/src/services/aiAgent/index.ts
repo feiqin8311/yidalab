@@ -367,6 +367,12 @@ interface InternalExecAgentParams extends ExecAgentParams {
    * instead of answering itself. Mirrors the client runtime's mention wiring.
    */
   mentionedAgents?: RuntimeMentionedAgent[];
+  /**
+   * Stable idempotency key for agent_operations. When set, a concurrent or
+   * retried execAgent for the same key returns the existing operation instead
+   * of creating a second one (task automation: `task-auto:${runId}:${attempt}`).
+   */
+  operationIdempotencyKey?: string;
   /** Parent message ID to continue from. Only takes effect when resume is true */
   parentMessageId?: string;
   queueRetries?: number;
@@ -972,6 +978,7 @@ export class AiAgentService {
       mentionedAgents,
       suppressUserMessage,
       ephemeralUserMessage,
+      operationIdempotencyKey,
     } = params;
 
     // Validate that either agentId or slug is provided
@@ -983,6 +990,31 @@ export class AiAgentService {
     const identifier = agentId || slug!;
 
     log('execAgent: identifier=%s, prompt=%s', identifier, prompt.slice(0, 50));
+
+    // Idempotent short-circuit: same automation attempt must not spawn a second op.
+    if (operationIdempotencyKey) {
+      const existing = await this.agentOperationModel.findByIdempotencyKey(operationIdempotencyKey);
+      if (existing) {
+        log(
+          'execAgent: reusing operation %s for idempotencyKey=%s',
+          existing.id,
+          operationIdempotencyKey,
+        );
+        return {
+          agentId: existing.agentId ?? '',
+          assistantMessageId: '',
+          autoStarted: false,
+          createdAt: (existing.createdAt ?? new Date()).toISOString(),
+          message: 'Agent operation already exists for idempotency key',
+          operationId: existing.id,
+          status: existing.status,
+          success: true,
+          timestamp: new Date().toISOString(),
+          topicId: existing.topicId ?? '',
+          userMessageId: '',
+        };
+      }
+    }
 
     const operationTaskId = await this.resolveOperationTaskId(taskId ?? appContext?.taskId);
 
@@ -3700,6 +3732,7 @@ export class AiAgentService {
         modelRuntimeConfig: { model, provider },
         hooks,
         operationId,
+        ...(operationIdempotencyKey ? { idempotencyKey: operationIdempotencyKey } : {}),
         parentOperationId,
         signal,
         queueRetries,
@@ -3719,13 +3752,21 @@ export class AiAgentService {
         workspaceId: this.workspaceId,
       });
 
-      log('execAgent: created operation %s (autoStarted: %s)', operationId, result.autoStarted);
+      // Prefer the resolved id from createOperation (idempotency may return an
+      // existing row's id if a concurrent worker won the insert race).
+      const resolvedOperationId = result.operationId || operationId;
+
+      log(
+        'execAgent: created operation %s (autoStarted: %s)',
+        resolvedOperationId,
+        result.autoStarted,
+      );
 
       // Persist running operation to topic metadata for reconnect after page reload
       await this.topicModel.updateMetadata(topicId, {
         runningOperation: {
           assistantMessageId: assistantMessageRecord.id,
-          operationId,
+          operationId: resolvedOperationId,
           scope: appContext?.scope ?? undefined,
           threadId: appContext?.threadId ?? undefined,
         },
@@ -3746,7 +3787,7 @@ export class AiAgentService {
         createdAt: new Date().toISOString(),
         message: 'Agent operation created successfully',
         messageId: result.messageId,
-        operationId,
+        operationId: resolvedOperationId,
         status: 'created',
         success: true,
         timestamp: new Date().toISOString(),

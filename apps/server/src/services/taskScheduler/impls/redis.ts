@@ -26,8 +26,16 @@ export class RedisTaskScheduler implements TaskSchedulerImpl {
   }
 
   async scheduleNextTopic(params: ScheduleNextTopicParams): Promise<string> {
-    this.ensureWorkers();
     const { taskId, userId, delay = 0 } = params;
+
+    const { shouldV2BlockLegacy, shouldV2BlockLegacyGlobally } =
+      await import('@/server/services/taskAutomation/mode');
+    if (shouldV2BlockLegacyGlobally() || shouldV2BlockLegacy(params.workspaceId)) {
+      log('skip redis heartbeat schedule task=%s: V2 owns workspace', taskId);
+      return `v2-noop-${taskId}`;
+    }
+
+    this.ensureWorkers();
 
     const jobId = await this.getQueue().enqueue({
       delayMs: Math.max(0, delay) * 1000,

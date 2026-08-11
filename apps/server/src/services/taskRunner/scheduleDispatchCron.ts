@@ -26,6 +26,12 @@ let started = false;
  * matching bot gateway / memory daily cron. Opt out: TASK_SCHEDULE_DISPATCH_CRON=0.
  */
 export const isScheduleDispatchCronEnabled = (): boolean => {
+  // Global V2 (on|drain, no allowlist): ticker not needed.
+  // Scoped canary still needs this for out-of-scope workspaces.
+  const mode = (process.env.TASK_SCHEDULER_V2 || 'off').toLowerCase().trim();
+  const allowlist = (process.env.TASK_SCHEDULER_V2_WORKSPACES || '').trim();
+  const globalV2 = (mode === 'on' || mode === 'drain') && (!allowlist || allowlist === '*');
+  if (globalV2) return false;
   if (process.env.TASK_SCHEDULE_DISPATCH_CRON === '0') return false;
   if (process.env.TASK_SCHEDULE_DISPATCH_CRON === '1') return true;
   return Boolean(process.env.DATABASE_URL) && !process.env.VERCEL_ENV;

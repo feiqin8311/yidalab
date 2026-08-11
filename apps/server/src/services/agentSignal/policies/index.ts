@@ -11,6 +11,7 @@ import type { CreateCompletionPolicyOptions } from './completionPolicy';
 import { createCompletionPolicy } from './completionPolicy';
 import type { CreateReviewNightlyPolicyOptions } from './reviewNightly';
 import { createReviewNightlyPolicy } from './reviewNightly';
+import { createTaskAutomationEventPolicy } from './taskAutomationEventPolicy';
 
 export * from './actionIdempotency';
 export * from './analyzeIntent';
@@ -50,6 +51,7 @@ const DEFAULT_AGENT_SIGNAL_POLICY_FACTORIES: DefaultAgentSignalPolicyFactory[] =
       selfReflection: options.selfReflection,
     }),
   (options) => [createCompletionPolicy(options.completion ?? {})],
+  () => [createTaskAutomationEventPolicy()],
 ];
 
 /**

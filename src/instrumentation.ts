@@ -41,11 +41,22 @@ export async function register() {
   // Task schedule (cron) sweep — replaces original QStash */10 schedule that
   // POSTed /api/workflows/task/schedule-dispatch. Without this, task-page
   // "定时计划" is saved but never fires. Opt out: TASK_SCHEDULE_DISPATCH_CRON=0.
+  // When TASK_SCHEDULER_V2=on the V2 loop owns dispatch; legacy cron stays as
+  // a fallback only when V2 is off/shadow.
   if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.DATABASE_URL) {
     void import('@/server/services/taskRunner/scheduleDispatchCron')
-      .then(({ startScheduleDispatchCron }) => startScheduleDispatchCron())
+      .then(async ({ startScheduleDispatchCron }) => {
+        const { isTaskSchedulerV2On } = await import('@/server/services/taskAutomation');
+        if (!isTaskSchedulerV2On()) startScheduleDispatchCron();
+      })
       .catch((err) => {
         console.error('[Instrumentation] Failed to start schedule-dispatch cron:', err);
+      });
+
+    void import('@/server/services/taskAutomation/loop')
+      .then(({ startTaskAutomationLoop }) => startTaskAutomationLoop())
+      .catch((err) => {
+        console.error('[Instrumentation] Failed to start task-automation V2 loop:', err);
       });
   }
 

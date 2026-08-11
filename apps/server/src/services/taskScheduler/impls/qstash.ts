@@ -32,6 +32,14 @@ export class QStashTaskScheduler implements TaskSchedulerImpl {
 
   async scheduleNextTopic(params: ScheduleNextTopicParams): Promise<string> {
     const { taskId, userId, delay = 0 } = params;
+
+    const { shouldV2BlockLegacy, shouldV2BlockLegacyGlobally } =
+      await import('@/server/services/taskAutomation/mode');
+    if (shouldV2BlockLegacyGlobally() || shouldV2BlockLegacy(params.workspaceId)) {
+      log('skip qstash heartbeat schedule task=%s: V2 owns workspace', taskId);
+      return `v2-noop-${taskId}`;
+    }
+
     const url = `${this.baseUrl}${HEARTBEAT_TICK_PATH}`;
 
     log('Publishing tick: task=%s delay=%ds url=%s', taskId, delay, url);

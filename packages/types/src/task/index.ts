@@ -11,7 +11,34 @@ export type TaskPriority = 0 | 1 | 2 | 3 | 4;
 export type TaskActivityType = 'brief' | 'comment' | 'created' | 'topic';
 
 // null = no automation
-export type TaskAutomationMode = 'heartbeat' | 'schedule';
+export type TaskAutomationMode = 'heartbeat' | 'schedule' | 'event';
+
+/** Wall-clock schedule sub-kind when automationMode='schedule'. */
+export type TaskScheduleKind = 'at' | 'every' | 'cron';
+
+export type TaskOverduePolicy = 'latest' | 'skip' | 'all';
+
+/** Stable product event catalog (not Agent Signal internals). */
+export type TaskProductEventType =
+  | 'agent_run_completed'
+  | 'agent_run_failed'
+  | 'tool_run_completed'
+  | 'tool_run_failed'
+  | 'bot_message_received';
+
+export interface TaskEventFilter {
+  field: string;
+  op: 'eq' | 'in';
+  value: string | string[];
+}
+
+export const TASK_PRODUCT_EVENT_TYPES: TaskProductEventType[] = [
+  'agent_run_completed',
+  'agent_run_failed',
+  'tool_run_completed',
+  'tool_run_failed',
+  'bot_message_received',
+];
 
 /**
  * What triggered a given task run. Threaded from the run entry point
@@ -216,6 +243,7 @@ export interface TaskItem {
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
   automationMode: TaskAutomationMode | null;
+  automationRevision: number;
   completedAt: Date | null;
   config: unknown;
   context: unknown;
@@ -226,6 +254,9 @@ export interface TaskItem {
   description: string | null;
   editorData: unknown;
   error: string | null;
+  eventCooldownSeconds: number | null;
+  eventFilter: TaskEventFilter[] | null;
+  eventSourceType: string | null;
   heartbeatInterval: number | null;
   heartbeatTimeout: number | null;
   id: string;
@@ -234,8 +265,16 @@ export interface TaskItem {
   lastHeartbeatAt: Date | null;
   maxTopics: number | null;
   name: string | null;
+  nextRunAt: Date | null;
+  overduePolicy: TaskOverduePolicy | null;
+  pacingMaxSeconds: number | null;
+  pacingMinSeconds: number | null;
   parentTaskId: string | null;
   priority: number | null;
+  scheduleAnchorAt: Date | null;
+  scheduleAt: Date | null;
+  scheduleEverySeconds: number | null;
+  scheduleKind: TaskScheduleKind | null;
   schedulePattern: string | null;
   scheduleTimezone: string | null;
   seq: number;
@@ -260,6 +299,7 @@ export interface NewTask {
   assigneeAgentId?: string | null;
   assigneeUserId?: string | null;
   automationMode?: TaskAutomationMode | null;
+  automationRevision?: number;
   completedAt?: Date | null;
   config?: unknown;
   context?: unknown;
@@ -270,6 +310,9 @@ export interface NewTask {
   description?: string | null;
   editorData?: unknown;
   error?: string | null;
+  eventCooldownSeconds?: number | null;
+  eventFilter?: TaskEventFilter[] | null;
+  eventSourceType?: string | null;
   heartbeatInterval?: number | null;
   heartbeatTimeout?: number | null;
   id?: string;
@@ -278,8 +321,16 @@ export interface NewTask {
   lastHeartbeatAt?: Date | null;
   maxTopics?: number | null;
   name?: string | null;
+  nextRunAt?: Date | null;
+  overduePolicy?: TaskOverduePolicy | null;
+  pacingMaxSeconds?: number | null;
+  pacingMinSeconds?: number | null;
   parentTaskId?: string | null;
   priority?: number | null;
+  scheduleAnchorAt?: Date | null;
+  scheduleAt?: Date | null;
+  scheduleEverySeconds?: number | null;
+  scheduleKind?: TaskScheduleKind | null;
   schedulePattern?: string | null;
   scheduleTimezone?: string | null;
   seq: number;

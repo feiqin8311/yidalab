@@ -31,6 +31,12 @@ export const TaskApiName = {
   /** Configure (or clear) the recurring schedule of a task */
   setTaskSchedule: 'setTaskSchedule',
 
+  /**
+   * Heartbeat pacing: suggest when the current automation run should next fire.
+   * Only valid during a heartbeat-mode automation execution.
+   */
+  setTaskNextCheck: 'setTaskNextCheck',
+
   /** Configure (or clear) the delivery-acceptance (verify) gate of a task */
   setTaskVerify: 'setTaskVerify',
 
@@ -214,11 +220,19 @@ export interface RunTasksState {
 export interface SetTaskScheduleParams {
   /** Switch automation mode. Pass null to disable automation entirely. */
   automationMode?: TaskAutomationMode | null;
+  /** Product event key when automationMode='event'. */
+  eventSourceType?: string | null;
   /** Periodic execution interval in seconds (heartbeat mode). Pass 0 to clear. */
   heartbeatInterval?: number;
   identifier: string;
   /** Cap on the number of scheduled executions; null = unlimited. */
   maxExecutions?: number | null;
+  overduePolicy?: 'latest' | 'skip' | 'all' | null;
+  /** Absolute ISO time for scheduleKind='at'. */
+  scheduleAt?: string | null;
+  /** Fixed interval seconds for scheduleKind='every'. */
+  scheduleEverySeconds?: number | null;
+  scheduleKind?: 'at' | 'every' | 'cron' | null;
   /** Cron expression for scheduled mode. Pass null to clear. */
   schedulePattern?: string | null;
   /** IANA timezone for the cron expression. Pass null to clear. */
@@ -228,6 +242,19 @@ export interface SetTaskScheduleParams {
 export interface SetTaskScheduleState {
   automationMode?: TaskAutomationMode | null;
   identifier: string;
+  success: boolean;
+}
+
+export interface SetTaskNextCheckParams {
+  /** Mutually exclusive with nextCheckInSeconds. Absolute ISO timestamp. */
+  nextCheckAt?: string;
+  /** Mutually exclusive with nextCheckAt. Delay in seconds from now. */
+  nextCheckInSeconds?: number;
+}
+
+export interface SetTaskNextCheckState {
+  effectiveNextCheckAt?: string;
+  requestedNextCheckAt?: string;
   success: boolean;
 }
 

@@ -373,6 +373,7 @@ table agent_operations {
   provider text
   model_runtime_config jsonb
   trigger text
+  idempotency_key text
   app_context jsonb
   trace_s3_key text
   metadata jsonb [default: `{}`]
@@ -392,6 +393,7 @@ table agent_operations {
     status [name: 'agent_operations_status_idx']
     (user_id, created_at) [name: 'agent_operations_user_id_created_at_idx']
     metadata [name: 'agent_operations_metadata_idx']
+    idempotency_key [name: 'agent_operations_idempotency_key_uidx', unique]
   }
 }
 
@@ -2271,6 +2273,73 @@ table briefs {
   }
 }
 
+table task_automation_run_attempts {
+  id text [pk, not null]
+  run_id text [not null]
+  attempt_number integer [not null]
+  status text [not null, default: 'pending']
+  reason text [not null, default: 'dispatch']
+  claim_token text
+  claimed_by text
+  lease_until "timestamp with time zone"
+  operation_idempotency_key text [not null]
+  operation_id text
+  topic_id text
+  error_code text
+  error_message text
+  started_at "timestamp with time zone"
+  finished_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (run_id, attempt_number) [name: 'task_automation_run_attempts_run_attempt_uidx', unique]
+    operation_idempotency_key [name: 'task_automation_run_attempts_op_idem_uidx', unique]
+    run_id [name: 'task_automation_run_attempts_run_id_idx']
+    (status, lease_until) [name: 'task_automation_run_attempts_status_lease_idx']
+    operation_id [name: 'task_automation_run_attempts_operation_id_idx']
+  }
+}
+
+table task_automation_runs {
+  id text [pk, not null]
+  task_id text [not null]
+  user_id text [not null]
+  workspace_id text
+  trigger text [not null]
+  planned_at "timestamp with time zone" [not null]
+  status text [not null, default: 'pending']
+  dedupe_key text [not null]
+  automation_revision integer [not null, default: 0]
+  missed_count integer [not null, default: 0]
+  attempt_count integer [not null, default: 0]
+  next_attempt_at "timestamp with time zone"
+  operation_id text
+  topic_id text
+  error_code text
+  error_message text
+  alerted_at "timestamp with time zone"
+  requested_next_check_at "timestamp with time zone"
+  effective_next_check_at "timestamp with time zone"
+  started_at "timestamp with time zone"
+  finished_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    dedupe_key [name: 'task_automation_runs_dedupe_key_uidx', unique]
+    task_id [name: 'task_automation_runs_task_id_idx']
+    user_id [name: 'task_automation_runs_user_id_idx']
+    workspace_id [name: 'task_automation_runs_workspace_id_idx']
+    (status, planned_at) [name: 'task_automation_runs_status_planned_idx']
+    (status, next_attempt_at, planned_at) [name: 'task_automation_runs_pending_dispatch_idx']
+    (task_id, status) [name: 'task_automation_runs_task_status_idx']
+    finished_at [name: 'task_automation_runs_finished_at_idx']
+  }
+}
+
 table task_comments {
   id text [pk, not null]
   task_id text [not null]
@@ -2395,6 +2464,18 @@ table tasks {
   last_heartbeat_at "timestamp with time zone"
   schedule_pattern text
   schedule_timezone text [default: 'UTC']
+  next_run_at "timestamp with time zone"
+  automation_revision integer [not null, default: 0]
+  schedule_kind text
+  schedule_at "timestamp with time zone"
+  schedule_every_seconds integer
+  schedule_anchor_at "timestamp with time zone"
+  overdue_policy text [default: 'latest']
+  event_source_type text
+  event_filter jsonb
+  event_cooldown_seconds integer [default: 60]
+  pacing_min_seconds integer [default: 600]
+  pacing_max_seconds integer [default: 86400]
   total_topics integer [default: 0]
   max_topics integer
   current_topic_id text
@@ -2420,6 +2501,8 @@ table tasks {
     priority [name: 'tasks_priority_idx']
     automation_mode [name: 'tasks_automation_mode_idx']
     (status, last_heartbeat_at) [name: 'tasks_heartbeat_idx']
+    next_run_at [name: 'tasks_next_run_at_idx']
+    (status, automation_mode, next_run_at) [name: 'tasks_automation_due_idx']
     workspace_id [name: 'tasks_workspace_id_idx']
     (workspace_id, visibility, created_by_user_id) [name: 'tasks_workspace_visibility_idx']
     (workspace_id, identifier) [name: 'tasks_identifier_workspace_id_unique', unique]

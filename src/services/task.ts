@@ -83,20 +83,54 @@ class TaskService {
       context?: Record<string, unknown>;
       description?: string;
       editorData?: unknown;
+      eventCooldownSeconds?: number | null;
+      eventFilter?: Array<{ field: string; op: 'eq' | 'in'; value: string | string[] }> | null;
+      eventSourceType?: string | null;
       // heartbeatInterval: periodic execution interval (seconds), controls how often the task auto-executes
       heartbeatInterval?: number;
       // heartbeatTimeout: watchdog timeout threshold (seconds), used to detect if a running task is stuck
       heartbeatTimeout?: number | null;
       instruction?: string;
       name?: string;
+      overduePolicy?: 'latest' | 'skip' | 'all' | null;
+      pacingMaxSeconds?: number | null;
+      pacingMinSeconds?: number | null;
       parentTaskId?: string | null;
       priority?: number;
+      scheduleAt?: string | null;
+      scheduleEverySeconds?: number | null;
+      scheduleKind?: 'at' | 'every' | 'cron' | null;
       // schedulePattern: cron expression for scheduled automation (e.g. '0 9 * * *')
       schedulePattern?: string | null;
       // scheduleTimezone: IANA timezone for the cron expression (e.g. 'Asia/Shanghai')
       scheduleTimezone?: string | null;
     },
   ) => lambdaClient.task.update.mutate({ id, ...data });
+
+  previewAutomation = async (params: {
+    automationMode?: TaskAutomationMode | null;
+    count?: number;
+    heartbeatInterval?: number;
+    scheduleAt?: string | null;
+    scheduleEverySeconds?: number | null;
+    scheduleKind?: 'at' | 'every' | 'cron' | null;
+    schedulePattern?: string | null;
+    scheduleTimezone?: string | null;
+  }) => lambdaClient.task.previewAutomation.query(params);
+
+  listAutomationRuns = async (params: {
+    cursor?: string | null;
+    id: string;
+    limit?: number;
+    status?: string | string[];
+    trigger?: string | string[];
+  }) => lambdaClient.task.listAutomationRuns.query(params as any);
+
+  retryAutomationRun = async (runId: string) =>
+    lambdaClient.task.retryAutomationRun.mutate({ runId });
+
+  cancelAutomationRun = async (runId: string) =>
+    lambdaClient.task.cancelAutomationRun.mutate({ runId });
 
   delete = async (id: string) => lambdaClient.task.delete.mutate({ id });
 

@@ -448,6 +448,7 @@ export class AgentRuntimeService {
       activeDeviceId,
       activeDeviceScope,
       operationId,
+      idempotencyKey,
       initialContext,
       agentConfig,
       agentGroup,
@@ -489,8 +490,9 @@ export class AgentRuntimeService {
     // Persist initial agent_operations row. CompletionLifecycle owns both
     // ends of the persistence lifecycle (start row here, terminal update
     // in dispatchHooks) and swallows DB errors so runtime startup is never
-    // blocked.
-    await this.completionLifecycle.recordStart({
+    // blocked. When idempotencyKey is set, a concurrent insert may resolve
+    // to an existing operation id — use that as the canonical id below.
+    const startResult = await this.completionLifecycle.recordStart({
       agentId: appContext?.agentId ?? null,
       appContext: {
         defaultTaskAssigneeAgentId: appContext?.defaultTaskAssigneeAgentId,
@@ -500,6 +502,7 @@ export class AgentRuntimeService {
         sourceMessageId: appContext?.sourceMessageId,
       },
       chatGroupId: appContext?.groupId ?? null,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       maxSteps,
       // Persist the Agent Signal run marker on the operation row so server-side
       // self-iteration tools can read it back (metadata.agentSignal) at tool-call
@@ -515,6 +518,17 @@ export class AgentRuntimeService {
       topicId: appContext?.topicId ?? null,
       trigger: appContext?.trigger,
     });
+
+    const resolvedOperationId = startResult?.operationId ?? operationId;
+    if (resolvedOperationId !== operationId) {
+      // Another worker already created the op for this idempotency key.
+      // Do not start a second runtime — return the existing id.
+      return {
+        autoStarted: false,
+        operationId: resolvedOperationId,
+        success: true,
+      };
+    }
 
     // Protocol dual-path: persist sub-agent graph edge when this op has a parent.
     if (parentOperationId) {

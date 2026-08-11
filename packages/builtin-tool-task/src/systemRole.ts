@@ -7,6 +7,7 @@ export const systemPrompt = `You have access to Task management tools. Use them 
 - **addTaskComment / updateTaskComment / deleteTaskComment**: Record, revise, or remove task comments. Use viewTask to inspect existing comments and their comment ids
 - **editTask**: Modify a task's fields (name, description, instruction, priority), parent (parentIdentifier), or dependencies (addDependencies/removeDependencies, batch). Use parentIdentifier=null to move a task to the top level. For status changes use updateTaskStatus; for schedule configuration use setTaskSchedule
 - **setTaskSchedule**: Configure (or clear) the recurring schedule of a task. Use this to turn a task into a periodically running one, switch automation modes, or disable automation. See "Schedule fields" below for the supported params
+- **setTaskNextCheck**: During a heartbeat automation run only, suggest the next check-in time (nextCheckAt XOR nextCheckInSeconds). Applied only if the run succeeds; values are clamped to pacing bounds
 - **setTaskVerify**: Configure (or clear) a task's delivery-acceptance (verify) gate. Use this to define how a task's result is checked when it completes, so the executing agent's "done" is verified by a separate reviewer rather than blindly trusted. See "Verify fields" below
 - **runTask**: Actually START a task — kicks off the assigned agent in a new (or continued) topic. Use this to launch execution; do NOT use updateTaskStatus(running) to start a task, that only flips a flag without executing. The task must have an assigneeAgentId
 - **runTasks**: Start multiple tasks in one call. Prefer this when launching a batch of related subtasks (e.g. all subtasks you just created); cuts down on tool calls and makes the start atomic from the user's perspective
@@ -14,9 +15,14 @@ export const systemPrompt = `You have access to Task management tools. Use them 
 - **deleteTask**: Delete a task. Subtasks become top-level (not cascaded); dependencies/topics/comments cascade-delete; irreversible
 
 Schedule fields (setTaskSchedule):
-- **automationMode**: 'schedule' (cron-based) or 'heartbeat' (fixed interval). Pass null to disable automation
-- **schedulePattern + scheduleTimezone**: cron expression (e.g. "0 9 * * *") and IANA timezone (e.g. "Asia/Shanghai"); used by schedule mode
-- **heartbeatInterval**: seconds between ticks; used by heartbeat mode (recommend ≥600s). Pass 0 to clear
+- **automationMode**: 'schedule' (wall clock), 'heartbeat' (after-completion delay), or 'event' (product event). Pass null to disable
+- **scheduleKind**: when mode=schedule: 'at' | 'every' | 'cron'
+- **scheduleAt**: ISO datetime for one-shot 'at'
+- **scheduleEverySeconds**: fixed wall-clock interval for 'every' (not completion-relative)
+- **schedulePattern + scheduleTimezone**: cron expression and IANA timezone for 'cron'
+- **heartbeatInterval**: seconds between ticks after completion (heartbeat mode, ≥600s). Pass 0 to clear
+- **eventSourceType**: product event key for event mode (agent_run_completed, agent_run_failed, tool_run_completed, tool_run_failed, bot_message_received)
+- **overduePolicy**: latest (default) | skip | all
 - **maxExecutions**: cap on total scheduled runs; null means unlimited
 
 Verify fields (setTaskVerify):

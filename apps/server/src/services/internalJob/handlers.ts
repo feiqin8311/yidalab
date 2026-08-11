@@ -105,6 +105,16 @@ export function ensureInternalJobWorkersStarted(): void {
     await runScheduleTick(taskId, userId);
   });
 
+  // Scheduler V2: claim + run a single automation ledger run.
+  queue.register(JOB_NAMES.taskAutomationExecute, async (payload) => {
+    const { runId } = payload as { runId?: string };
+    if (!runId) throw new Error('task.automation-execute requires runId');
+    const { getServerDB } = await import('@/database/server');
+    const { processAutomationRun } = await import('@/server/services/taskAutomation');
+    const db = await getServerDB();
+    await processAutomationRun(db, runId);
+  });
+
   // Full sweep (optional enqueue path). Primary clock is startScheduleDispatchCron.
   queue.register(JOB_NAMES.taskScheduleDispatch, async (payload) => {
     const { runScheduleDispatchSweep } =

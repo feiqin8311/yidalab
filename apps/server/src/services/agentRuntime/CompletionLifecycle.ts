@@ -128,12 +128,17 @@ export class CompletionLifecycle {
    * Fire-and-forget: a DB outage here must never block the runtime startup
    * path — `dispatchHooks` will still finalize the row if one was written.
    */
-  async recordStart(params: RecordOperationStartParams): Promise<void> {
+  async recordStart(
+    params: RecordOperationStartParams,
+  ): Promise<{ operationId: string } | undefined> {
+    let resolved: { operationId: string } | undefined;
     try {
-      await this.agentOperationModel.recordStart(params);
+      resolved = await this.agentOperationModel.recordStart(params);
     } catch (error) {
       log('[%s] Failed to record operation start (non-fatal): %O', params.operationId, error);
     }
+
+    const operationId = resolved?.operationId ?? params.operationId;
 
     // Auto-instantiate the task's verify plan at run start so the completion gate
     // fires. Only for a top-level task operation — repair / verifier sub-agents
@@ -144,15 +149,17 @@ export class CompletionLifecycle {
     // that lands moments later. (instantiateVerifyPlanOnStart never rejects.)
     if (params.taskId && !params.parentOperationId) {
       this.verifyPlanInstantiations.set(
-        params.operationId,
+        operationId,
         instantiateVerifyPlanOnStart(
           this.serverDB,
           this.userId,
-          { operationId: params.operationId, taskId: params.taskId },
+          { operationId, taskId: params.taskId },
           this.workspaceId,
         ),
       );
     }
+
+    return resolved ?? { operationId: params.operationId };
   }
 
   /**

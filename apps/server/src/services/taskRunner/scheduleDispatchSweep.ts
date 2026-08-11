@@ -44,12 +44,29 @@ export async function runScheduleDispatchSweep(
 ): Promise<ScheduleDispatchSweepResult> {
   const { dryRun = false } = options;
 
+  // Global V2: no legacy fan-out. Scoped canary: filter in-scope tasks below.
+  const { shouldV2BlockLegacy, shouldV2BlockLegacyGlobally } =
+    await import('@/server/services/taskAutomation/mode');
+  if (shouldV2BlockLegacyGlobally()) {
+    log('skip sweep: V2 global (ledger is sole dispatch authority)');
+    return {
+      dispatched: 0,
+      dryRun,
+      due: 0,
+      skipped: 0,
+      success: true,
+      total: 0,
+    };
+  }
+
   const db = await getServerDB();
   const tasks = await TaskModel.getScheduledTasks(db);
 
   const now = new Date();
   const due: DueTask[] = [];
   for (const task of tasks) {
+    // Scoped canary: V2 owns this workspace — leave it for the ledger.
+    if (shouldV2BlockLegacy(task.workspaceId)) continue;
     if (!task.schedulePattern) continue;
     const matches = isExecutionTime({
       cronPattern: task.schedulePattern,

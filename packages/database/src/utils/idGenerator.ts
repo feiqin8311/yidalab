@@ -15,6 +15,8 @@ const prefixes = {
   businessFunctionRuns: 'bfr',
   taskComments: 'cmt',
   tasks: 'task',
+  taskAutomationRuns: 'tar',
+  taskAutomationRunAttempts: 'taa',
   agents: 'agt',
   budget: 'bgt',
   chatGroups: 'cg',
