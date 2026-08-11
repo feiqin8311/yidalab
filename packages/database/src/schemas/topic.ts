@@ -80,6 +80,17 @@ export const topics = pgTable(
      */
     senderId: text('sender_id'),
 
+    /**
+     * Conversation visibility within a workspace.
+     * - `private` (default): only the topic owner (`user_id`) can read/write.
+     *   Web 1:1 and DingTalk single-chat use this.
+     * - `public`: workspace members can read (future group / shared workflows).
+     * Personal mode ignores this column (rows are already owner-scoped).
+     */
+    visibility: text('visibility', { enum: ['private', 'public'] })
+      .default('private')
+      .notNull(),
+
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     ...timestamps,
   },
@@ -97,6 +108,7 @@ export const topics = pgTable(
     index('topics_user_id_completed_at_idx').on(t.userId, t.completedAt),
     index('topics_sender_id_idx').on(t.senderId),
     index('topics_workspace_id_idx').on(t.workspaceId),
+    index('topics_workspace_visibility_idx').on(t.workspaceId, t.visibility, t.userId),
     index('topics_extract_status_gin_idx').using(
       'gin',
       sql`(metadata->'userMemoryExtractStatus') jsonb_path_ops`,
@@ -153,6 +165,13 @@ export const threads = pgTable(
       .notNull(),
 
     lastActiveAt: timestamptz('last_active_at').defaultNow(),
+    /**
+     * Mirrors parent topic visibility. Private by default so workspace members
+     * cannot list another member's 1:1 thread rows.
+     */
+    visibility: text('visibility', { enum: ['private', 'public'] })
+      .default('private')
+      .notNull(),
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     ...timestamps,
   },
@@ -165,6 +184,7 @@ export const threads = pgTable(
     index('threads_group_id_idx').on(t.groupId),
     index('threads_parent_thread_id_idx').on(t.parentThreadId),
     index('threads_workspace_id_idx').on(t.workspaceId),
+    index('threads_workspace_visibility_idx').on(t.workspaceId, t.visibility, t.userId),
   ],
 );
 

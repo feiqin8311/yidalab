@@ -70,11 +70,7 @@ export const buildBm25MatchCondition = (
 };
 
 export type SearchLayerKey =
-  | 'activities'
-  | 'contexts'
-  | 'experiences'
-  | 'identities'
-  | 'preferences';
+  'activities' | 'contexts' | 'experiences' | 'identities' | 'preferences';
 
 interface HybridLayerLimitRecord {
   activities?: number;
@@ -659,13 +655,34 @@ export const scoreHybridCandidates = <T extends { id: string; tags?: string[] | 
 };
 
 export class UserMemoryQueryModel {
+  private readonly includeAllScopes: boolean;
+
   constructor(
     private readonly db: LobeChatDatabase,
     private readonly userId: string,
-  ) {}
+    private readonly agentId?: string,
+    options?: { includeAllScopes?: boolean },
+  ) {
+    this.includeAllScopes = options?.includeAllScopes === true;
+  }
 
-  private memoryWhere(table: { userId: any }) {
-    return eq(table.userId, this.userId);
+  private memoryWhere(table: { userId: any; scope?: any; agentId?: any }) {
+    const owner = eq(table.userId, this.userId);
+    if (!table.scope) return owner;
+
+    if (this.agentId) {
+      return and(
+        owner,
+        or(
+          eq(table.scope, 'global'),
+          and(eq(table.scope, 'agent'), eq(table.agentId, this.agentId)),
+        ),
+      )!;
+    }
+
+    if (this.includeAllScopes) return owner;
+
+    return and(owner, eq(table.scope, 'global'))!;
   }
 
   /**
@@ -1792,6 +1809,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesActivities.accessedAt,
+        agentId: userMemoriesActivities.agentId,
+        scope: userMemoriesActivities.scope,
         associatedLocations: userMemoriesActivities.associatedLocations,
         associatedObjects: userMemoriesActivities.associatedObjects,
         associatedSubjects: userMemoriesActivities.associatedSubjects,
@@ -1853,6 +1872,8 @@ export class UserMemoryQueryModel {
       this.db
         .select({
           accessedAt: userMemoriesContexts.accessedAt,
+          agentId: userMemoriesContexts.agentId,
+          scope: userMemoriesContexts.scope,
           associatedObjects: userMemoriesContexts.associatedObjects,
           associatedSubjects: userMemoriesContexts.associatedSubjects,
           capturedAt: userMemoriesContexts.capturedAt,
@@ -1898,6 +1919,7 @@ export class UserMemoryQueryModel {
       .with(contextCandidates)
       .select({
         accessedAt: contextCandidates.accessedAt,
+        agentId: contextCandidates.agentId,
         associatedObjects: contextCandidates.associatedObjects,
         associatedSubjects: contextCandidates.associatedSubjects,
         capturedAt: contextCandidates.capturedAt,
@@ -1906,6 +1928,7 @@ export class UserMemoryQueryModel {
         description: contextCandidates.description,
         id: contextCandidates.id,
         metadata: contextCandidates.metadata,
+        scope: contextCandidates.scope,
         scoreImpact: contextCandidates.scoreImpact,
         scoreUrgency: contextCandidates.scoreUrgency,
         tags: contextCandidates.tags,
@@ -1949,6 +1972,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesExperiences.accessedAt,
+        agentId: userMemoriesExperiences.agentId,
+        scope: userMemoriesExperiences.scope,
         action: userMemoriesExperiences.action,
         capturedAt: userMemoriesExperiences.capturedAt,
         createdAt: userMemoriesExperiences.createdAt,
@@ -2002,6 +2027,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesPreferences.accessedAt,
+        agentId: userMemoriesPreferences.agentId,
+        scope: userMemoriesPreferences.scope,
         capturedAt: userMemoriesPreferences.capturedAt,
         conclusionDirectives: userMemoriesPreferences.conclusionDirectives,
         createdAt: userMemoriesPreferences.createdAt,
@@ -2058,6 +2085,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesIdentities.accessedAt,
+        agentId: userMemoriesIdentities.agentId,
+        scope: userMemoriesIdentities.scope,
         capturedAt: userMemoriesIdentities.capturedAt,
         createdAt: userMemoriesIdentities.createdAt,
         description: userMemoriesIdentities.description,
@@ -2122,6 +2151,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesActivities.accessedAt,
+        agentId: userMemoriesActivities.agentId,
+        scope: userMemoriesActivities.scope,
         associatedLocations: userMemoriesActivities.associatedLocations,
         associatedObjects: userMemoriesActivities.associatedObjects,
         associatedSubjects: userMemoriesActivities.associatedSubjects,
@@ -2188,6 +2219,8 @@ export class UserMemoryQueryModel {
       this.db
         .select({
           accessedAt: userMemoriesContexts.accessedAt,
+          agentId: userMemoriesContexts.agentId,
+          scope: userMemoriesContexts.scope,
           associatedObjects: userMemoriesContexts.associatedObjects,
           associatedSubjects: userMemoriesContexts.associatedSubjects,
           capturedAt: userMemoriesContexts.capturedAt,
@@ -2230,6 +2263,7 @@ export class UserMemoryQueryModel {
       .with(contextCandidates)
       .select({
         accessedAt: contextCandidates.accessedAt,
+        agentId: contextCandidates.agentId,
         associatedObjects: contextCandidates.associatedObjects,
         associatedSubjects: contextCandidates.associatedSubjects,
         capturedAt: contextCandidates.capturedAt,
@@ -2238,6 +2272,7 @@ export class UserMemoryQueryModel {
         description: contextCandidates.description,
         id: contextCandidates.id,
         metadata: contextCandidates.metadata,
+        scope: contextCandidates.scope,
         scoreImpact: contextCandidates.scoreImpact,
         scoreUrgency: contextCandidates.scoreUrgency,
         tags: contextCandidates.tags,
@@ -2291,6 +2326,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesExperiences.accessedAt,
+        agentId: userMemoriesExperiences.agentId,
+        scope: userMemoriesExperiences.scope,
         action: userMemoriesExperiences.action,
         capturedAt: userMemoriesExperiences.capturedAt,
         createdAt: userMemoriesExperiences.createdAt,
@@ -2352,6 +2389,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesPreferences.accessedAt,
+        agentId: userMemoriesPreferences.agentId,
+        scope: userMemoriesPreferences.scope,
         capturedAt: userMemoriesPreferences.capturedAt,
         conclusionDirectives: userMemoriesPreferences.conclusionDirectives,
         createdAt: userMemoriesPreferences.createdAt,
@@ -2411,6 +2450,8 @@ export class UserMemoryQueryModel {
     const rowsQuery = this.db
       .select({
         accessedAt: userMemoriesIdentities.accessedAt,
+        agentId: userMemoriesIdentities.agentId,
+        scope: userMemoriesIdentities.scope,
         capturedAt: userMemoriesIdentities.capturedAt,
         createdAt: userMemoriesIdentities.createdAt,
         description: userMemoriesIdentities.description,

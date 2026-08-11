@@ -157,3 +157,22 @@ describe('APP_URL fallback', () => {
     });
   });
 });
+
+describe('enableAgentRuntimeProtocolJournal', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    delete process.env.AGENT_RUNTIME_PROTOCOL_JOURNAL;
+  });
+
+  it('defaults to true when unset', async () => {
+    delete process.env.AGENT_RUNTIME_PROTOCOL_JOURNAL;
+    const { getAppConfig } = await import('../app');
+    expect(getAppConfig().enableAgentRuntimeProtocolJournal).toBe(true);
+  });
+
+  it('is false when AGENT_RUNTIME_PROTOCOL_JOURNAL=0', async () => {
+    process.env.AGENT_RUNTIME_PROTOCOL_JOURNAL = '0';
+    const { getAppConfig } = await import('../app');
+    expect(getAppConfig().enableAgentRuntimeProtocolJournal).toBe(false);
+  });
+});

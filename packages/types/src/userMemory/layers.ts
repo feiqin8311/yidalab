@@ -43,6 +43,7 @@ export interface UserMemoryAssociatedSubject {
 }
 
 export interface UserMemoryContext extends UserMemoryTimestamps {
+  agentId?: string | null;
   associatedObjects:
     | {
         extra?: Record<string, unknown> | null;
@@ -62,6 +63,7 @@ export interface UserMemoryContext extends UserMemoryTimestamps {
   descriptionVector: number[] | null;
   id: string;
   metadata: Record<string, unknown> | null;
+  scope?: 'agent' | 'global';
   scoreImpact: number | null;
   scoreUrgency: number | null;
   tags: string[] | null;
@@ -85,12 +87,14 @@ export type UserMemoryContextsListItem = Omit<
 export interface UserMemoryExperience extends UserMemoryTimestamps {
   action: string | null;
   actionVector: number[] | null;
+  agentId?: string | null;
   id: string;
   keyLearning: string | null;
   keyLearningVector: number[] | null;
   metadata: Record<string, unknown> | null;
   possibleOutcome: string | null;
   reasoning: string | null;
+  scope?: 'agent' | 'global';
   scoreConfidence: number | null;
   situation: string | null;
   situationVector: number[] | null;
@@ -111,10 +115,12 @@ export type UserMemoryExperiencesListItem = Omit<
 >;
 
 export interface UserMemoryPreference extends UserMemoryTimestamps {
+  agentId?: string | null;
   conclusionDirectives: string | null;
   conclusionDirectivesVector: number[] | null;
   id: string;
   metadata: Record<string, unknown> | null;
+  scope?: 'agent' | 'global';
   scorePriority: number | null;
   suggestions: string | null;
   tags: string[] | null;
@@ -131,6 +137,7 @@ export type UserMemoryPreferenceWithoutVectors = Omit<
 export type UserMemoryPreferencesListItem = Omit<UserMemoryPreferenceWithoutVectors, 'suggestions'>;
 
 export interface UserMemoryActivity extends UserMemoryTimestamps {
+  agentId?: string | null;
   associatedLocations: UserMemoryAssociatedLocation[] | null;
   associatedObjects: UserMemoryAssociatedObject[] | null;
   associatedSubjects: UserMemoryAssociatedSubject[] | null;
@@ -142,6 +149,7 @@ export interface UserMemoryActivity extends UserMemoryTimestamps {
   narrative: string | null;
   narrativeVector: number[] | null;
   notes: string | null;
+  scope?: 'agent' | 'global';
   startsAt: Date | null;
   status: string | null;
   tags: string[] | null;

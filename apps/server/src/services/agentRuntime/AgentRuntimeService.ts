@@ -8,6 +8,7 @@ import type {
 } from '@lobechat/agent-runtime';
 import {
   AgentRuntime,
+  approvalInterventionId,
   findInMessages,
   GeneralChatAgent,
   isParkedStatus,
@@ -46,6 +47,14 @@ import { type AgentRuntimeCoordinatorOptions } from '@/server/modules/AgentRunti
 import { AgentRuntimeCoordinator, createStreamEventManager } from '@/server/modules/AgentRuntime';
 import { formatErrorForState } from '@/server/modules/AgentRuntime/formatErrorForState';
 import { hasNonPersistedMessage } from '@/server/modules/AgentRuntime/messagePersistence';
+import {
+  cancelInterventionsForOperation,
+  loadRecoveryCheckpoint,
+  openSubagentEdge,
+  persistInterventionRequest,
+  saveRecoveryCheckpoint,
+  subscribeOperationEvents,
+} from '@/server/modules/AgentRuntime/protocolRecovery';
 import {
   createRuntimeExecutors,
   type RuntimeExecutorContext,
@@ -418,6 +427,13 @@ export class AgentRuntimeService {
       status: 'interrupted',
     });
 
+    // Protocol dual-path: cancel pending interventions when parent is interrupted.
+    void cancelInterventionsForOperation({
+      db: this.serverDB,
+      operationId,
+      reason: 'operation_interrupted',
+    }).catch(() => {});
+
     log('[%s] Operation interrupted', operationId);
     return true;
   }
@@ -499,6 +515,17 @@ export class AgentRuntimeService {
       topicId: appContext?.topicId ?? null,
       trigger: appContext?.trigger,
     });
+
+    // Protocol dual-path: persist sub-agent graph edge when this op has a parent.
+    if (parentOperationId) {
+      void openSubagentEdge({
+        callId: operationId,
+        childOperationId: operationId,
+        db: this.serverDB,
+        parentOperationId,
+        relationship: 'spawn',
+      }).catch(() => {});
+    }
 
     const operationToolSet = toolSet;
     let operationCreated = false;
@@ -1003,8 +1030,111 @@ export class AgentRuntimeService {
             rejectionReason,
             toolMessageId,
           });
-          currentState = interventionResult.newState;
-          currentContext = interventionResult.nextContext;
+
+          // Discriminated result: never call runtime.step on non-resume paths.
+          // runtime.step(undefined context) invents init context and still runs LLM.
+          switch (interventionResult.kind) {
+            case 'passthrough': {
+              break;
+            }
+            case 'resume': {
+              currentState = interventionResult.newState;
+              currentContext = interventionResult.nextContext;
+              break;
+            }
+            case 'duplicate': {
+              log(
+                '[%s][%d] Intervention duplicate — short-circuit (no runtime.step)',
+                operationId,
+                stepIndex,
+              );
+              return {
+                nextStepScheduled: false,
+                state: interventionResult.newState,
+                stepResult: null,
+                success: true,
+              };
+            }
+            case 'failed': {
+              log(
+                '[%s][%d] Intervention resolve failed (%s) — short-circuit (no runtime.step)',
+                operationId,
+                stepIndex,
+                interventionResult.error,
+              );
+              return {
+                nextStepScheduled: false,
+                state: interventionResult.newState,
+                stepResult: null,
+                success: true,
+              };
+            }
+            case 'parked': {
+              // Partial batch still waiting for human — request rows MUST land
+              // before state is visible as approvable (park→approve race).
+              const parked = interventionResult.newState;
+              const parkOk = await this.persistInterventionRequests(operationId, parked);
+              if (!parkOk.ok) {
+                log(
+                  '[%s][%d] Intervention request persist failed on park: %s',
+                  operationId,
+                  stepIndex,
+                  parkOk.error,
+                );
+                const failedState = {
+                  ...parked,
+                  error: { message: parkOk.error, type: 'intervention_request_failed' },
+                  lastModified: new Date().toISOString(),
+                  status: 'error' as const,
+                };
+                await this.coordinator.saveAgentState(operationId, failedState);
+                return {
+                  nextStepScheduled: false,
+                  state: failedState,
+                  stepResult: null,
+                  success: false,
+                };
+              }
+              await this.coordinator.saveAgentState(operationId, parked);
+              this.persistProtocolCheckpoint(operationId, parked);
+              log(
+                '[%s][%d] Intervention parked (still waiting_for_human) — no runtime.step',
+                operationId,
+                stepIndex,
+              );
+              return {
+                nextStepScheduled: false,
+                state: parked,
+                stepResult: null,
+                success: true,
+              };
+            }
+            case 'halted': {
+              await this.coordinator.saveAgentState(operationId, interventionResult.newState);
+              const reason = this.determineCompletionReason(interventionResult.newState);
+              await this.completionLifecycle.emitSignalEvents(
+                operationId,
+                interventionResult.newState,
+                reason,
+              );
+              await this.completionLifecycle.dispatchHooks(
+                operationId,
+                interventionResult.newState,
+                reason,
+              );
+              log(
+                '[%s][%d] Intervention halted — completion dispatched, no runtime.step',
+                operationId,
+                stepIndex,
+              );
+              return {
+                nextStepScheduled: false,
+                state: interventionResult.newState,
+                stepResult: null,
+                success: true,
+              };
+            }
+          }
         }
 
         // Resume from a parked async-tool wait (server sub-agent completion
@@ -1099,6 +1229,27 @@ export class AgentRuntimeService {
           stepResult.newState.status = 'interrupted';
           stepResult.newState.lastModified = new Date().toISOString();
           log('[%s][%d] Operation was interrupted during step execution', operationId, stepIndex);
+        }
+
+        // HIL: intervention rows must exist BEFORE state becomes approvable.
+        // Order: request persist → saveStepResult → step_complete stream.
+        if (stepResult.newState?.status === 'waiting_for_human') {
+          const parkOk = await this.persistInterventionRequests(operationId, stepResult.newState);
+          if (!parkOk.ok) {
+            log(
+              '[%s][%d] Intervention request persist failed: %s — not exposing as approvable',
+              operationId,
+              stepIndex,
+              parkOk.error,
+            );
+            stepResult.newState = {
+              ...stepResult.newState,
+              error: { message: parkOk.error, type: 'intervention_request_failed' },
+              lastModified: new Date().toISOString(),
+              status: 'error',
+            };
+            stepResult.nextContext = undefined;
+          }
         }
 
         // Save state, coordinator will handle event sending automatically
@@ -1258,6 +1409,11 @@ export class AgentRuntimeService {
           // Persist tracking state for next step
           stepResult.newState.metadata._stepTracking = updatedTracking;
           await this.coordinator.saveAgentState(operationId, stepResult.newState);
+        }
+
+        // Checkpoint is best-effort after state is durable (requests already awaited above).
+        if (stepResult.newState?.status === 'waiting_for_human') {
+          this.persistProtocolCheckpoint(operationId, stepResult.newState);
         }
 
         if (shouldContinue && stepResult.nextContext && this.queueService) {
@@ -2728,6 +2884,121 @@ export class AgentRuntimeService {
     }
 
     return 'normal';
+  }
+
+  /**
+   * Persist HIL intervention request rows and wait for completion.
+   * Must succeed before the operation is exposed as waiting_for_human / approvable.
+   */
+  private async persistInterventionRequests(
+    operationId: string,
+    parkedState: AgentState,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const pending = (parkedState.pendingToolsCalling ?? []) as ChatToolPayload[];
+    if (pending.length === 0) return { ok: true };
+
+    const stepId = `step:${parkedState.stepCount ?? 0}`;
+    const results = await Promise.all(
+      pending.map((tool) =>
+        persistInterventionRequest({
+          db: this.serverDB,
+          intervention: {
+            createdAt: Date.now(),
+            interventionId: approvalInterventionId(tool.id),
+            operationId,
+            request: { tool },
+            stepId,
+            type: 'approval',
+          },
+        }),
+      ),
+    );
+
+    const failed = results.find((r) => !r.ok);
+    if (failed && !failed.ok) {
+      return { ok: false, error: failed.error };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Best-effort recovery checkpoint after HIL park (non-blocking).
+   * Checkpoint.sequence uses Journal coordinate system, not stepCount.
+   */
+  private persistProtocolCheckpoint(operationId: string, parkedState: AgentState): void {
+    const pending = (parkedState.pendingToolsCalling ?? []) as ChatToolPayload[];
+    const stepId = `step:${parkedState.stepCount ?? 0}`;
+    void (async () => {
+      const journalSequence = await (async () => {
+        try {
+          const { getSharedPostgresOperationJournal } =
+            await import('@/server/modules/AgentRuntime/PostgresOperationJournal');
+          return await getSharedPostgresOperationJournal().getLastSequence(operationId);
+        } catch {
+          return 0;
+        }
+      })();
+      await saveRecoveryCheckpoint({
+        checkpoint: {
+          agentState: {
+            cost: parkedState.cost,
+            operationId,
+            status: parkedState.status,
+            stepCount: parkedState.stepCount,
+          },
+          createdAt: Date.now(),
+          operationId,
+          pendingCalls: pending.map((t) => ({
+            arguments:
+              typeof t.arguments === 'string' ? t.arguments : JSON.stringify(t.arguments ?? {}),
+            idempotencyKey: `${operationId}:${stepId}:${t.id}`,
+            name: t.identifier ? `${t.identifier}/${t.apiName}` : (t.apiName ?? t.id),
+            status: 'pending' as const,
+            toolCallId: t.id,
+          })),
+          pendingIntervention:
+            pending.length > 0
+              ? {
+                  interventionId: approvalInterventionId(pending[0]!.id),
+                  kind: 'approval' as const,
+                  request: { pendingToolsCalling: pending },
+                  status: 'pending' as const,
+                }
+              : undefined,
+          reason: 'intervention_requested',
+          sequence: journalSequence,
+          stepId,
+        },
+        db: this.serverDB,
+      });
+    })().catch(() => {});
+  }
+
+  /**
+   * SubscribeOperation: replay durable journal after sequence (transport only).
+   */
+  async subscribeProtocolEvents(params: {
+    afterSequence: number;
+    limit?: number;
+    operationId: string;
+  }) {
+    return subscribeOperationEvents({
+      afterSequence: params.afterSequence,
+      db: this.serverDB,
+      limit: params.limit,
+      operationId: params.operationId,
+    });
+  }
+
+  /**
+   * Load recovery checkpoint (tool idempotency / resume planning).
+   */
+  async loadProtocolCheckpoint(operationId: string, atOrBeforeSequence?: number) {
+    return loadRecoveryCheckpoint({
+      atOrBeforeSequence,
+      db: this.serverDB,
+      operationId,
+    });
   }
 
   /**

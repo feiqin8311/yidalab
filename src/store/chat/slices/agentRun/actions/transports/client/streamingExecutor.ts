@@ -43,6 +43,7 @@ import { getAiInfraStoreState } from '@/store/aiInfra/store';
 import { createAgentExecutors } from '@/store/chat/agents/createAgentExecutors';
 import { topicSelectors } from '@/store/chat/selectors';
 import { emitClientAgentSignalSourceEvent } from '@/store/chat/slices/agentRun/actions/lifecycle/agentSignalBridge';
+import { createClientEngineEventMapper } from '@/store/chat/slices/agentRun/actions/transports/client/clientProtocolAdapter';
 import {
   selectActivatedSkillsFromMessages,
   selectActivatedToolIdsFromMessages,
@@ -641,6 +642,11 @@ export class StreamingExecutorActionImpl {
     // Compute contextKey for message queue (per-context, not per-operation)
     const contextKey = messageKey;
 
+    // Protocol dual-path: map engine AgentEvent → AgentRuntimeEvent (sequenced).
+    // UI side effects still use the legacy switch below; protocol events are
+    // control-plane egress only until consumers migrate fully.
+    const protocolMapper = createClientEngineEventMapper(operationId);
+
     // Execute the agent runtime loop
     let stepCount = 0;
     while (state.status !== 'done' && state.status !== 'error') {
@@ -729,6 +735,16 @@ export class StreamingExecutorActionImpl {
           `[executeClientAgent] ${result.nextContext?.phase} completed, refreshing messages to sync state`,
         );
         await this.#get().refreshMessages(context);
+      }
+
+      // Dual-path protocol map (sequenced). Side effects remain on engine events.
+      const protocolEvents = protocolMapper.mapStepEvents(result.events);
+      if (protocolEvents.length > 0) {
+        log(
+          '[executeClientAgent] protocol events: %o (lastSequence=%d)',
+          protocolEvents.map((e) => e.type),
+          protocolMapper.lastSequence,
+        );
       }
 
       // Handle completion and error events

@@ -46,6 +46,12 @@ export interface AgentDeviceOverride {
  */
 export interface WorkspaceUserPreference {
   agentDeviceOverrides?: Record<string /* agentId */, AgentDeviceOverride>;
+  /**
+   * Per-member pin of workspace agents. Shared `agents.pinned` is no longer
+   * written for workspace agents — pin/unpin only mutates this member map so
+   * one person's pin never reorders the sidebar for everyone.
+   */
+  pinnedAgentIds?: string[];
 }
 
 export interface LobeUser {

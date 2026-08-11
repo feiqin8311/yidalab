@@ -77,7 +77,14 @@ export class ThreadModel {
   }
 
   private ownership = () =>
-    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, threads);
+    buildWorkspaceWhere(
+      { userId: this.userId, workspaceId: this.workspaceId },
+      {
+        userId: threads.userId,
+        visibility: threads.visibility,
+        workspaceId: threads.workspaceId,
+      },
+    );
 
   create = async (params: CreateThreadParams) => {
     // @ts-ignore
@@ -86,7 +93,7 @@ export class ThreadModel {
       .values(
         buildWorkspacePayload(
           { userId: this.userId, workspaceId: this.workspaceId },
-          { status: ThreadStatus.Active, ...params },
+          { status: ThreadStatus.Active, visibility: 'private' as const, ...params },
         ),
       )
       .onConflictDoNothing()

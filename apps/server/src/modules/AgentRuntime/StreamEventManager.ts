@@ -3,6 +3,7 @@ import { type ChatToolPayload } from '@lobechat/types';
 import debug from 'debug';
 import { type Redis } from 'ioredis';
 
+import { mapWireEventToProtocolAndJournal } from './protocolJournal';
 import { getAgentRuntimeRedisClient } from './redis';
 import { type PublishAgentRuntimeEndParams } from './types';
 
@@ -206,6 +207,23 @@ export class StreamEventManager {
         xaddStart,
         xaddEnd - xaddStart,
       );
+
+      // Protocol dual-path: map wire → control events; journal only journalable
+      // types (never stream_chunk/item_delta). Sequence is DB-atomic.
+      // Kill switch: AGENT_RUNTIME_PROTOCOL_JOURNAL=0 skips durable write.
+      // Failures are logged — Redis wire remains source for live UI.
+      try {
+        await mapWireEventToProtocolAndJournal({
+          data: eventData.data,
+          id: eventId as string,
+          operationId,
+          stepIndex: eventData.stepIndex,
+          timestamp: eventData.timestamp,
+          type: eventData.type,
+        });
+      } catch (protocolError) {
+        log('protocol journal failed for %s %s: %o', operationId, eventData.type, protocolError);
+      }
 
       return eventId as string;
     } catch (error) {

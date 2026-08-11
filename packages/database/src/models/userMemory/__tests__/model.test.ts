@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
 import {
+  agents,
   userMemories,
   userMemoriesActivities,
   userMemoriesContexts,
@@ -1570,9 +1571,113 @@ describe('UserMemoryModel', () => {
 
       expect(result.memory).toBeDefined();
       expect(result.memory.memoryLayer).toBe(LayersEnum.Activity);
+      expect(result.memory.scope).toBe('global');
       expect(result.activity).toBeDefined();
       expect(result.activity.narrative).toBe('Did a thing');
       expect(result.activity.userMemoryId).toBe(result.memory.id);
+    });
+
+    it('rejects agent-scoped write without agentId (fail closed)', async () => {
+      await expect(
+        memoryModel.createActivityMemory({
+          activity: {
+            associatedLocations: null,
+            associatedObjects: [],
+            associatedSubjects: [],
+            feedback: null,
+            feedbackVector: null,
+            metadata: null,
+            narrative: 'x',
+            narrativeVector: null,
+            notes: null,
+            status: 'pending',
+            endsAt: null,
+            startsAt: null,
+            tags: [],
+            timezone: null,
+            type: ActivityTypeEnum.Other,
+          },
+          details: 'd',
+          memoryLayer: LayersEnum.Activity,
+          memoryType: TypesEnum.Activity,
+          scope: 'agent',
+          summary: 's',
+          title: 't',
+        }),
+      ).rejects.toThrow(/agent-scoped memory write requires a trusted agentId/);
+    });
+  });
+
+  describe('memory scope retrieval', () => {
+    it('global-only model cannot see other agents; dual-layer sees own agent + global', async () => {
+      await serverDB.insert(agents).values([
+        { id: 'agent-a', title: 'A', userId },
+        { id: 'agent-b', title: 'B', userId },
+      ]);
+
+      const pref = {
+        conclusionDirectives: 'do x',
+        conclusionDirectivesVector: null,
+        metadata: null,
+        scorePriority: null,
+        suggestions: null,
+        tags: [],
+        type: TypesEnum.Preference,
+      };
+
+      await memoryModel.createPreferenceMemory({
+        details: 'g',
+        memoryLayer: LayersEnum.Preference,
+        memoryType: TypesEnum.Preference,
+        preference: pref,
+        scope: 'global',
+        summary: 'global mem',
+        title: 'global',
+      });
+
+      const agentAModel = new UserMemoryModel(serverDB, userId, 'agent-a');
+      await agentAModel.createPreferenceMemory({
+        agentId: 'agent-a',
+        details: 'a',
+        memoryLayer: LayersEnum.Preference,
+        memoryType: TypesEnum.Preference,
+        preference: pref,
+        scope: 'agent',
+        summary: 'agent a mem',
+        title: 'agent-a',
+      });
+
+      const agentBModel = new UserMemoryModel(serverDB, userId, 'agent-b');
+      await agentBModel.createPreferenceMemory({
+        agentId: 'agent-b',
+        details: 'b',
+        memoryLayer: LayersEnum.Preference,
+        memoryType: TypesEnum.Preference,
+        preference: pref,
+        scope: 'agent',
+        summary: 'agent b mem',
+        title: 'agent-b',
+      });
+
+      // Default constructor: global-only
+      const globalOnly = await memoryModel.listMemories({
+        layer: LayersEnum.Preference,
+        pageSize: 50,
+      });
+      const globalTitles = globalOnly.map((i: any) => i.memory?.title);
+      expect(globalTitles).toContain('global');
+      expect(globalTitles).not.toContain('agent-a');
+      expect(globalTitles).not.toContain('agent-b');
+
+      // Dual-layer for agent-a
+      const dualA = await agentAModel.listMemories({
+        layer: LayersEnum.Preference,
+        pageSize: 50,
+      });
+      const dualTitles = dualA.map((i: any) => i.memory?.title);
+      expect(dualTitles).toContain('global');
+      expect(dualTitles).toContain('agent-a');
+      expect(dualTitles).not.toContain('agent-b');
     });
   });
 

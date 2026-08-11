@@ -26,7 +26,9 @@ export const BUSINESS_FUNCTION_RUN_STATUSES = [
 
 export type BusinessFunctionRunStatus = (typeof BUSINESS_FUNCTION_RUN_STATUSES)[number];
 
-export type BusinessFunctionRunConfig = {
+/** Legacy amazon-old-product-keyword-analysis config (unchanged). */
+export type BusinessFunctionLegacyKwConfig = {
+  kind?: 'legacy';
   marketplace?: string;
   mainAsin: string;
   categoryName: string;
@@ -59,6 +61,37 @@ export type BusinessFunctionRunConfig = {
   productProfile?: Record<string, unknown>;
   auditReport?: Record<string, unknown>;
   aiBatchProgress?: { done: number; total: number; failedBatches?: number[] };
+};
+
+/** Fixed operations analysis platform config. */
+export type BusinessFunctionOperationsConfig = {
+  kind: 'operations';
+  functionId: string;
+  modeId: string;
+  params: Record<string, unknown>;
+  model: { provider: string; model: string };
+  promptVersion: string;
+  capabilitiesSnapshot?: {
+    available: string[];
+    degraded: string[];
+    missingRequired: string[];
+  };
+  rerunFromId?: string;
+};
+
+export type BusinessFunctionRunConfig =
+  BusinessFunctionLegacyKwConfig | BusinessFunctionOperationsConfig;
+
+export type BusinessFunctionOperationsResultMeta = {
+  kind: 'operations';
+  model?: { provider: string; model: string };
+  promptVersion?: string;
+  generatedAt?: string;
+  dataSourcesUsed?: string[];
+  dataSourcesMissing?: string[];
+  stepCount?: number;
+  durationMs?: number;
+  rerunFromId?: string;
 };
 
 export type BusinessFunctionRunProgress = {
@@ -124,6 +157,16 @@ export const businessFunctionRuns = pgTable(
     error: jsonb('error').$type<BusinessFunctionRunError>(),
     exportInfo: jsonb('export_info').$type<BusinessFunctionExportInfo>(),
 
+    /** Operations platform: extracted HTML report (not used by legacy KW). */
+    resultHtml: text('result_html'),
+    resultMeta: jsonb('result_meta').$type<BusinessFunctionOperationsResultMeta>(),
+
+    /** Links to hidden agent execution (operations only). */
+    agentId: text('agent_id'),
+    topicId: text('topic_id'),
+    operationId: text('operation_id'),
+    assistantMessageId: text('assistant_message_id'),
+
     startedAt: timestamptz('started_at'),
     finishedAt: timestamptz('finished_at'),
 
@@ -136,6 +179,13 @@ export const businessFunctionRuns = pgTable(
     index('business_function_runs_function_type_idx').on(t.functionType),
     index('business_function_runs_workspace_asin_idx').on(t.workspaceId, t.mainAsin),
     index('business_function_runs_created_at_idx').on(t.createdAt),
+    index('business_function_runs_ws_fn_created_idx').on(
+      t.workspaceId,
+      t.functionType,
+      t.createdAt,
+    ),
+    index('business_function_runs_operation_id_idx').on(t.operationId),
+    index('business_function_runs_topic_id_idx').on(t.topicId),
   ],
 );
 

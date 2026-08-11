@@ -14,6 +14,7 @@ import { KnowledgeBaseModel } from '@/database/models/knowledgeBase';
 import { SessionModel } from '@/database/models/session';
 import { TaskModel } from '@/database/models/task';
 import { UserModel } from '@/database/models/user';
+import { WorkspaceUserSettingsModel } from '@/database/models/workspaceUserSettings';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AgentService } from '@/server/services/agent';
@@ -38,6 +39,36 @@ const agentProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) =>
     },
   });
 });
+
+/**
+ * Public workspace agents: only creator or workspace admin/owner may mutate
+ * config/knowledge/files/delete. Members may still *use* the shared agent.
+ */
+async function assertCanManageAgent(params: {
+  agentId: string;
+  agentModel: AgentModel;
+  serverDB: typeof agentProcedure extends never ? never : any;
+  userId: string;
+  workspaceId?: string;
+}): Promise<void> {
+  if (!params.workspaceId) return;
+  const meta = await params.agentModel.getAgentVisibilityMeta(params.agentId);
+  if (!meta) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+  if (meta.userId === params.userId) return;
+  const canManage = await hasWorkspaceScopedPermission({
+    action: 'AGENT_UPDATE',
+    db: params.serverDB,
+    scopes: ['ALL'],
+    userId: params.userId,
+    workspaceId: params.workspaceId,
+  });
+  if (!canManage) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only the agent creator or workspace admin can manage this agent',
+    });
+  }
+}
 
 export const agentRouter = router({
   /**
@@ -195,6 +226,13 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.createAgentFiles(input.agentId, input.fileIds, input.enabled);
     }),
 
@@ -208,6 +246,13 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.createAgentKnowledgeBase(
         input.agentId,
         input.knowledgeBaseId,
@@ -247,6 +292,13 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.deleteAgentFile(input.agentId, input.fileId);
     }),
 
@@ -259,6 +311,13 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.deleteAgentKnowledgeBase(input.agentId, input.knowledgeBaseId);
     }),
 
@@ -443,6 +502,13 @@ export const agentRouter = router({
     .use(withScopedPermission('agent:delete'))
     .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.delete(input.agentId);
     }),
 
@@ -456,6 +522,13 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.toggleFile(input.agentId, input.fileId, input.enabled);
     }),
 
@@ -469,6 +542,13 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       return ctx.agentModel.toggleKnowledgeBase(
         input.agentId,
         input.knowledgeBaseId,
@@ -571,6 +651,14 @@ export const agentRouter = router({
             message: 'Agent is being edited by another user',
           });
         }
+
+        await assertCanManageAgent({
+          agentId: input.agentId,
+          agentModel: ctx.agentModel,
+          serverDB: ctx.serverDB,
+          userId: ctx.userId,
+          workspaceId: ctx.workspaceId,
+        });
       }
 
       // Use AgentService to update and return the updated agent data
@@ -578,10 +666,11 @@ export const agentRouter = router({
     }),
 
   /**
-   * Pin or unpin an agent
+   * Pin or unpin an agent.
+   * Workspace public agents store pin state per member (workspace_user_settings);
+   * private/personal agents still write agents.pinned.
    */
   updateAgentPinned: agentProcedure
-    .use(withScopedPermission('agent:update'))
     .input(
       z.object({
         id: z.string(),
@@ -589,6 +678,25 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      if (ctx.workspaceId) {
+        const meta = await ctx.agentModel.getAgentVisibilityMeta(input.id);
+        if (!meta) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+
+        if (meta.visibility === 'public' || meta.userId !== ctx.userId) {
+          const settings = new WorkspaceUserSettingsModel(
+            ctx.serverDB,
+            ctx.userId,
+            ctx.workspaceId,
+          );
+          const prefs = await settings.getPreference();
+          const current = new Set(prefs.pinnedAgentIds ?? []);
+          if (input.pinned) current.add(input.id);
+          else current.delete(input.id);
+          await settings.updatePreference({ pinnedAgentIds: [...current] });
+          return { success: true };
+        }
+      }
+
       return ctx.agentModel.update(input.id, { pinned: input.pinned });
     }),
 
@@ -596,6 +704,13 @@ export const agentRouter = router({
     .use(withScopedPermission('agent:update'))
     .input(z.object({ agentId: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      await assertCanManageAgent({
+        agentId: input.agentId,
+        agentModel: ctx.agentModel,
+        serverDB: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      });
       if (!ctx.workspaceId) return { expiresAt: null, holderId: null, lockedByOther: false };
       const prev = await ctx.editLockService.getActiveHolder('agent', input.agentId);
       const result = await ctx.editLockService.acquire('agent', input.agentId);

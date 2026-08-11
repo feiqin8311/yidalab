@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../../core/getTestDB';
 import {
+  agents,
   userMemories,
   userMemoriesActivities,
   userMemoriesContexts,
@@ -40,7 +41,7 @@ const getQueryModel = () =>
       embedding: number[],
       limit: number,
       params: Record<string, unknown>,
-    ) => Promise<Array<{ id: string }>>;
+    ) => Promise<Array<{ agentId: string | null; id: string; scope: string }>>;
     searchExperiencesSemantic: (
       embedding: number[],
       limit: number,
@@ -67,6 +68,7 @@ beforeEach(async () => {
   await serverDB.delete(userMemoriesIdentities);
   await serverDB.delete(userMemoriesPreferences);
   await serverDB.delete(userMemories);
+  await serverDB.delete(agents);
   await serverDB.delete(users);
 
   await serverDB.insert(users).values([{ id: userId }, { id: otherUserId }]);
@@ -120,23 +122,29 @@ const createActivityPair = async (opts: {
 };
 
 const createContextPair = async (opts: {
+  agentId?: string;
   currentStatus?: string;
   description?: string;
   descriptionVector?: number[];
   memoryCategory?: string;
   memoryTags?: string[];
+  scope?: 'global' | 'agent';
   tags?: string[];
   title?: string;
   type?: string;
 }) => {
+  const scope = opts.scope ?? 'global';
+  const agentId = opts.agentId ?? null;
   const [memory] = await serverDB
     .insert(userMemories)
     .values({
+      agentId,
       details: 'context details',
       lastAccessedAt: new Date(),
       memoryCategory: opts.memoryCategory,
       memoryLayer: 'context',
       memoryType: 'context',
+      scope,
       summary: 'context summary',
       tags: opts.memoryTags ?? opts.tags,
       title: opts.title ?? 'Context memory',
@@ -147,10 +155,12 @@ const createContextPair = async (opts: {
   const [context] = await serverDB
     .insert(userMemoriesContexts)
     .values({
+      agentId,
       associatedObjects: [{ name: 'Linear', type: UserMemoryContextObjectType.Application }],
       currentStatus: opts.currentStatus,
       description: opts.description ?? 'A context description',
       descriptionVector: opts.descriptionVector,
+      scope,
       tags: opts.tags,
       title: opts.title ?? 'Atlas context',
       type: opts.type ?? 'project',
@@ -535,6 +545,32 @@ describe('semantic search (non-BM25 vector paths)', () => {
     const rows = await getQueryModel().searchContextsSemantic(vec(1), 5, {});
 
     expect(rows.map((row) => row.id)).toEqual([near.id, far.id]);
+  });
+
+  it('projects scope and agentId on context semantic results', async () => {
+    await serverDB.insert(agents).values([{ id: 'agent-ctx-a', title: 'A', userId }]);
+    const { context: globalCtx } = await createContextPair({
+      description: 'global context',
+      descriptionVector: vec(1),
+      scope: 'global',
+      title: 'global ctx',
+    });
+    const { context: agentCtx } = await createContextPair({
+      agentId: 'agent-ctx-a',
+      description: 'agent context',
+      descriptionVector: vec(1),
+      scope: 'agent',
+      title: 'agent ctx',
+    });
+
+    // Dual-layer model sees global + own agent
+    const dualModel = new UserMemoryModel(serverDB, userId, 'agent-ctx-a');
+    const dualQuery = Reflect.get(dualModel, 'queryModel') as ReturnType<typeof getQueryModel>;
+    const rows = await dualQuery.searchContextsSemantic(vec(1), 5, {});
+
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
+    expect(byId[globalCtx.id]).toMatchObject({ agentId: null, scope: 'global' });
+    expect(byId[agentCtx.id]).toMatchObject({ agentId: 'agent-ctx-a', scope: 'agent' });
   });
 
   it('applies category and status filters to context semantic search', async () => {

@@ -16,6 +16,7 @@ import { AiAgentService } from '@/server/services/aiAgent';
 
 import { AgentBridgeService } from './AgentBridgeService';
 import { buildBotContext } from './buildBotContext';
+import { resolveDingTalkActor } from './dingtalkIdentity';
 import {
   createOrGetPairingRequest,
   deletePairingRequest,
@@ -111,6 +112,13 @@ interface RegisteredBot {
 /** Context passed to every command handler — a minimal surface shared by both
  *  native slash-command events and text-based message events. */
 interface CommandContext {
+  /**
+   * Resolved LobeHub member for this invocation (DingTalk actor). Commands
+   * that touch topics / interrupt / feedback must use this — never the
+   * channel creator's userId. Optional only for non-DingTalk platforms that
+   * still run as the channel owner.
+   */
+  actorUserId?: string;
   /** Text after the command name (e.g. "/new foo" → "foo"). */
   args: string;
   /** Platform user ID of the invoking user. Optional because the source
@@ -544,7 +552,10 @@ export class BotMessageRouter {
     },
   ): void {
     const { agentId, applicationId, platform, userId, workspaceId } = info;
-    const bridge = new AgentBridgeService(serverDB, userId, workspaceId);
+    // Channel-owner bridge is only used for non-DingTalk platforms (or as a
+    // last-resort shell). DingTalk always constructs a per-actor bridge after
+    // identity resolution so sessions/memory never land on the channel creator.
+    const channelOwnerBridge = new AgentBridgeService(serverDB, userId, workspaceId);
     const charLimit = (info.settings?.charLimit as number) || undefined;
     const displayToolCalls = info.settings?.displayToolCalls === true;
     const dmSettings: DmSettings = extractDmSettings(info.settings);
@@ -784,11 +795,13 @@ export class BotMessageRouter {
       text: string | undefined,
       author: { userId?: string; userName?: string } | undefined,
       replyLocale: BotReplyLocale,
+      opts?: { actorUserId?: string },
     ): Promise<boolean> => {
       const sanitized = client.sanitizeUserInput?.(text ?? '') ?? text;
       const result = BotMessageRouter.dispatchTextCommand(sanitized, commands);
       if (!result) return false;
       await result.command.handler({
+        actorUserId: opts?.actorUserId,
         args: result.args,
         authorUserId: author?.userId,
         authorUserName: author?.userName,
@@ -1002,8 +1015,85 @@ export class BotMessageRouter {
       return { count: participants.length + 1, isNewParticipant: true };
     };
 
+    /**
+     * DingTalk: resolve senderStaffId → workspace member. Unlinked / inactive
+     * members get a short reply and never create Topic/Message/memory.
+     * Group chats are refused this period (DM-only).
+     */
+    const resolveActorBridge = async (
+      thread: { id: string; isDM?: boolean; post: (t: string) => Promise<unknown> },
+      author: { userId?: string },
+      replyLocale: BotReplyLocale,
+      caller: string,
+    ): Promise<AgentBridgeService | null> => {
+      if (platform !== 'dingtalk') return channelOwnerBridge;
+
+      if (thread.isDM !== true) {
+        log('%s: dingtalk group rejected, thread=%s', caller, thread.id);
+        try {
+          await thread.post(
+            replyLocale === 'zh-CN'
+              ? '本期仅支持钉钉单聊，暂不支持群聊。'
+              : 'DingTalk group chat is not supported yet. Please use a 1:1 DM.',
+          );
+        } catch {
+          /* best-effort */
+        }
+        return null;
+      }
+
+      if (!workspaceId) {
+        log('%s: dingtalk channel missing workspaceId, app=%s', caller, applicationId);
+        try {
+          await thread.post(
+            replyLocale === 'zh-CN'
+              ? '该机器人未绑定公司工作区，请联系管理员。'
+              : 'This bot is not bound to a company workspace. Contact an admin.',
+          );
+        } catch {
+          /* best-effort */
+        }
+        return null;
+      }
+
+      const staffId = author.userId?.trim() ?? '';
+      const resolved = await resolveDingTalkActor({
+        db: serverDB,
+        staffId,
+        workspaceId,
+      });
+
+      if (resolved.kind !== 'ok') {
+        log(
+          '%s: dingtalk identity %s staff=%s workspace=%s',
+          caller,
+          resolved.kind,
+          staffId,
+          workspaceId,
+        );
+        try {
+          await thread.post(
+            replyLocale === 'zh-CN'
+              ? '请先从钉钉工作台打开一次 YidaLab 完成身份识别，再回来对话。'
+              : 'Please open YidaLab once from the DingTalk workbench to link your identity, then try again.',
+          );
+        } catch {
+          /* best-effort */
+        }
+        return null;
+      }
+
+      return new AgentBridgeService(serverDB, resolved.userId, resolved.workspaceId);
+    };
+
     bot.onNewMention(async (thread, message, context?: MessageContext) => {
       const replyLocale = detectReplyLocale(message);
+      // DingTalk identity is the first gate: no command / Signal / topic until
+      // the real member is resolved (never the channel creator).
+      const bridge = await resolveActorBridge(thread, message.author, replyLocale, 'onNewMention');
+      if (!bridge) return;
+      const actorUserId = bridge.getUserId();
+
       // Record the original @mentioner so the first follow-up in
       // `onSubscribedMessage` recognises them as participant #1 instead of
       // a "newcomer" — otherwise count would be 0 at that moment and the
@@ -1016,7 +1106,13 @@ export class BotMessageRouter {
         return;
       }
 
-      if (await tryDispatch(thread, message.text, message.author, replyLocale)) return;
+      if (
+        await tryDispatch(thread, message.text, message.author, replyLocale, {
+          actorUserId,
+        })
+      ) {
+        return;
+      }
 
       log(
         'onNewMention raw: agent=%s, platform=%s, msgId=%s, textLen=%d, attachments=%o, skipped=%d',
@@ -1054,7 +1150,7 @@ export class BotMessageRouter {
         {
           agentId,
           db: serverDB,
-          userId,
+          userId: actorUserId,
           workspaceId: workspaceId ?? undefined,
         },
         { ignoreError: true },
@@ -1176,13 +1272,25 @@ export class BotMessageRouter {
         );
       }
 
+      // Identity before gates / commands / Signal (same as onNewMention).
+      const bridge = await resolveActorBridge(
+        thread,
+        message.author,
+        replyLocale,
+        'onSubscribedMessage',
+      );
+      if (!bridge) return;
+      const actorUserId = bridge.getUserId();
+
       // Gate before tryDispatch so a /command from a non-allowlisted sender
       // (or in a disabled DM/group scope) cannot side-effect.
       if (!(await passGatesOrNotify(thread, message.author, replyLocale, 'onSubscribedMessage'))) {
         return;
       }
 
-      if (await tryDispatch(thread, message.text, message.author, replyLocale)) return;
+      if (await tryDispatch(thread, message.text, message.author, replyLocale, { actorUserId })) {
+        return;
+      }
 
       log(
         'onSubscribedMessage raw: agent=%s, platform=%s, msgId=%s, textLen=%d, attachments=%o, skipped=%d',
@@ -1240,7 +1348,7 @@ export class BotMessageRouter {
         {
           agentId,
           db: serverDB,
-          userId,
+          userId: actorUserId,
           workspaceId: workspaceId ?? undefined,
         },
         { ignoreError: true },
@@ -1299,6 +1407,7 @@ export class BotMessageRouter {
         fallback: fallbackReplyLocale,
       },
       passGatesOrNotify,
+      resolveActorBridge,
     );
 
     // DM / keyword-wake catch-all: registered when either DM is enabled OR at
@@ -1358,6 +1467,16 @@ export class BotMessageRouter {
         }
 
         const replyLocale = detectReplyLocale(message);
+
+        // Identity first — before gates / Signal / agent exec.
+        const bridge = await resolveActorBridge(
+          thread,
+          message.author,
+          replyLocale,
+          `onNewMessage (${platform} catch-all)`,
+        );
+        if (!bridge) return;
+        const actorUserId = bridge.getUserId();
 
         if (
           !(await passGatesOrNotify(
@@ -1458,7 +1577,7 @@ export class BotMessageRouter {
           {
             agentId,
             db: serverDB,
-            userId,
+            userId: actorUserId,
             workspaceId: workspaceId ?? undefined,
           },
           { ignoreError: true },
@@ -1574,7 +1693,10 @@ export class BotMessageRouter {
           const operationId = AgentBridgeService.getActiveOperationId(ctx.threadId);
           if (operationId) {
             try {
-              const aiAgentService = new AiAgentService(serverDB, userId, {
+              // Prefer the resolved member; fall back to channel owner only for
+              // non-DingTalk bots that still share one owner identity.
+              const actorId = ctx.actorUserId ?? userId;
+              const aiAgentService = new AiAgentService(serverDB, actorId, {
                 workspaceId: info.workspaceId ?? undefined,
               });
               const result = await aiAgentService.interruptTask({ operationId });
@@ -1755,7 +1877,8 @@ export class BotMessageRouter {
             body,
             platform,
             threadId: ctx.threadId,
-            userId,
+            // DingTalk: real member; other platforms still fall back to channel owner.
+            userId: ctx.actorUserId ?? userId,
           });
           if (!result.success) {
             await reply(renderCommandReply('cmdFeedbackError', ctx.replyLocale));
@@ -1813,6 +1936,17 @@ export class BotMessageRouter {
       replyLocale: BotReplyLocale,
       caller: string,
     ) => Promise<boolean>,
+    /**
+     * Resolve the acting member (DingTalk: real staff; others: channel owner).
+     * Identity must run before gate/command so `/feedback` never attributes
+     * to the channel creator.
+     */
+    resolveActor: (
+      thread: { id: string; isDM?: boolean; post: (t: string) => Promise<unknown> },
+      author: { userId?: string },
+      replyLocale: BotReplyLocale,
+      caller: string,
+    ) => Promise<AgentBridgeService | null>,
   ): void {
     // --- Native slash commands (Slack, Discord) ---
     for (const cmd of commands) {
@@ -1830,10 +1964,18 @@ export class BotMessageRouter {
           userName: event.user?.userName,
         };
         const replyLocale = locale.fallback;
+        const bridge = await resolveActor(
+          threadLike,
+          authorLike,
+          replyLocale,
+          `onSlashCommand /${cmd.name}`,
+        );
+        if (!bridge) return;
         if (!(await gate(threadLike, authorLike, replyLocale, `onSlashCommand /${cmd.name}`))) {
           return;
         }
         await cmd.handler({
+          actorUserId: bridge.getUserId(),
           args: event.text,
           authorUserId: authorLike.userId,
           authorUserName: authorLike.userName,
@@ -1873,12 +2015,20 @@ export class BotMessageRouter {
       const result = BotMessageRouter.dispatchTextCommand(sanitized, commands);
       if (!result) return;
       const replyLocale = locale.detectFromMessage(message);
+      const bridge = await resolveActor(
+        thread,
+        message.author,
+        replyLocale,
+        `onNewMessage /${result.command.name}`,
+      );
+      if (!bridge) return;
       if (
         !(await gate(thread, message.author, replyLocale, `onNewMessage /${result.command.name}`))
       ) {
         return;
       }
       await result.command.handler({
+        actorUserId: bridge.getUserId(),
         args: result.args,
         authorUserId: message.author?.userId,
         authorUserName: message.author?.userName,

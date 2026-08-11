@@ -8,6 +8,8 @@
  * document UI and should stay out of the main agent chat history.
  */
 export const TopicTrigger = {
+  /** Fixed operations function runs (function center). */
+  BusinessFunction: 'business_function',
   Cron: 'cron',
   Document: 'document',
   Eval: 'eval',
@@ -16,10 +18,11 @@ export const TopicTrigger = {
 
 /**
  * Triggers to exclude from the main chat sidebar so system-owned topics
- * (cron jobs, evals, task runs, doc-anchored chat) don't pollute the user's
- * main history.
+ * (cron jobs, evals, task runs, doc-anchored chat, ops function runs)
+ * don't pollute the user's main history.
  */
 export const MAIN_SIDEBAR_EXCLUDE_TRIGGERS: string[] = [
+  TopicTrigger.BusinessFunction,
   TopicTrigger.Cron,
   TopicTrigger.Document,
   TopicTrigger.Eval,

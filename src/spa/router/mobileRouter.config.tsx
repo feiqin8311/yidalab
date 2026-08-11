@@ -241,6 +241,20 @@ export const sharedMainAreaChildren: RouteObject[] = [
         ),
         path: 'amazon-old-product-keyword-analysis/:runId',
       },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/[functionId]'),
+          'Mobile > Functions > Operations',
+        ),
+        path: ':functionId',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/[functionId]/[runId]'),
+          'Mobile > Functions > Operations Run',
+        ),
+        path: ':functionId/:runId',
+      },
     ],
     errorElement: <ErrorBoundary />,
     path: 'functions',

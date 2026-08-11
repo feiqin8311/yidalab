@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HumanInterventionHandler } from '../HumanInterventionHandler';
 
+const mockPersistInterventionResolve = vi.fn();
+
+vi.mock('@/server/modules/AgentRuntime/protocolRecovery', () => ({
+  persistInterventionResolve: (...args: unknown[]) => mockPersistInterventionResolve(...args),
+}));
+
 const buildHandler = (
   pluginQuery: ReturnType<typeof vi.fn>,
   messageModel: { updateMessagePlugin: any; updateToolMessage: any },
@@ -28,6 +34,7 @@ describe('HumanInterventionHandler.process', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPersistInterventionResolve.mockResolvedValue({ ok: true, duplicate: false });
     mockDBPluginQuery = vi.fn().mockResolvedValue({ toolCallId: 'tool-call-1' });
     mockMessageModel = {
       updateMessagePlugin: vi.fn().mockResolvedValue(undefined),
@@ -50,7 +57,7 @@ describe('HumanInterventionHandler.process', () => {
       });
     });
 
-    it('returns nextContext with phase=human_approved_tool and skipCreateToolMessage=true', async () => {
+    it('returns kind=resume with phase=human_approved_tool', async () => {
       const state = makeState();
 
       const result = await handler.process(state, {
@@ -58,6 +65,8 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('resume');
+      if (result.kind !== 'resume') return;
       expect(result.nextContext).toEqual({
         payload: {
           approvedToolCall: { id: 'tool-call-1' },
@@ -76,6 +85,8 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('resume');
+      if (result.kind !== 'resume') return;
       expect(result.newState.pendingToolsCalling).toHaveLength(1);
       expect(result.newState.pendingToolsCalling[0].id).toBe('tool-call-2');
     });
@@ -88,6 +99,8 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('resume');
+      if (result.kind !== 'resume') return;
       expect(result.newState.status).toBe('waiting_for_human');
     });
 
@@ -103,18 +116,50 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('resume');
+      if (result.kind !== 'resume') return;
       expect(result.newState.status).toBe('running');
     });
 
-    it('no-ops when toolMessageId is missing', async () => {
+    it('returns kind=failed when toolMessageId is missing', async () => {
       const state = makeState();
 
       const result = await handler.process(state, {
         approvedToolCall: { id: 'tool-call-1' },
       });
 
+      expect(result.kind).toBe('failed');
       expect(mockMessageModel.updateMessagePlugin).not.toHaveBeenCalled();
-      expect(result.nextContext).toBeUndefined();
+    });
+
+    it('returns kind=failed when resolve returns !ok (no product side effects)', async () => {
+      mockPersistInterventionResolve.mockResolvedValueOnce({
+        ok: false,
+        error: 'not_found',
+        duplicate: false,
+      });
+      const state = makeState();
+
+      const result = await handler.process(state, {
+        approvedToolCall: { id: 'tool-call-1' },
+        toolMessageId: 'tool-msg-1',
+      });
+
+      expect(result).toEqual({ kind: 'failed', newState: state, error: 'not_found' });
+      expect(mockMessageModel.updateMessagePlugin).not.toHaveBeenCalled();
+    });
+
+    it('returns kind=duplicate on duplicate resolve (no re-execute tools)', async () => {
+      mockPersistInterventionResolve.mockResolvedValueOnce({ ok: true, duplicate: true });
+      const state = makeState();
+
+      const result = await handler.process(state, {
+        approvedToolCall: { id: 'tool-call-1' },
+        toolMessageId: 'tool-msg-1',
+      });
+
+      expect(result).toEqual({ kind: 'duplicate', newState: state });
+      expect(mockMessageModel.updateMessagePlugin).not.toHaveBeenCalled();
     });
   });
 
@@ -171,11 +216,13 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-2',
       });
 
+      expect(result.kind).toBe('halted');
+      if (result.kind !== 'halted') return;
       expect(result.newState.pendingToolsCalling).toHaveLength(1);
       expect(result.newState.pendingToolsCalling[0].id).toBe('tool-call-1');
     });
 
-    it('transitions to interrupted + reason=human_rejected (pure reject, no continue)', async () => {
+    it('returns kind=halted with interrupted + reason=human_rejected', async () => {
       const state = makeState();
 
       const result = await handler.process(state, {
@@ -183,6 +230,8 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('halted');
+      if (result.kind !== 'halted') return;
       expect(result.newState.status).toBe('interrupted');
       expect(result.newState.interruption).toEqual(
         expect.objectContaining({
@@ -190,15 +239,11 @@ describe('HumanInterventionHandler.process', () => {
           reason: 'human_rejected',
         }),
       );
-      expect(result.nextContext).toBeUndefined();
     });
   });
 
   describe('reject_continue path', () => {
-    it('stays paused (nextContext=undefined) when other tools are still pending', async () => {
-      // makeState() has 2 pending; pluginQuery resolves tool-call-1 → 1 left.
-      // Returning a `phase: 'user_input'` context here would resume the LLM
-      // before the remaining pending tools are decided (review P1).
+    it('returns kind=parked when other tools are still pending', async () => {
       const state = makeState();
       mockDBPluginQuery.mockResolvedValueOnce({ toolCallId: 'tool-call-1' });
 
@@ -208,11 +253,12 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('parked');
+      if (result.kind !== 'parked') return;
       expect(result.newState.status).toBe('waiting_for_human');
-      expect(result.nextContext).toBeUndefined();
     });
 
-    it('returns nextContext with phase=user_input only when this is the last pending tool', async () => {
+    it('returns kind=resume with phase=user_input only when last pending tool', async () => {
       const state = makeState({
         pendingToolsCalling: [
           { apiName: 'search', arguments: '{}', id: 'tool-call-1', identifier: 'web-search' },
@@ -226,6 +272,8 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
+      expect(result.kind).toBe('resume');
+      if (result.kind !== 'resume') return;
       expect(result.newState.status).toBe('running');
       expect(result.nextContext).toEqual({ phase: 'user_input' });
     });
@@ -246,7 +294,7 @@ describe('HumanInterventionHandler.process', () => {
   });
 
   describe('no-op paths', () => {
-    it('returns state unchanged when status is not waiting_for_human (approve)', async () => {
+    it('returns passthrough when status is not waiting_for_human (approve)', async () => {
       const state = makeState({ status: 'running' });
 
       const result = await handler.process(state, {
@@ -254,12 +302,11 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
-      expect(result.newState).toBe(state);
-      expect(result.nextContext).toBeUndefined();
+      expect(result).toEqual({ kind: 'passthrough' });
       expect(mockMessageModel.updateMessagePlugin).not.toHaveBeenCalled();
     });
 
-    it('returns state unchanged when status is not waiting_for_human (reject)', async () => {
+    it('returns passthrough when status is not waiting_for_human (reject)', async () => {
       const state = makeState({ status: 'running' });
 
       const result = await handler.process(state, {
@@ -267,11 +314,10 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
-      expect(result.newState).toBe(state);
-      expect(result.nextContext).toBeUndefined();
+      expect(result).toEqual({ kind: 'passthrough' });
     });
 
-    it('handles humanInput as out-of-scope (no state transition)', async () => {
+    it('handles humanInput as passthrough (no state transition)', async () => {
       const state = makeState();
 
       const result = await handler.process(state, {
@@ -279,8 +325,7 @@ describe('HumanInterventionHandler.process', () => {
         toolMessageId: 'tool-msg-1',
       });
 
-      expect(result.newState).toBe(state);
-      expect(result.nextContext).toBeUndefined();
+      expect(result).toEqual({ kind: 'passthrough' });
     });
   });
 });

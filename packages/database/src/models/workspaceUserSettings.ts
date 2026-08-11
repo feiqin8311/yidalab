@@ -84,6 +84,8 @@ export class WorkspaceUserSettingsModel {
             },
           }
         : {}),
+      // Explicit array replace so pin/unpin can clear to [] without merge surprises.
+      ...(patch.pinnedAgentIds !== undefined ? { pinnedAgentIds: patch.pinnedAgentIds } : {}),
     };
     const [row] = await this.db
       .insert(workspaceUserSettings)

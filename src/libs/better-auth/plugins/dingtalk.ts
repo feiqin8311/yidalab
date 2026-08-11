@@ -249,6 +249,24 @@ export const dingtalkAuthPlugin = (): BetterAuthPlugin => ({
 
         await setSessionCookie(ctx, { session, user });
 
+        // Bind enterprise userid → messenger_account_links for every active
+        // company membership so DingTalk bot single-chat can resolve the real
+        // member (never the channel creator).
+        if (profile.userid?.trim()) {
+          try {
+            const { upsertDingTalkLinksForUser } =
+              await import('@/server/services/bot/dingtalkIdentity');
+            await upsertDingTalkLinksForUser({
+              db: serverDB,
+              platformUsername: displayName,
+              staffId: profile.userid,
+              userId: user.id,
+            });
+          } catch (error) {
+            console.warn(LOG, 'upsert messenger account links failed', error);
+          }
+        }
+
         console.info(LOG, 'login success', {
           userId: user.id,
           sessionTokenPrefix: String(session.token || '').slice(0, 8),

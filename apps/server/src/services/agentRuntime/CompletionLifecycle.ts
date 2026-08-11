@@ -11,6 +11,7 @@ import { MessageModel } from '@/database/models/message';
 import { VerifyRunModel } from '@/database/models/verifyRun';
 import { type LobeChatDatabase } from '@/database/type';
 import { formatErrorForState } from '@/server/modules/AgentRuntime/formatErrorForState';
+import { closeSubagentEdge } from '@/server/modules/AgentRuntime/protocolRecovery';
 import { buildFinalSnapshotKey } from '@/server/modules/AgentTracing';
 import { emitAgentSignalSourceEvent } from '@/server/services/agentSignal';
 import { toAgentSignalTraceEvents } from '@/server/services/agentSignal/observability/traceEvents';
@@ -241,6 +242,17 @@ export class CompletionLifecycle {
       });
     } catch (error) {
       log('[%s] Failed to persist operation completion (non-fatal): %O', operationId, error);
+    }
+
+    // Protocol dual-path: close subagent graph edge when this op is a child and terminal.
+    if (!isParkedStatus(status)) {
+      const edgeStatus =
+        status === 'done' ? 'completed' : status === 'interrupted' ? 'cancelled' : 'failed';
+      void closeSubagentEdge({
+        childOperationId: operationId,
+        db: this.serverDB,
+        status: edgeStatus,
+      }).catch(() => {});
     }
   }
 

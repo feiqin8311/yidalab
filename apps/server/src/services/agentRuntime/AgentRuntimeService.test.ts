@@ -723,6 +723,7 @@ describe('AgentRuntimeService', () => {
       const mockRuntime = { step: vi.fn().mockResolvedValue(mockStepResult) };
       vi.spyOn(service as any, 'createAgentRuntime').mockReturnValue({ runtime: mockRuntime });
       const processSpy = vi.spyOn((service as any).humanIntervention, 'process').mockResolvedValue({
+        kind: 'resume',
         newState: mockState,
         nextContext: mockParams.context,
       });
@@ -739,6 +740,133 @@ describe('AgentRuntimeService', () => {
 
       expect(result.success).toBe(true);
       expect(result.nextStepScheduled).toBe(false); // Should not schedule next step when status is 'done'
+      expect(mockRuntime.step).toHaveBeenCalled();
+    });
+
+    it('short-circuits duplicate intervention without runtime.step', async () => {
+      const paramsWithIntervention = {
+        ...mockParams,
+        approvedToolCall: { id: 'tool-call-1' },
+        toolMessageId: 'tool-msg-1',
+      };
+
+      const mockRuntime = { step: vi.fn() };
+      vi.spyOn(service as any, 'createAgentRuntime').mockReturnValue({ runtime: mockRuntime });
+      vi.spyOn((service as any).humanIntervention, 'process').mockResolvedValue({
+        kind: 'duplicate',
+        newState: mockState,
+      });
+
+      const result = await service.executeStep(paramsWithIntervention);
+
+      expect(result.success).toBe(true);
+      expect(result.nextStepScheduled).toBe(false);
+      expect(result.stepResult).toBeNull();
+      expect(mockRuntime.step).not.toHaveBeenCalled();
+    });
+
+    it('short-circuits failed intervention resolve without runtime.step', async () => {
+      const paramsWithIntervention = {
+        ...mockParams,
+        approvedToolCall: { id: 'tool-call-1' },
+        toolMessageId: 'tool-msg-1',
+      };
+
+      const mockRuntime = { step: vi.fn() };
+      vi.spyOn(service as any, 'createAgentRuntime').mockReturnValue({ runtime: mockRuntime });
+      vi.spyOn((service as any).humanIntervention, 'process').mockResolvedValue({
+        kind: 'failed',
+        newState: mockState,
+        error: 'not_found',
+      });
+
+      const result = await service.executeStep(paramsWithIntervention);
+
+      expect(result.success).toBe(true);
+      expect(result.stepResult).toBeNull();
+      expect(mockRuntime.step).not.toHaveBeenCalled();
+    });
+
+    it('awaits intervention request before saveStepResult when parking for HIL', async () => {
+      // park→approve race: request rows must land before state is visible as approvable.
+      const callOrder: string[] = [];
+      const parkedState = {
+        ...mockState,
+        status: 'waiting_for_human',
+        pendingToolsCalling: [
+          { apiName: 'search', arguments: '{}', id: 'tool-call-1', identifier: 'web' },
+        ],
+        stepCount: 2,
+      };
+      const mockStepResult = {
+        newState: parkedState,
+        nextContext: undefined,
+        events: [{ type: 'human_approve_required' }],
+      };
+      const mockRuntime = { step: vi.fn().mockResolvedValue(mockStepResult) };
+      vi.spyOn(service as any, 'createAgentRuntime').mockReturnValue({ runtime: mockRuntime });
+
+      const requestSpy = vi
+        .spyOn(service as any, 'persistInterventionRequests')
+        .mockImplementation(async () => {
+          callOrder.push('request');
+          return { ok: true };
+        });
+      mockCoordinator.saveStepResult.mockImplementation(async () => {
+        callOrder.push('saveStepResult');
+      });
+      vi.spyOn(service as any, 'persistProtocolCheckpoint').mockImplementation(() => {
+        callOrder.push('checkpoint');
+      });
+
+      const result = await service.executeStep(mockParams);
+
+      expect(result.success).toBe(true);
+      expect(result.state.status).toBe('waiting_for_human');
+      expect(requestSpy).toHaveBeenCalledWith(
+        'test-operation-1',
+        expect.objectContaining({
+          status: 'waiting_for_human',
+        }),
+      );
+      expect(callOrder.indexOf('request')).toBeGreaterThanOrEqual(0);
+      expect(callOrder.indexOf('saveStepResult')).toBeGreaterThan(callOrder.indexOf('request'));
+    });
+
+    it('does not expose waiting_for_human when intervention request persist fails', async () => {
+      const parkedState = {
+        ...mockState,
+        status: 'waiting_for_human',
+        pendingToolsCalling: [
+          { apiName: 'search', arguments: '{}', id: 'tool-call-1', identifier: 'web' },
+        ],
+        stepCount: 2,
+      };
+      const mockStepResult = {
+        newState: parkedState,
+        nextContext: undefined,
+        events: [],
+      };
+      const mockRuntime = { step: vi.fn().mockResolvedValue(mockStepResult) };
+      vi.spyOn(service as any, 'createAgentRuntime').mockReturnValue({ runtime: mockRuntime });
+      vi.spyOn(service as any, 'persistInterventionRequests').mockResolvedValue({
+        ok: false,
+        error: 'db_down',
+      });
+
+      const result = await service.executeStep(mockParams);
+
+      expect(result.state.status).toBe('error');
+      expect(result.state.error).toEqual(
+        expect.objectContaining({ type: 'intervention_request_failed', message: 'db_down' }),
+      );
+      // Must not publish approvable waiting_for_human as final status
+      expect(mockCoordinator.saveStepResult).toHaveBeenCalledWith(
+        'test-operation-1',
+        expect.objectContaining({
+          newState: expect.objectContaining({ status: 'error' }),
+        }),
+      );
     });
 
     it('should detect interruption that occurred during step execution', async () => {

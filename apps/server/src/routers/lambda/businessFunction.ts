@@ -7,6 +7,7 @@ import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AmazonOldProductKeywordService } from '@/server/services/amazonOldProductKeyword';
 import { LingxingAdsService } from '@/server/services/lingxingAds';
+import { OperationsFunctionService } from '@/server/services/operationsFunction';
 import { AmazonOldProductKeywordWorkflow } from '@/server/workflows/amazonOldProductKeyword';
 
 const businessProcedure = authedProcedure.use(serverDatabase).use(async ({ ctx, next }) =>
@@ -17,6 +18,9 @@ const businessProcedure = authedProcedure.use(serverDatabase).use(async ({ ctx, 
     },
   }),
 );
+
+const opsService = (ctx: { serverDB: any; userId: string }, workspaceId: string) =>
+  new OperationsFunctionService(ctx.serverDB, ctx.userId, workspaceId);
 
 const workspaceIdSchema = z.object({ workspaceId: z.string().min(1) });
 
@@ -298,5 +302,105 @@ export const businessFunctionRouter = router({
       await ensureMember(ctx.companyModel, input.workspaceId);
       return { data: DEFAULT_THRESHOLDS, success: true as const };
     }),
+  }),
+
+  operations: router({
+    getCatalog: businessProcedure
+      .input(
+        workspaceIdSchema.extend({
+          functionId: z.string().min(1).optional(),
+          modeId: z.string().min(1).optional(),
+          modelSupportsTools: z.boolean().optional(),
+          modelSupportsVision: z.boolean().optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).getCatalog({
+          functionId: input.functionId,
+          modeId: input.modeId,
+          modelSupportsTools: input.modelSupportsTools,
+          modelSupportsVision: input.modelSupportsVision,
+        });
+        return { data, success: true as const };
+      }),
+
+    createRun: businessProcedure
+      .input(
+        workspaceIdSchema.extend({
+          functionId: nonEmpty.max(100),
+          modeId: nonEmpty.max(100),
+          model: z.object({ provider: nonEmpty.max(100), model: nonEmpty.max(200) }),
+          params: z.record(z.string(), z.unknown()),
+          rerunFromId: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).createRun({
+          functionId: input.functionId,
+          modeId: input.modeId,
+          model: input.model,
+          params: input.params,
+          rerunFromId: input.rerunFromId,
+          workspaceId: input.workspaceId,
+        });
+        return { data, success: true as const };
+      }),
+
+    getRun: businessProcedure
+      .input(
+        workspaceIdSchema.extend({
+          functionId: z.string().min(1).max(100).optional(),
+          runId: nonEmpty,
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).getRun(input.runId, input.functionId);
+        return { data, success: true as const };
+      }),
+
+    listRuns: businessProcedure
+      .input(
+        workspaceIdSchema.extend({
+          functionId: nonEmpty.max(100),
+          limit: z.number().int().min(1).max(100).optional(),
+          offset: z.number().int().min(0).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).listRuns(
+          input.functionId,
+          input.limit,
+          input.offset,
+        );
+        return { data, success: true as const };
+      }),
+
+    cancelRun: businessProcedure
+      .input(workspaceIdSchema.extend({ runId: nonEmpty }))
+      .mutation(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).cancelRun(input.runId);
+        return { data, success: true as const };
+      }),
+
+    rerun: businessProcedure
+      .input(workspaceIdSchema.extend({ runId: nonEmpty }))
+      .mutation(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).rerun(input.runId);
+        return { data, success: true as const };
+      }),
+
+    deleteRun: businessProcedure
+      .input(workspaceIdSchema.extend({ runId: nonEmpty }))
+      .mutation(async ({ ctx, input }) => {
+        await ensureMember(ctx.companyModel, input.workspaceId);
+        const data = await opsService(ctx, input.workspaceId).deleteRun(input.runId);
+        return { data, success: true as const };
+      }),
   }),
 });

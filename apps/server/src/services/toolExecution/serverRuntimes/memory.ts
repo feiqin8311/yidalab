@@ -170,6 +170,25 @@ class MemoryServerRuntimeService implements MemoryRuntimeService {
     this.workspaceId = options.workspaceId;
   }
 
+  /**
+   * Server-injected scope. Models may request `global` via tool args later;
+   * agentId always comes from trusted runtime context, never model input.
+   * Identity facts default to personal-global; other layers default to agent.
+   */
+  private writeScope = (
+    kind: 'agent' | 'global' = 'agent',
+  ): {
+    agentId?: string;
+    scope: 'agent' | 'global';
+  } => {
+    if (kind === 'global') return { scope: 'global' };
+    if (!this.agentId) {
+      // Fail closed: never silently upgrade agent memories to global.
+      throw new Error('agent-scoped memory write requires a trusted agentId');
+    }
+    return { agentId: this.agentId, scope: 'agent' };
+  };
+
   private emitUserMemoryOutcome = async (input: {
     apiName: string;
     errorReason?: string;
@@ -285,6 +304,7 @@ class MemoryServerRuntimeService implements MemoryRuntimeService {
       const contextDescriptionEmbedding = await embed(input.withContext.description);
 
       const { context, memory } = await this.memoryModel.createContextMemory({
+        ...this.writeScope('agent'),
         context: {
           associatedObjects:
             UserMemoryModel.parseAssociatedObjects(input.withContext.associatedObjects) ?? null,
@@ -358,6 +378,7 @@ class MemoryServerRuntimeService implements MemoryRuntimeService {
       const feedbackVector = await embed(input.withActivity.feedback);
 
       const { activity, memory } = await this.memoryModel.createActivityMemory({
+        ...this.writeScope('agent'),
         activity: {
           associatedLocations:
             UserMemoryModel.parseAssociatedLocations(input.withActivity.associatedLocations) ??
@@ -438,6 +459,7 @@ class MemoryServerRuntimeService implements MemoryRuntimeService {
       const keyLearningVector = await embed(input.withExperience.keyLearning);
 
       const { experience, memory } = await this.memoryModel.createExperienceMemory({
+        ...this.writeScope('agent'),
         details: input.details || '',
         detailsEmbedding,
         experience: {
@@ -524,6 +546,7 @@ class MemoryServerRuntimeService implements MemoryRuntimeService {
 
       const { identityId, userMemoryId } = await this.memoryModel.addIdentityEntry({
         base: {
+          ...this.writeScope('global'),
           details: input.details,
           detailsVector1024: detailsEmbedding ?? null,
           memoryCategory: input.memoryCategory,
@@ -605,6 +628,8 @@ class MemoryServerRuntimeService implements MemoryRuntimeService {
       } satisfies Record<string, unknown>;
 
       const { memory, preference } = await this.memoryModel.createPreferenceMemory({
+        // Preferences default to agent scope; explicit "all assistants" can be global later.
+        ...this.writeScope('agent'),
         details: input.details || '',
         detailsEmbedding,
         memoryCategory: input.memoryCategory,
@@ -877,7 +902,8 @@ export const memoryRuntime: ServerRuntimeRegistration = {
       // fallback to medium
     }
 
-    const memoryModel = new UserMemoryModel(context.serverDB, context.userId);
+    // Pass agentId so agent-scoped writes/retrieval are dual-layer (global + this agent).
+    const memoryModel = new UserMemoryModel(context.serverDB, context.userId, context.agentId);
 
     const service = new MemoryServerRuntimeService({
       agentId: context.agentId,

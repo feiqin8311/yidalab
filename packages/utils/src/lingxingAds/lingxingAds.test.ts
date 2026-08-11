@@ -222,4 +222,102 @@ describe('lingxingAds parse + markdown', () => {
     expect(out.markdown).toContain('数据缺失');
     expect(out.markdown).not.toMatch(/ACoS 0\.00%/);
   });
+
+  it('parses live MCP wire format (display strings + aliases)', () => {
+    const live = {
+      status: 'ok',
+      result: {
+        trend: { label: '波动较大' },
+        compare_7d: {
+          current: {
+            date_range: '2026-08-03~2026-08-09',
+            CPC: '$1.33',
+            ACoS: '52.47%',
+            CVR: '12.12%',
+            CPO: 8.25,
+            orders: 4,
+          },
+          prev: {
+            date_range: '2026-07-27~2026-08-02',
+            CPC: '$1.24',
+            ACoS: '0.00%',
+            CVR: '0.00%',
+            CPO: 0,
+            orders: 0,
+          },
+        },
+        compare_14d: {
+          current: {
+            date_range: '2026-07-27~2026-08-09',
+            CPC: '$1.29',
+            ACoS: '98.54%',
+            CVR: '6.25%',
+            CPO: 16,
+            orders: 4,
+          },
+          prev: {
+            date_range: '2026-07-13~2026-07-26',
+            CPC: '$1.29',
+            ACoS: '11.12%',
+            CVR: '31.91%',
+            CPO: 3.13,
+            orders: 15,
+          },
+        },
+        compare_30d: {
+          current: {
+            date_range: '2026-07-11~2026-08-09',
+            ACoS: '34.19%',
+            orders: 19,
+            CPO: 9.79,
+            CVR: '10.00%',
+            CPC: '$1.30',
+          },
+          prev: {
+            date_range: '2026-06-11~2026-07-10',
+            ACoS: '42.16%',
+            orders: 10,
+            CPO: 8,
+            CVR: '12.50%',
+            CPC: '$1.29',
+          },
+        },
+        sku_14d_all: {
+          date_range: '2026-07-27~2026-08-09',
+          ACoS: '31.94%',
+          CVR: '14.53%',
+          CPO: 6.88,
+        },
+        thresholds: {
+          acos_super_high: 0.4791,
+          acos_high: 0.3833,
+          acos_low: 0.2555,
+          cvr_high: 0.1744,
+          cvr_low: 0.1162,
+          cpo_high_click: 10.32,
+          cpo_low_click: 3.44,
+          double_cpo: 13.76,
+          bid_up_cap: 1.664,
+          bid_zero_order_up_cap: 1.536,
+        },
+        negative_rules_ad: [],
+        negative_rules_ad_groups: [],
+        negative_rules_target: [],
+      },
+    };
+
+    const out = buildLingxingAnalysis(live);
+    expect(out.markdown).toContain('近7天（2026-08-03~2026-08-09）');
+    expect(out.markdown).toContain('CPC $1.33');
+    expect(out.markdown).toContain('ACoS 52.47%');
+    expect(out.markdown).toContain('CVR 12.12%');
+    expect(out.markdown).toContain('CPO $8.25');
+    expect(out.markdown).toContain('Orders 4');
+    expect(out.markdown).toContain('超高 ACoS（×1.5）：47.91%');
+    expect(out.markdown).toContain('双倍 CPO（×2）：$13.76');
+    expect(out.markdown).not.toContain('数据缺失');
+    // 近14d ACoS 98.54% ≥ ultra 47.91% and orders 4 ≥ 2
+    const ultra = out.analysis.bidWithOrders.lines.find((l) => l.title.includes('超高'));
+    expect(ultra?.hit).toBe('当前命中');
+  });
 });
