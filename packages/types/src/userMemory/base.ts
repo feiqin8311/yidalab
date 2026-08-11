@@ -1,6 +1,8 @@
 export interface UserMemory {
   accessedAt: Date;
   accessedCount: number | null;
+  /** Bound agent when scope is `agent`; null for personal-global. */
+  agentId?: string | null;
   capturedAt: Date;
   createdAt: Date;
   details: string | null;
@@ -11,6 +13,8 @@ export interface UserMemory {
   memoryLayer: string | null;
   memoryType: string | null;
   metadata: Record<string, unknown> | null;
+  /** `global` (cross-agent personal) or `agent` (current agent only). */
+  scope?: 'agent' | 'global';
   status: string | null;
   summary: string | null;
   summaryVector1024: number[] | null;
@@ -20,10 +24,7 @@ export interface UserMemory {
   userId: string | null;
 }
 
-export type UserMemoryWithoutVectors = Omit<
-  UserMemory,
-  'summaryVector1024' | 'detailsVector1024'
->;
+export type UserMemoryWithoutVectors = Omit<UserMemory, 'summaryVector1024' | 'detailsVector1024'>;
 
 export type UserMemoryListItem = Omit<
   UserMemoryWithoutVectors,

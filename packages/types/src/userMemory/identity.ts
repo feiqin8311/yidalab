@@ -31,6 +31,7 @@ export type IdentityListResult = BaseListResult<IdentityListItem>;
 
 export interface UserMemoryIdentity {
   accessedAt: Date;
+  agentId?: string | null;
   createdAt: Date;
   description?: string | null;
   descriptionVector?: number[] | null;
@@ -39,6 +40,7 @@ export interface UserMemoryIdentity {
   metadata?: Record<string, unknown> | null;
   relationship?: string | null;
   role?: string | null;
+  scope?: 'agent' | 'global';
   tags?: string[] | null;
   type?: string | null;
   updatedAt: Date;

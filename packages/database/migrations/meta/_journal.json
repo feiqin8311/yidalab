@@ -917,6 +917,20 @@
       "when": 1786374288240,
       "tag": "0130_agent_runtime_protocol_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1786433808599,
+      "tag": "0131_private_sessions_memory_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1786438152361,
+      "tag": "0132_ops_function_runs_result",
+      "breakpoints": true
     }
   ],
   "version": "6"

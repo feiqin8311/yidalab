@@ -9,6 +9,7 @@ vi.mock('@/server/services/queue/impls', () => ({
 }));
 
 const mockPublishJSON = vi.hoisted(() => vi.fn());
+const mockEnqueueInternalJob = vi.hoisted(() => vi.fn());
 
 // Plain class (not vi.fn) so the file-level `vi.restoreAllMocks()` can't wipe
 // the implementation between tests.
@@ -16,6 +17,10 @@ vi.mock('@upstash/qstash', () => ({
   Client: class {
     publishJSON = mockPublishJSON;
   },
+}));
+
+vi.mock('@/server/services/internalJob/enqueue', () => ({
+  enqueueInternalJob: mockEnqueueInternalJob,
 }));
 
 const { isQueueAgentRuntimeEnabled } = await import('@/server/services/queue/impls');
@@ -270,47 +275,62 @@ describe('HookDispatcher', () => {
   });
 
   describe('deliverWebhook qstash fallback', () => {
-    const originalToken = process.env.QSTASH_TOKEN;
-
     beforeEach(() => {
       global.fetch = vi.fn().mockResolvedValue({ status: 200 });
       mockPublishJSON.mockReset();
-      delete process.env.QSTASH_TOKEN;
+      mockEnqueueInternalJob.mockReset();
+      mockEnqueueInternalJob.mockResolvedValue('job-1');
     });
 
-    afterEach(() => {
-      if (originalToken === undefined) delete process.env.QSTASH_TOKEN;
-      else process.env.QSTASH_TOKEN = originalToken;
-      vi.restoreAllMocks();
-    });
-
-    it('falls back to plain fetch by default when the QStash token is missing', async () => {
+    it('falls back to plain fetch for unknown qstash paths', async () => {
       await deliverWebhook({ delivery: 'qstash', url: 'https://example.com/hook' }, { a: 1 });
 
       expect(global.fetch).toHaveBeenCalled();
+      expect(mockEnqueueInternalJob).not.toHaveBeenCalled();
     });
 
-    it("throws instead of unsigned-fetching when fallback is 'none' and the token is missing", async () => {
+    it('enqueues ops on-complete via internal job', async () => {
+      await deliverWebhook(
+        {
+          delivery: 'qstash',
+          url: '/api/workflows/operations-function/on-complete',
+        },
+        { runId: 'run-1' },
+      );
+
+      expect(mockEnqueueInternalJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'ops.function.on-complete',
+          payload: expect.objectContaining({ runId: 'run-1' }),
+        }),
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("throws instead of unsigned-fetching when fallback is 'none' for unknown paths", async () => {
       await expect(
         deliverWebhook(
           { delivery: 'qstash', fallback: 'none', url: 'https://example.com/hook' },
           { a: 1 },
         ),
-      ).rejects.toThrow(/QSTASH_TOKEN not available/);
+      ).rejects.toThrow(/QSTASH_TOKEN not available|unsigned-unsafe/);
 
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it("throws instead of unsigned-fetching when fallback is 'none' and the publish fails", async () => {
-      process.env.QSTASH_TOKEN = 'test-token';
-      mockPublishJSON.mockRejectedValue(new Error('qstash down'));
+    it("throws when fallback is 'none' and internal job enqueue fails", async () => {
+      mockEnqueueInternalJob.mockRejectedValue(new Error('redis down'));
 
       await expect(
         deliverWebhook(
-          { delivery: 'qstash', fallback: 'none', url: 'https://example.com/hook' },
-          { a: 1 },
+          {
+            delivery: 'qstash',
+            fallback: 'none',
+            url: '/api/workflows/operations-function/on-complete',
+          },
+          { runId: 'run-1' },
         ),
-      ).rejects.toThrow('qstash down');
+      ).rejects.toThrow('redis down');
 
       expect(global.fetch).not.toHaveBeenCalled();
     });
@@ -318,13 +338,18 @@ describe('HookDispatcher', () => {
     it('dispatch surfaces a no-fallback delivery failure without breaking other hooks', async () => {
       vi.mocked(isQueueAgentRuntimeEnabled).mockReturnValue(true);
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockEnqueueInternalJob.mockRejectedValue(new Error('redis down'));
 
       dispatcher.register(operationId, [
         {
           handler: vi.fn(),
           id: 'critical-hook',
           type: 'onComplete',
-          webhook: { delivery: 'qstash', fallback: 'none', url: 'https://example.com/critical' },
+          webhook: {
+            delivery: 'qstash',
+            fallback: 'none',
+            url: '/api/workflows/operations-function/on-complete',
+          },
         },
         {
           handler: vi.fn(),
@@ -339,8 +364,6 @@ describe('HookDispatcher', () => {
         dispatcher.dispatch(operationId, 'onComplete', makeEvent(), serialized),
       ).resolves.toBeUndefined();
 
-      // The failure is escalated to production logs, and the sibling webhook
-      // still gets delivered.
       expect(consoleError).toHaveBeenCalledWith(
         expect.stringContaining('critical-hook'),
         expect.any(Error),

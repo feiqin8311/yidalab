@@ -15,7 +15,7 @@ import {
   BusinessFunctionRunModel,
 } from '@/database/models/businessFunction';
 import type {
-  BusinessFunctionRunConfig,
+  BusinessFunctionLegacyKwConfig,
   BusinessFunctionRunItem,
 } from '@/database/schemas/businessFunction';
 import type { LobeChatDatabase } from '@/database/type';
@@ -75,7 +75,7 @@ export class AmazonOldProductKeywordService {
     }
 
     const thresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
-    const config: BusinessFunctionRunConfig = {
+    const config: BusinessFunctionLegacyKwConfig = {
       marketplace: 'US',
       mainAsin,
       categoryName: input.categoryName.trim(),
@@ -159,7 +159,7 @@ export class AmazonOldProductKeywordService {
       });
     }
 
-    const config = { ...(run.config as BusinessFunctionRunConfig) };
+    const config = { ...(run.config as BusinessFunctionLegacyKwConfig) };
     const prev = config.sourceManifest?.[input.role];
     if (prev?.s3Key && prev.s3Key !== input.s3Key) {
       await this.fileService.deleteFile(prev.s3Key).catch(() => undefined);
@@ -192,7 +192,7 @@ export class AmazonOldProductKeywordService {
       progress: { stage: 'audit_inputs', percent: 5, message: '审计输入文件' },
     });
 
-    const config = run.config as BusinessFunctionRunConfig;
+    const config = run.config as BusinessFunctionLegacyKwConfig;
     const manifest = config.sourceManifest ?? {};
     const hasHtml = !!manifest.product_html;
     const hasHist = !!manifest.historical_terms;
@@ -355,7 +355,7 @@ export class AmazonOldProductKeywordService {
 
   start = async (runId: string) => {
     const run = await this.requireRun(runId, ['draft', 'failed']);
-    const config = run.config as BusinessFunctionRunConfig;
+    const config = run.config as BusinessFunctionLegacyKwConfig;
     const manifest = config.sourceManifest ?? {};
     const hasHtml = !!manifest.product_html;
     const hasHist = !!manifest.historical_terms;
@@ -463,7 +463,7 @@ export class AmazonOldProductKeywordService {
 
   retry = async (runId: string) => {
     const run = await this.requireRun(runId, ['failed', 'canceled']);
-    const config = run.config as BusinessFunctionRunConfig;
+    const config = run.config as BusinessFunctionLegacyKwConfig;
     if (config.mainAsin) {
       const active = await this.runModel.findActiveByAsin(FUNCTION_ID, config.mainAsin, runId);
       if (active) {
@@ -600,7 +600,7 @@ export class AmazonOldProductKeywordService {
   executeExport = async (runId: string) => {
     const run = await this.runModel.findByIdUnscoped(runId);
     if (!run) throw new Error('RUN_NOT_FOUND');
-    const config = run.config as BusinessFunctionRunConfig;
+    const config = run.config as BusinessFunctionLegacyKwConfig;
 
     await this.runModel.updateById(runId, {
       exportInfo: { status: 'running' },

@@ -16,7 +16,7 @@ import {
   BusinessFunctionResultRowModel,
   BusinessFunctionRunModel,
 } from '@/database/models/businessFunction';
-import type { BusinessFunctionRunConfig } from '@/database/schemas/businessFunction';
+import type { BusinessFunctionLegacyKwConfig } from '@/database/schemas/businessFunction';
 import type { LobeChatDatabase } from '@/database/type';
 import { FileService } from '@/server/services/file';
 
@@ -67,7 +67,7 @@ const throwIfCanceled = async (ctx: PipelineCtx) => {
 const getConfig = async (ctx: PipelineCtx) => {
   const run = await runModel(ctx).findByIdUnscoped(ctx.runId);
   if (!run) throw new Error('RUN_NOT_FOUND');
-  return { run, config: run.config as BusinessFunctionRunConfig };
+  return { run, config: run.config as BusinessFunctionLegacyKwConfig };
 };
 
 /** Persist intermediate keyword map + scores under run config / S3 JSON sidecar. */
@@ -427,7 +427,7 @@ async function loadScores(ctx: PipelineCtx): Promise<Record<string, KeywordSeman
 
 async function parseAllSources(
   ctx: PipelineCtx,
-  config: BusinessFunctionRunConfig,
+  config: BusinessFunctionLegacyKwConfig,
 ): Promise<ParsedSources> {
   const keywords = new Map<string, KeywordEvidence>();
   let dailyTrend: ParsedSources['dailyTrend'] = [];
@@ -528,7 +528,7 @@ async function parseAllSources(
 }
 
 function buildDataSourceNotes(
-  config: BusinessFunctionRunConfig,
+  config: BusinessFunctionLegacyKwConfig,
   parsed: {
     sourceStats: ParsedSources['sourceStats'];
   },

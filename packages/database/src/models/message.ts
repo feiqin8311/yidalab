@@ -326,7 +326,14 @@ export class MessageModel {
   }
 
   private ownership = () =>
-    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, messages);
+    buildWorkspaceWhere(
+      { userId: this.userId, workspaceId: this.workspaceId },
+      {
+        userId: messages.userId,
+        visibility: messages.visibility,
+        workspaceId: messages.workspaceId,
+      },
+    );
 
   /** Stats-only predicate: members may only aggregate their own workspace rows. */
   private analyticsOwnership = () => {
@@ -2157,6 +2164,9 @@ export class MessageModel {
         // Promote token usage into the dedicated `usage` column, preferring a
         // top-level `usage` over the legacy `metadata.usage`.
         usage: normalizedMessage.usage ?? (legacyUsage as ModelUsage | undefined),
+        // 1:1 chats are private by default; callers may override for shared flows.
+        visibility:
+          (normalizedMessage as { visibility?: 'private' | 'public' }).visibility ?? 'private',
       },
     );
   };

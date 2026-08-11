@@ -90,6 +90,12 @@ export interface MemoryExtractionLLMConfig {
 }
 
 export interface MemoryExtractionJob {
+  /**
+   * Topic's agent when available. Auto-extracted memories default to
+   * agent scope for this id; missing agentId forces global-only identity
+   * writes and skips agent-scoped layers that require it.
+   */
+  agentId?: string;
   force?: boolean;
   layers?: LayersEnum[];
   source: MemorySourceType;

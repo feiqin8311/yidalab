@@ -73,6 +73,13 @@ export const messageGroups = pgTable(
 
     clientId: varchar255('client_id'),
 
+    /**
+     * Mirrors parent conversation visibility. Private by default.
+     */
+    visibility: text('visibility', { enum: ['private', 'public'] })
+      .default('private')
+      .notNull(),
+
     ...timestamps,
   },
   (t) => [
@@ -83,6 +90,7 @@ export const messageGroups = pgTable(
     index('message_groups_parent_group_id_idx').on(t.parentGroupId),
     index('message_groups_parent_message_id_idx').on(t.parentMessageId),
     index('message_groups_workspace_id_idx').on(t.workspaceId),
+    index('message_groups_workspace_visibility_idx').on(t.workspaceId, t.visibility, t.userId),
   ],
 );
 
@@ -149,6 +157,13 @@ export const messages = pgTable(
     messageGroupId: varchar255('message_group_id').references(() => messageGroups.id, {
       onDelete: 'cascade',
     }),
+    /**
+     * Conversation visibility. Default private — 1:1 Web / DingTalk chats are
+     * owner-only. Public reserved for future shared/group workflows.
+     */
+    visibility: text('visibility', { enum: ['private', 'public'] })
+      .default('private')
+      .notNull(),
     workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     ...timestamps,
   },
@@ -171,6 +186,11 @@ export const messages = pgTable(
     index('messages_usage_cost_idx').on(sql`(("usage"->>'cost')::numeric)`),
     index('messages_usage_total_tokens_idx').on(sql`(("usage"->>'totalTokens')::numeric)`),
     index('messages_workspace_id_idx').on(table.workspaceId),
+    index('messages_workspace_visibility_idx').on(
+      table.workspaceId,
+      table.visibility,
+      table.userId,
+    ),
   ],
 );
 

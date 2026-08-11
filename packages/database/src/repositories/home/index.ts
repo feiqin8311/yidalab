@@ -144,9 +144,31 @@ export class HomeRepository {
       )
       .orderBy(sessionGroups.sort);
 
+    // Member-level pins for workspace agents (shared agents.pinned must not
+    // affect every member). Personal mode still reads agents.pinned.
+    const memberPinnedIds = new Set<string>();
+    if (this.workspaceId) {
+      const { WorkspaceUserSettingsModel } = await import('../../models/workspaceUserSettings');
+      const prefs = await new WorkspaceUserSettingsModel(
+        this.db,
+        this.userId,
+        this.workspaceId,
+      ).getPreference();
+      for (const id of prefs.pinnedAgentIds ?? []) memberPinnedIds.add(id);
+    }
+
     // 4. Process and categorize
     return this.processAgentList(
-      agentList,
+      agentList.map((a) => {
+        if (!this.workspaceId) return a;
+        // Public workspace agents: only member preference pins.
+        // Private agents owned by the member: agents.pinned still applies.
+        const pinned =
+          a.visibility === 'private' && a.agentUserId === this.userId
+            ? Boolean(a.pinned ?? a.sessionPinned)
+            : memberPinnedIds.has(a.id);
+        return { ...a, pinned };
+      }),
       chatGroupList,
       groupList,
       memberAvatarsMap,

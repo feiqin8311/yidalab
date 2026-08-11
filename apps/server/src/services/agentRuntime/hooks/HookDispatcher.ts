@@ -39,8 +39,16 @@ export async function deliverWebhook(
         log('Webhook delivered via internal job (verify): %s', url);
         return;
       }
-      // Generic deferred delivery: enqueue a thin HTTP-fetch job would still need a worker;
-      // fall through to in-process fetch against APP_URL for other webhooks.
+      if (url.includes('/api/workflows/operations-function/on-complete')) {
+        await enqueueInternalJob({ name: JOB_NAMES.opsFunctionComplete, payload });
+        log('Webhook delivered via internal job (ops): %s', url);
+        return;
+      }
+      // Generic deferred delivery still needs a worker path; unsigned fetch is only
+      // allowed when fallback permits it (control-flow hooks use fallback: 'none').
+      if (fallback === 'none') {
+        throw new Error(`QSTASH_TOKEN not available for unsigned-unsafe webhook path: ${url}`);
+      }
       log('Unknown qstash webhook path, using fetch: %s', url);
       await fetchDeliver(resolvedUrl, payload);
     } catch (error) {

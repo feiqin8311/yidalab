@@ -251,7 +251,11 @@ const memoryProcedure = authedProcedure.use(serverDatabase).use(async (opts) => 
       activityModel: new UserMemoryActivityModel(ctx.serverDB, ctx.userId),
       experienceModel: new UserMemoryExperienceModel(ctx.serverDB, ctx.userId),
       identityModel: new UserMemoryIdentityModel(ctx.serverDB, ctx.userId),
-      memoryModel: new UserMemoryModel(ctx.serverDB, ctx.userId),
+      // Management UI: list/search all personal scopes (global + every agent).
+      // Runtime dual-layer retrieval uses UserMemoryModel(db, userId, agentId).
+      memoryModel: new UserMemoryModel(ctx.serverDB, ctx.userId, undefined, {
+        includeAllScopes: true,
+      }),
       memoryEffort,
     },
   });
@@ -986,6 +990,7 @@ export const userMemoriesRouter = router({
         const feedbackVector = await embed(input.withActivity.feedback);
 
         const { activity, memory } = await ctx.memoryModel.createActivityMemory({
+          scope: 'global',
           activity: {
             associatedLocations:
               UserMemoryModel.parseAssociatedLocations(input.withActivity.associatedLocations) ??
@@ -1047,6 +1052,7 @@ export const userMemoriesRouter = router({
         const contextDescriptionEmbedding = await embed(input.withContext.description);
 
         const { context, memory } = await ctx.memoryModel.createContextMemory({
+          scope: 'global',
           context: {
             associatedObjects:
               UserMemoryModel.parseAssociatedObjects(input.withContext.associatedObjects) ?? null,
@@ -1104,6 +1110,7 @@ export const userMemoriesRouter = router({
         const keyLearningVector = await embed(input.withExperience.keyLearning);
 
         const { experience, memory } = await ctx.memoryModel.createExperienceMemory({
+          scope: 'global',
           details: input.details || '',
           detailsEmbedding,
           experience: {
@@ -1173,6 +1180,7 @@ export const userMemoriesRouter = router({
 
         const { identityId, userMemoryId } = await ctx.memoryModel.addIdentityEntry({
           base: {
+            scope: 'global',
             details: input.details,
             detailsVector1024: detailsEmbedding ?? null,
             memoryCategory: input.memoryCategory,
@@ -1237,6 +1245,7 @@ export const userMemoriesRouter = router({
         } satisfies Record<string, unknown>;
 
         const { memory, preference } = await ctx.memoryModel.createPreferenceMemory({
+          scope: 'global',
           details: input.details || '',
           detailsEmbedding,
           memoryCategory: input.memoryCategory,

@@ -146,6 +146,8 @@ interface DiscordChannelContext {
 interface ThreadState {
   channelContext?: DiscordChannelContext;
   topicId?: string;
+  /** Owner of the cached topic — used to detect channel-owner leftover topics. */
+  topicOwnerUserId?: string;
 }
 
 interface BridgeHandlerOpts {
@@ -360,6 +362,9 @@ export class AgentBridgeService {
     this.workspaceId = workspaceId;
   }
 
+  /** Real member this bridge executes as (never the channel creator for DingTalk). */
+  getUserId = (): string => this.userId;
+
   private async interruptTrackedOperation(threadId: string, operationId: string): Promise<void> {
     const aiAgentService = new AiAgentService(this.db, this.userId, {
       workspaceId: this.workspaceId,
@@ -515,8 +520,17 @@ export class AgentBridgeService {
         // Persist topic mapping and channel context in thread state for follow-up messages
         // Skip if the platform opted out of auto-subscribe (no subscribe = no follow-up)
         if (topicId && subscribe) {
-          await thread.setState({ channelContext, topicId });
-          log('handleMention: stored topicId=%s in thread=%s state', topicId, thread.id);
+          await thread.setState({
+            channelContext,
+            topicId,
+            topicOwnerUserId: this.userId,
+          });
+          log(
+            'handleMention: stored topicId=%s owner=%s in thread=%s state',
+            topicId,
+            this.userId,
+            thread.id,
+          );
         }
       } catch (error) {
         const operationId = AgentBridgeService.activeOperations.get(thread.id);
@@ -549,6 +563,7 @@ export class AgentBridgeService {
     const replyLocale = this.resolveReplyLocale(opts);
     const threadState = await thread.state;
     const topicId = threadState?.topicId;
+    const topicOwnerUserId = threadState?.topicOwnerUserId;
 
     log(
       'handleSubscribedMessage: agentId=%s, thread=%s, topicId=%s, attachments=%d',
@@ -560,6 +575,19 @@ export class AgentBridgeService {
 
     if (!topicId) {
       log('handleSubscribedMessage: no topicId in thread state, treating as new mention');
+      return this.handleMention(thread, message, opts);
+    }
+
+    // Leftover topic from channel-owner era or identity switch — never continue
+    // another member's private conversation. Missing owner (legacy Redis state)
+    // is also unsafe once visibility filters are on.
+    if (topicOwnerUserId && topicOwnerUserId !== this.userId) {
+      log(
+        'handleSubscribedMessage: topicOwner=%s ≠ actor=%s, clearing stale mapping',
+        topicOwnerUserId,
+        this.userId,
+      );
+      await thread.setState({ ...threadState, topicId: undefined, topicOwnerUserId: undefined });
       return this.handleMention(thread, message, opts);
     }
 
@@ -576,24 +604,46 @@ export class AgentBridgeService {
       return;
     }
 
-    // Check if the topic is stale (no activity for 4+ hours).
-    // If so, clear the cached topicId and start a fresh conversation.
-    // Wrapped in try/catch so transient DB errors fall through to the
-    // existing topicId rather than rejecting before the guarded section.
+    // Check if the topic is stale / inaccessible (private to another member,
+    // deleted, or no activity for 4+ hours). Missing row ⇒ clear cache.
+    // Wrapped in try/catch so transient DB errors fall through carefully.
     try {
       const topicModel = new TopicModel(this.db, this.userId, this.workspaceId);
       const existingTopic = await topicModel.findById(topicId);
-      if (existingTopic) {
-        const elapsed = Date.now() - new Date(existingTopic.updatedAt).getTime();
-        if (elapsed > TOPIC_STALE_THRESHOLD) {
-          log(
-            'handleSubscribedMessage: topic=%s is stale (%.1fh since last activity), creating new topic',
-            topicId,
-            elapsed / (60 * 60 * 1000),
-          );
-          await thread.setState({ ...threadState, topicId: undefined });
-          return this.handleMention(thread, message, opts);
-        }
+      if (!existingTopic) {
+        log(
+          'handleSubscribedMessage: topic=%s not visible to actor=%s (missing/private/deleted), clearing',
+          topicId,
+          this.userId,
+        );
+        await thread.setState({
+          ...threadState,
+          topicId: undefined,
+          topicOwnerUserId: undefined,
+        });
+        return this.handleMention(thread, message, opts);
+      }
+      // Legacy state without topicOwnerUserId: bind owner once we can see the topic.
+      if (!topicOwnerUserId) {
+        await thread.setState({
+          ...threadState,
+          topicId,
+          topicOwnerUserId: this.userId,
+        });
+      }
+      const elapsed = Date.now() - new Date(existingTopic.updatedAt).getTime();
+      if (elapsed > TOPIC_STALE_THRESHOLD) {
+        log(
+          'handleSubscribedMessage: topic=%s is stale (%.1fh since last activity), creating new topic',
+          topicId,
+          elapsed / (60 * 60 * 1000),
+        );
+        await thread.setState({
+          ...threadState,
+          topicId: undefined,
+          topicOwnerUserId: undefined,
+        });
+        return this.handleMention(thread, message, opts);
       }
     } catch (error) {
       log(

@@ -24,9 +24,50 @@ export type AmazonKwCreateDraftParams = {
   };
 };
 
+export type OpsCreateRunParams = {
+  functionId: string;
+  modeId: string;
+  model: { model: string; provider: string };
+  params: Record<string, unknown>;
+  rerunFromId?: string;
+  workspaceId: string;
+};
+
 class BusinessFunctionService {
   lingxingAdsAnalyze = async (params: LingxingAnalyzeParams) =>
     (await lambdaClient.businessFunction.lingxingAds.analyze.mutate(params)).data;
+
+  operations = {
+    getCatalog: async (params: {
+      functionId?: string;
+      modeId?: string;
+      modelSupportsTools?: boolean;
+      modelSupportsVision?: boolean;
+      workspaceId: string;
+    }) => (await lambdaClient.businessFunction.operations.getCatalog.query(params)).data,
+
+    createRun: async (params: OpsCreateRunParams) =>
+      (await lambdaClient.businessFunction.operations.createRun.mutate(params)).data,
+
+    getRun: async (params: { functionId?: string; runId: string; workspaceId: string }) =>
+      (await lambdaClient.businessFunction.operations.getRun.query(params)).data,
+
+    listRuns: async (params: {
+      functionId: string;
+      limit?: number;
+      offset?: number;
+      workspaceId: string;
+    }) => (await lambdaClient.businessFunction.operations.listRuns.query(params)).data,
+
+    cancelRun: async (params: { runId: string; workspaceId: string }) =>
+      (await lambdaClient.businessFunction.operations.cancelRun.mutate(params)).data,
+
+    rerun: async (params: { runId: string; workspaceId: string }) =>
+      (await lambdaClient.businessFunction.operations.rerun.mutate(params)).data,
+
+    deleteRun: async (params: { runId: string; workspaceId: string }) =>
+      (await lambdaClient.businessFunction.operations.deleteRun.mutate(params)).data,
+  };
 
   amazonKw = {
     createDraft: async (params: AmazonKwCreateDraftParams) =>

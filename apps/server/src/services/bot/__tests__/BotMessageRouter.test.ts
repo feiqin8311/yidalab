@@ -117,6 +117,27 @@ vi.mock('../AgentBridgeService', () => ({
   AgentBridgeService: mockAgentBridgeServiceCtor,
 }));
 
+const mockResolveDingTalkActor = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ kind: 'ok', userId: 'member-a', workspaceId: 'ws-1' }),
+);
+const mockEmitAgentSignalSourceEvent = vi.hoisted(() => vi.fn());
+const mockSubmitBotFeedback = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ success: true, issueUrl: undefined }),
+);
+
+vi.mock('../dingtalkIdentity', () => ({
+  resolveDingTalkActor: (...args: unknown[]) => mockResolveDingTalkActor(...args),
+  upsertDingTalkLinksForUser: vi.fn(),
+}));
+
+vi.mock('@/server/services/agentSignal', () => ({
+  emitAgentSignalSourceEvent: (...args: unknown[]) => mockEmitAgentSignalSourceEvent(...args),
+}));
+
+vi.mock('../feedbackSubmit', () => ({
+  submitBotFeedback: (...args: unknown[]) => mockSubmitBotFeedback(...args),
+}));
+
 // Mock platform entries
 const mockCreateAdapter = vi.hoisted(() =>
   vi.fn().mockReturnValue({ testplatform: { type: 'mock-adapter' } }),
@@ -438,10 +459,22 @@ describe('BotMessageRouter', () => {
     mockFindEnabledByPlatform.mockResolvedValue([]);
     mockHandleMention.mockResolvedValue(undefined);
     mockHandleSubscribedMessage.mockResolvedValue(undefined);
-    mockAgentBridgeServiceCtor.mockImplementation(() => ({
-      handleMention: mockHandleMention,
-      handleSubscribedMessage: mockHandleSubscribedMessage,
-    }));
+    mockAgentBridgeServiceCtor.mockImplementation((...ctorArgs: unknown[]) => {
+      const actorUserId = (ctorArgs[1] as string | undefined) ?? 'user-1';
+      return {
+        getUserId: () => actorUserId,
+        handleMention: mockHandleMention,
+        handleSubscribedMessage: mockHandleSubscribedMessage,
+      };
+    });
+    mockResolveDingTalkActor.mockResolvedValue({
+      kind: 'ok',
+      userId: 'member-a',
+      workspaceId: 'ws-1',
+    });
+    mockEmitAgentSignalSourceEvent.mockClear();
+    mockSubmitBotFeedback.mockClear();
+    mockSubmitBotFeedback.mockResolvedValue({ success: true });
     mockOpenThreadForChannelWake.mockResolvedValue(undefined);
     // participant tracking — restore defaults wiped by
     // clearAllMocks. Empty list = fresh single-human thread; individual
@@ -2585,6 +2618,152 @@ describe('BotMessageRouter', () => {
       expect(mockProviderUpdate).not.toHaveBeenCalled();
       expect(mockDeletePairingRequest).toHaveBeenCalledTimes(1);
       expect(event.channel.post.mock.calls[0][0]).toMatch(/Approved Lin/i);
+    });
+  });
+
+  describe('DingTalk identity isolation', () => {
+    async function loadDingTalkMentionHandler() {
+      mockFindEnabledByPlatform.mockResolvedValue([
+        makeProvider({
+          applicationId: 'dt-app-1',
+          settings: { dmPolicy: 'open' },
+          userId: 'channel-owner',
+          workspaceId: 'ws-1',
+        }),
+      ]);
+      const router = new BotMessageRouter();
+      const webhookHandler = router.getWebhookHandler('dingtalk', 'dt-app-1');
+      await webhookHandler(
+        new Request('https://example.com/webhook', { body: '{}', method: 'POST' }),
+      );
+      const lastCall = mockOnNewMention.mock.calls.at(-1);
+      if (!lastCall) throw new Error('onNewMention was not registered');
+      return lastCall[0] as (thread: any, message: any, ctx?: any) => Promise<void>;
+    }
+
+    it('refuses unlinked members before handleMention / Signal', async () => {
+      mockResolveDingTalkActor.mockResolvedValueOnce({ kind: 'unlinked' });
+      const handler = await loadDingTalkMentionHandler();
+      const thread = {
+        id: 'dingtalk:1:cid',
+        isDM: true,
+        post: vi.fn().mockResolvedValue(undefined),
+      };
+      const message = {
+        author: { isBot: false, userId: 'staff-unlinked', userName: 'u' },
+        isMention: true,
+        text: 'hello',
+      };
+
+      await handler(thread, message);
+
+      expect(mockResolveDingTalkActor).toHaveBeenCalled();
+      expect(mockHandleMention).not.toHaveBeenCalled();
+      expect(mockEmitAgentSignalSourceEvent).not.toHaveBeenCalled();
+      expect(thread.post).toHaveBeenCalled();
+      expect(String(thread.post.mock.calls[0][0])).toMatch(/身份识别|workbench|link/i);
+    });
+
+    it('rejects group chat before handleMention', async () => {
+      const handler = await loadDingTalkMentionHandler();
+      const thread = {
+        id: 'dingtalk:2:group',
+        isDM: false,
+        post: vi.fn().mockResolvedValue(undefined),
+      };
+      const message = {
+        author: { isBot: false, userId: 'staff-1', userName: 'u' },
+        isMention: true,
+        text: '@bot hi',
+      };
+
+      await handler(thread, message);
+
+      expect(mockHandleMention).not.toHaveBeenCalled();
+      expect(mockEmitAgentSignalSourceEvent).not.toHaveBeenCalled();
+      expect(thread.post).toHaveBeenCalled();
+      expect(String(thread.post.mock.calls[0][0])).toMatch(/单聊|group/i);
+    });
+
+    it('uses resolved member for Signal and AgentBridge (not channel owner)', async () => {
+      mockResolveDingTalkActor.mockResolvedValue({
+        kind: 'ok',
+        userId: 'member-a',
+        workspaceId: 'ws-1',
+      });
+      const handler = await loadDingTalkMentionHandler();
+      const thread = {
+        id: 'dingtalk:1:cid',
+        isDM: true,
+        post: vi.fn().mockResolvedValue(undefined),
+      };
+      const message = {
+        author: { isBot: false, userId: 'staff-1', userName: 'u' },
+        id: 'msg-1',
+        isMention: true,
+        text: 'diagnose asin',
+      };
+
+      await handler(thread, message);
+
+      expect(mockHandleMention).toHaveBeenCalledTimes(1);
+      // Bridge constructed with actor member-a, not channel-owner
+      expect(mockAgentBridgeServiceCtor).toHaveBeenCalledWith(
+        expect.anything(),
+        'member-a',
+        'ws-1',
+      );
+      expect(mockEmitAgentSignalSourceEvent).toHaveBeenCalled();
+      const signalCtx = mockEmitAgentSignalSourceEvent.mock.calls[0][1];
+      expect(signalCtx.userId).toBe('member-a');
+    });
+
+    it('/feedback submits as resolved member (not channel owner)', async () => {
+      mockResolveDingTalkActor.mockResolvedValue({
+        kind: 'ok',
+        userId: 'member-a',
+        workspaceId: 'ws-1',
+      });
+      mockFindEnabledByPlatform.mockResolvedValue([
+        makeProvider({
+          applicationId: 'dt-app-1',
+          settings: { dmPolicy: 'open' },
+          userId: 'channel-owner',
+          workspaceId: 'ws-1',
+        }),
+      ]);
+      const router = new BotMessageRouter();
+      const webhookHandler = router.getWebhookHandler('dingtalk', 'dt-app-1');
+      await webhookHandler(
+        new Request('https://example.com/webhook', { body: '{}', method: 'POST' }),
+      );
+
+      // Text-based slash path from registerCommands (not mention tryDispatch)
+      const feedbackCall = mockOnNewMessage.mock.calls.find(
+        (call) => call[0] instanceof RegExp && String(call[0]).includes('feedback'),
+      );
+      if (!feedbackCall) throw new Error('text /feedback handler was not registered');
+      const handler = feedbackCall[1] as (thread: any, message: any) => Promise<void>;
+
+      const thread = {
+        id: 'dingtalk:1:cid',
+        isDM: true,
+        post: vi.fn().mockResolvedValue(undefined),
+        setState: vi.fn(),
+      };
+      await handler(thread, {
+        author: { isBot: false, userId: 'staff-1', userName: 'u' },
+        text: '/feedback bot is great',
+      });
+
+      expect(mockSubmitBotFeedback).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          body: 'bot is great',
+          userId: 'member-a',
+        }),
+      );
+      expect(mockSubmitBotFeedback.mock.calls[0][1].userId).not.toBe('channel-owner');
     });
   });
 });

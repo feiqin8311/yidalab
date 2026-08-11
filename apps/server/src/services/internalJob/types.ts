@@ -34,5 +34,6 @@ export const JOB_NAMES = {
   taskScheduleExecute: 'task.schedule-execute',
   taskScheduleDispatch: 'task.schedule-dispatch',
   taskWatchdog: 'task.watchdog',
+  opsFunctionComplete: 'ops.function.on-complete',
   verifyComplete: 'verify.on-complete',
 } as const;

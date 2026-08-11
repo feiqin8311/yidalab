@@ -760,6 +760,12 @@ table business_function_runs {
   summary jsonb
   error jsonb
   export_info jsonb
+  result_html text
+  result_meta jsonb
+  agent_id text
+  topic_id text
+  operation_id text
+  assistant_message_id text
   started_at "timestamp with time zone"
   finished_at "timestamp with time zone"
   accessed_at "timestamp with time zone" [not null, default: `now()`]
@@ -773,6 +779,9 @@ table business_function_runs {
     function_type [name: 'business_function_runs_function_type_idx']
     (workspace_id, main_asin) [name: 'business_function_runs_workspace_asin_idx']
     created_at [name: 'business_function_runs_created_at_idx']
+    (workspace_id, function_type, created_at) [name: 'business_function_runs_ws_fn_created_idx']
+    operation_id [name: 'business_function_runs_operation_id_idx']
+    topic_id [name: 'business_function_runs_topic_id_idx']
   }
 }
 
@@ -1387,6 +1396,7 @@ table message_groups {
   editor_data jsonb
   metadata jsonb
   client_id varchar(255)
+  visibility text [not null, default: 'private']
   accessed_at "timestamp with time zone" [not null, default: `now()`]
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
@@ -1399,6 +1409,7 @@ table message_groups {
     parent_group_id [name: 'message_groups_parent_group_id_idx']
     parent_message_id [name: 'message_groups_parent_message_id_idx']
     workspace_id [name: 'message_groups_workspace_id_idx']
+    (workspace_id, visibility, user_id) [name: 'message_groups_workspace_visibility_idx']
   }
 }
 
@@ -1520,6 +1531,7 @@ table messages {
   group_id text
   target_id text
   message_group_id varchar(255)
+  visibility text [not null, default: 'private']
   workspace_id text
   accessed_at "timestamp with time zone" [not null, default: `now()`]
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -1541,6 +1553,7 @@ table messages {
     () [name: 'messages_usage_cost_idx']
     () [name: 'messages_usage_total_tokens_idx']
     workspace_id [name: 'messages_workspace_id_idx']
+    (workspace_id, visibility, user_id) [name: 'messages_workspace_visibility_idx']
   }
 }
 
@@ -2429,6 +2442,7 @@ table threads {
   metadata jsonb
   user_id text [not null]
   last_active_at "timestamp with time zone" [default: `now()`]
+  visibility text [not null, default: 'private']
   workspace_id text
   accessed_at "timestamp with time zone" [not null, default: `now()`]
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -2443,6 +2457,7 @@ table threads {
     group_id [name: 'threads_group_id_idx']
     parent_thread_id [name: 'threads_parent_thread_id_idx']
     workspace_id [name: 'threads_workspace_id_idx']
+    (workspace_id, visibility, user_id) [name: 'threads_workspace_visibility_idx']
   }
 }
 
@@ -2507,6 +2522,7 @@ table topics {
   model text
   provider text
   sender_id text
+  visibility text [not null, default: 'private']
   workspace_id text
   accessed_at "timestamp with time zone" [not null, default: `now()`]
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -2526,6 +2542,7 @@ table topics {
     (user_id, completed_at) [name: 'topics_user_id_completed_at_idx']
     sender_id [name: 'topics_sender_id_idx']
     workspace_id [name: 'topics_workspace_id_idx']
+    (workspace_id, visibility, user_id) [name: 'topics_workspace_visibility_idx']
     () [name: 'topics_extract_status_gin_idx']
   }
 }
@@ -2610,6 +2627,8 @@ table user_credentials {
 table user_memories {
   id varchar(255) [pk, not null]
   user_id text
+  scope text [not null, default: 'global']
+  agent_id text
   memory_category varchar(255)
   memory_layer varchar(255)
   memory_type varchar(255)
@@ -2632,12 +2651,15 @@ table user_memories {
     summary_vector_1024 [name: 'user_memories_summary_vector_1024_index']
     details_vector_1024 [name: 'user_memories_details_vector_1024_index']
     user_id [name: 'user_memories_user_id_index']
+    (user_id, scope, agent_id) [name: 'user_memories_user_scope_agent_idx']
   }
 }
 
 table user_memories_activities {
   id varchar(255) [pk, not null]
   user_id text
+  scope text [not null, default: 'global']
+  agent_id text
   user_memory_id varchar(255)
   metadata jsonb
   tags text[]
@@ -2666,12 +2688,15 @@ table user_memories_activities {
     user_id [name: 'user_memories_activities_user_id_index']
     user_memory_id [name: 'user_memories_activities_user_memory_id_index']
     status [name: 'user_memories_activities_status_index']
+    (user_id, scope, agent_id) [name: 'user_memories_activities_user_scope_agent_idx']
   }
 }
 
 table user_memories_contexts {
   id varchar(255) [pk, not null]
   user_id text
+  scope text [not null, default: 'global']
+  agent_id text
   user_memory_ids jsonb
   metadata jsonb
   tags text[]
@@ -2693,12 +2718,15 @@ table user_memories_contexts {
     description_vector [name: 'user_memories_contexts_description_vector_index']
     type [name: 'user_memories_contexts_type_index']
     user_id [name: 'user_memories_contexts_user_id_index']
+    (user_id, scope, agent_id) [name: 'user_memories_contexts_user_scope_agent_idx']
   }
 }
 
 table user_memories_experiences {
   id varchar(255) [pk, not null]
   user_id text
+  scope text [not null, default: 'global']
+  agent_id text
   user_memory_id varchar(255)
   metadata jsonb
   tags text[]
@@ -2724,12 +2752,15 @@ table user_memories_experiences {
     type [name: 'user_memories_experiences_type_index']
     user_id [name: 'user_memories_experiences_user_id_index']
     user_memory_id [name: 'user_memories_experiences_user_memory_id_index']
+    (user_id, scope, agent_id) [name: 'user_memories_experiences_user_scope_agent_idx']
   }
 }
 
 table user_memories_identities {
   id varchar(255) [pk, not null]
   user_id text
+  scope text [not null, default: 'global']
+  agent_id text
   user_memory_id varchar(255)
   metadata jsonb
   tags text[]
@@ -2749,12 +2780,15 @@ table user_memories_identities {
     type [name: 'user_memories_identities_type_index']
     user_id [name: 'user_memories_identities_user_id_index']
     user_memory_id [name: 'user_memories_identities_user_memory_id_index']
+    (user_id, scope, agent_id) [name: 'user_memories_identities_user_scope_agent_idx']
   }
 }
 
 table user_memories_preferences {
   id varchar(255) [pk, not null]
   user_id text
+  scope text [not null, default: 'global']
+  agent_id text
   user_memory_id varchar(255)
   metadata jsonb
   tags text[]
@@ -2772,6 +2806,7 @@ table user_memories_preferences {
     conclusion_directives_vector [name: 'user_memories_preferences_conclusion_directives_vector_index']
     user_id [name: 'user_memories_preferences_user_id_index']
     user_memory_id [name: 'user_memories_preferences_user_memory_id_index']
+    (user_id, scope, agent_id) [name: 'user_memories_preferences_user_scope_agent_idx']
   }
 }
 

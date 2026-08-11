@@ -115,6 +115,8 @@ export class BusinessFunctionRunModel {
 
   query = async (filter?: {
     functionType?: string;
+    /** When true, omit resultHtml (list endpoints). */
+    light?: boolean;
     limit?: number;
     offset?: number;
     status?: string | string[];
@@ -128,17 +130,73 @@ export class BusinessFunctionRunModel {
       conditions.push(inArray(businessFunctionRuns.status, statuses as any));
     }
 
-    const query = this.db
+    if (filter?.light) {
+      const lightQuery = this.db
+        .select({
+          agentId: businessFunctionRuns.agentId,
+          assistantMessageId: businessFunctionRuns.assistantMessageId,
+          categoryName: businessFunctionRuns.categoryName,
+          config: businessFunctionRuns.config,
+          createdAt: businessFunctionRuns.createdAt,
+          error: businessFunctionRuns.error,
+          exportInfo: businessFunctionRuns.exportInfo,
+          finishedAt: businessFunctionRuns.finishedAt,
+          functionType: businessFunctionRuns.functionType,
+          id: businessFunctionRuns.id,
+          mainAsin: businessFunctionRuns.mainAsin,
+          operationId: businessFunctionRuns.operationId,
+          progress: businessFunctionRuns.progress,
+          resultMeta: businessFunctionRuns.resultMeta,
+          stage: businessFunctionRuns.stage,
+          startedAt: businessFunctionRuns.startedAt,
+          status: businessFunctionRuns.status,
+          summary: businessFunctionRuns.summary,
+          topicId: businessFunctionRuns.topicId,
+          updatedAt: businessFunctionRuns.updatedAt,
+          userId: businessFunctionRuns.userId,
+          workspaceId: businessFunctionRuns.workspaceId,
+        })
+        .from(businessFunctionRuns)
+        .where(and(...conditions))
+        .orderBy(desc(businessFunctionRuns.createdAt))
+        .$dynamic();
+      if (filter.limit !== undefined) lightQuery.limit(filter.limit);
+      if (filter.offset !== undefined) lightQuery.offset(filter.offset);
+      return lightQuery;
+    }
+
+    const fullQuery = this.db
       .select()
       .from(businessFunctionRuns)
       .where(and(...conditions))
       .orderBy(desc(businessFunctionRuns.createdAt))
       .$dynamic();
+    if (filter?.limit !== undefined) fullQuery.limit(filter.limit);
+    if (filter?.offset !== undefined) fullQuery.offset(filter.offset);
+    return fullQuery;
+  };
 
-    if (filter?.limit !== undefined) query.limit(filter.limit);
-    if (filter?.offset !== undefined) query.offset(filter.offset);
-
-    return query;
+  /**
+   * Conditional status transition (CAS). Returns updated row or undefined if
+   * current status is not in `fromStatuses` (e.g. already terminal).
+   */
+  updateIfStatus = async (
+    id: string,
+    fromStatuses: string[],
+    value: Partial<NewBusinessFunctionRun>,
+  ) => {
+    const [result] = await this.db
+      .update(businessFunctionRuns)
+      .set({ ...value, updatedAt: new Date() })
+      .where(
+        and(
+          eq(businessFunctionRuns.id, id),
+          this.ownership(),
+          inArray(businessFunctionRuns.status, fromStatuses as any),
+        ),
+      )
+      .returning();
+    return result as BusinessFunctionRunItem | undefined;
   };
 
   count = async (filter?: { functionType?: string }) => {

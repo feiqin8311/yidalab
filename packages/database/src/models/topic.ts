@@ -169,9 +169,23 @@ export class TopicModel {
   }
 
   private ownership = () =>
-    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, topics);
+    buildWorkspaceWhere(
+      { userId: this.userId, workspaceId: this.workspaceId },
+      {
+        userId: topics.userId,
+        visibility: topics.visibility,
+        workspaceId: topics.workspaceId,
+      },
+    );
   private messageOwnership = () =>
-    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, messages);
+    buildWorkspaceWhere(
+      { userId: this.userId, workspaceId: this.workspaceId },
+      {
+        userId: messages.userId,
+        visibility: messages.visibility,
+        workspaceId: messages.workspaceId,
+      },
+    );
   // **************** Query *************** //
 
   query = async ({
@@ -718,6 +732,9 @@ export class TopicModel {
         groupId: params.groupId || null,
         id,
         sessionId: params.sessionId || null,
+        // 1:1 agent/web/bot conversations are private by default. Explicit
+        // public is reserved for future shared workflows.
+        visibility: 'private' as const,
       },
     );
     const insertMeta = {

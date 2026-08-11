@@ -154,66 +154,55 @@ const parseAssociationExtra = (
 };
 
 export interface BaseCreateUserMemoryParams {
+  /**
+   * When scope is `agent`, required. Injected from trusted runtime context —
+   * never from model-supplied arbitrary ids.
+   */
+  agentId?: string | null;
   capturedAt?: Date;
   details: string;
   detailsEmbedding?: number[];
   memoryCategory?: string | null;
   memoryLayer: LayersEnum;
   memoryType: TypesEnum;
+  /** `global` (default, cross-agent) or `agent` (current agent only). */
+  scope?: 'agent' | 'global';
   summary: string;
   summaryEmbedding?: number[];
   title: string;
   titleEmbedding?: number[];
 }
 
+/** Nested layer payload — scope/agentId live only on the outer create params. */
+type NestedMemoryRowOmit =
+  | 'accessedAt'
+  | 'agentId'
+  | 'createdAt'
+  | 'id'
+  | 'scope'
+  | 'updatedAt'
+  | 'userId'
+  | 'userMemoryId'
+  | 'userMemoryIds';
+
 export interface CreateUserMemoryContextParams extends BaseCreateUserMemoryParams {
-  context: Optional<
-    Omit<
-      UserMemoryContext,
-      'id' | 'userId' | 'createdAt' | 'updatedAt' | 'accessedAt' | 'userMemoryIds'
-    >,
-    'capturedAt'
-  >;
+  context: Optional<Omit<UserMemoryContext, NestedMemoryRowOmit>, 'capturedAt'>;
 }
 
 export interface CreateUserMemoryActivityParams extends BaseCreateUserMemoryParams {
-  activity: Optional<
-    Omit<
-      UserMemoryActivity,
-      'id' | 'userId' | 'createdAt' | 'updatedAt' | 'accessedAt' | 'userMemoryId'
-    >,
-    'capturedAt'
-  >;
+  activity: Optional<Omit<UserMemoryActivity, NestedMemoryRowOmit>, 'capturedAt'>;
 }
 
 export interface CreateUserMemoryExperienceParams extends BaseCreateUserMemoryParams {
-  experience: Optional<
-    Omit<
-      UserMemoryExperience,
-      'id' | 'userId' | 'createdAt' | 'updatedAt' | 'accessedAt' | 'userMemoryId'
-    >,
-    'capturedAt'
-  >;
+  experience: Optional<Omit<UserMemoryExperience, NestedMemoryRowOmit>, 'capturedAt'>;
 }
 
 export interface CreateUserMemoryIdentityParams extends BaseCreateUserMemoryParams {
-  identity: Optional<
-    Omit<
-      UserMemoryIdentity,
-      'id' | 'userId' | 'createdAt' | 'updatedAt' | 'accessedAt' | 'userMemoryId'
-    >,
-    'capturedAt'
-  >;
+  identity: Optional<Omit<UserMemoryIdentity, NestedMemoryRowOmit>, 'capturedAt'>;
 }
 
 export interface CreateUserMemoryPreferenceParams extends BaseCreateUserMemoryParams {
-  preference: Optional<
-    Omit<
-      UserMemoryPreference,
-      'id' | 'userId' | 'createdAt' | 'updatedAt' | 'accessedAt' | 'userMemoryId'
-    >,
-    'capturedAt'
-  >;
+  preference: Optional<Omit<UserMemoryPreference, NestedMemoryRowOmit>, 'capturedAt'>;
 }
 
 export type CreateUserMemoryParams =
@@ -285,6 +274,7 @@ export interface IdentityEntryPayload {
 }
 
 export interface IdentityEntryBasePayload {
+  agentId?: string | null;
   capturedAt?: Date;
   details?: string | null;
   detailsVector1024?: number[] | null;
@@ -293,6 +283,7 @@ export interface IdentityEntryBasePayload {
   memoryLayer?: string | null;
   memoryType?: string | null;
   metadata?: Record<string, unknown> | null;
+  scope?: 'agent' | 'global';
   status?: string | null;
   summary?: string | null;
   summaryVector1024?: number[] | null;
@@ -319,8 +310,7 @@ export interface UpdateIdentityEntryParams {
 
 export interface ContextEntryPayload {
   associatedObjects?:
-    | { extra?: Record<string, unknown>; name?: string; type?: UserMemoryContextObjectType }[]
-    | null;
+    { extra?: Record<string, unknown>; name?: string; type?: UserMemoryContextObjectType }[] | null;
   associatedSubjects?:
     | { extra?: Record<string, unknown>; name?: string; type?: UserMemoryContextSubjectType }[]
     | null;
@@ -547,16 +537,50 @@ export class UserMemoryModel {
   private db: LobeChatDatabase;
   private topicModel: TopicModel;
   private queryModel: UserMemoryQueryModel;
+  /** Active agent for agent-scoped writes / dual-layer retrieval. */
+  private agentId?: string;
+  /**
+   * Management surfaces only: when true and no agentId, return every scope
+   * for this user. Default false → global-only (never leak other agents).
+   */
+  private includeAllScopes: boolean;
 
-  constructor(db: LobeChatDatabase, userId: string) {
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    agentId?: string,
+    options?: { includeAllScopes?: boolean },
+  ) {
     this.userId = userId;
     this.db = db;
-    this.queryModel = new UserMemoryQueryModel(db, userId);
+    this.agentId = agentId;
+    this.includeAllScopes = options?.includeAllScopes === true;
+    this.queryModel = new UserMemoryQueryModel(db, userId, agentId, {
+      includeAllScopes: this.includeAllScopes,
+    });
     this.topicModel = new TopicModel(db, userId);
   }
 
-  private memoryWhere(table: { userId: any }) {
-    return eq(table.userId, this.userId);
+  private memoryWhere(table: { userId: any; scope?: any; agentId?: any }) {
+    const owner = eq(table.userId, this.userId);
+    if (!table.scope) return owner;
+
+    // Dual-layer: personal global + current agent.
+    if (this.agentId) {
+      return and(
+        owner,
+        or(
+          eq(table.scope, 'global'),
+          and(eq(table.scope, 'agent'), eq(table.agentId, this.agentId)),
+        ),
+      )!;
+    }
+
+    // Explicit management "all scopes" view.
+    if (this.includeAllScopes) return owner;
+
+    // Default fail-closed: only personal-global (never other agents' memories).
+    return and(owner, eq(table.scope, 'global'))!;
   }
 
   private extractSourceMetadata(metadata?: Record<string, unknown> | null): {
@@ -577,6 +601,23 @@ export class UserMemoryModel {
     return { sourceId, sourceType };
   }
 
+  private resolveScopeFields(params: { agentId?: string | null; scope?: 'agent' | 'global' }): {
+    agentId: string | null;
+    scope: 'agent' | 'global';
+  } {
+    const scope = params.scope ?? 'global';
+    if (scope === 'agent') {
+      const agentId = params.agentId ?? this.agentId ?? null;
+      if (!agentId) {
+        // Fail closed: never promote agent memories to global.
+        throw new Error('agent-scoped memory write requires a trusted agentId');
+      }
+      return { agentId, scope: 'agent' };
+    }
+    // global must not carry agentId
+    return { agentId: null, scope: 'global' };
+  }
+
   private buildBaseMemoryInsertValues(
     params: BaseCreateUserMemoryParams,
     options?: {
@@ -586,9 +627,11 @@ export class UserMemoryModel {
     },
   ): typeof userMemories.$inferInsert {
     const now = new Date();
+    const { agentId, scope } = this.resolveScopeFields(params);
 
     return {
       accessedCount: 0,
+      agentId,
       capturedAt: params.capturedAt,
       details: params.details ?? null,
       detailsVector1024: params.detailsEmbedding ?? null,
@@ -597,6 +640,7 @@ export class UserMemoryModel {
       memoryLayer: params.memoryLayer,
       memoryType: params.memoryType ?? null,
       metadata: options?.metadata ?? null,
+      scope,
       status: options?.status ?? null,
       summary: params.summary ?? null,
       summaryVector1024: params.summaryEmbedding ?? null,
@@ -628,6 +672,7 @@ export class UserMemoryModel {
       if (!memory) throw new Error('Failed to create user memory context');
 
       const contextValues = {
+        agentId: baseValues.agentId ?? null,
         associatedObjects: params.context.associatedObjects ?? [],
         associatedSubjects: params.context.associatedSubjects ?? [],
         capturedAt: params.context.capturedAt,
@@ -635,6 +680,7 @@ export class UserMemoryModel {
         description: params.context.description ?? null,
         descriptionVector: params.context.descriptionVector ?? null,
         metadata: params.context.metadata ?? null,
+        scope: baseValues.scope ?? 'global',
         scoreImpact: params.context.scoreImpact ?? null,
         scoreUrgency: params.context.scoreUrgency ?? null,
         tags: params.context.tags ?? [],
@@ -665,12 +711,14 @@ export class UserMemoryModel {
       const experienceValues = {
         action: params.experience.action ?? null,
         actionVector: params.experience.actionVector ?? null,
+        agentId: baseValues.agentId ?? null,
         capturedAt: params.experience.capturedAt,
         keyLearning: params.experience.keyLearning ?? null,
         keyLearningVector: params.experience.keyLearningVector ?? null,
         metadata: params.experience.metadata ?? null,
         possibleOutcome: params.experience.possibleOutcome ?? null,
         reasoning: params.experience.reasoning ?? null,
+        scope: baseValues.scope ?? 'global',
         scoreConfidence: params.experience.scoreConfidence ?? null,
         situation: params.experience.situation ?? null,
         situationVector: params.experience.situationVector ?? null,
@@ -703,6 +751,7 @@ export class UserMemoryModel {
       if (!memory) throw new Error('Failed to create user memory activity');
 
       const activityValues = {
+        agentId: baseValues.agentId ?? null,
         associatedLocations: params.activity.associatedLocations ?? null,
         associatedObjects: params.activity.associatedObjects ?? [],
         associatedSubjects: params.activity.associatedSubjects ?? [],
@@ -714,6 +763,7 @@ export class UserMemoryModel {
         narrative: params.activity.narrative ?? null,
         narrativeVector: params.activity.narrativeVector ?? null,
         notes: params.activity.notes ?? null,
+        scope: baseValues.scope ?? 'global',
         startsAt: coerceDate(params.activity.startsAt),
         status: params.activity.status ?? null,
         tags: params.activity.tags ?? [],
@@ -742,10 +792,12 @@ export class UserMemoryModel {
       if (!memory) throw new Error('Failed to create user memory preference');
 
       const preferenceValues = {
+        agentId: baseValues.agentId ?? null,
         capturedAt: params.preference.capturedAt,
         conclusionDirectives: params.preference.conclusionDirectives ?? null,
         conclusionDirectivesVector: params.preference.conclusionDirectivesVector ?? null,
         metadata: params.preference.metadata ?? null,
+        scope: baseValues.scope ?? 'global',
         scorePriority: params.preference.scorePriority ?? null,
         suggestions: params.preference.suggestions ?? null,
         tags: params.preference.tags ?? [],
@@ -995,6 +1047,7 @@ export class UserMemoryModel {
     const baseSelection = {
       accessedAt: userMemories.accessedAt,
       accessedCount: userMemories.accessedCount,
+      agentId: userMemories.agentId,
       createdAt: userMemories.createdAt,
       id: userMemories.id,
       lastAccessedAt: userMemories.lastAccessedAt,
@@ -1002,6 +1055,7 @@ export class UserMemoryModel {
       memoryLayer: userMemories.memoryLayer,
       memoryType: userMemories.memoryType,
       metadata: userMemories.metadata,
+      scope: userMemories.scope,
       status: userMemories.status,
       tags: userMemories.tags,
       title: userMemories.title,
@@ -1092,6 +1146,8 @@ export class UserMemoryModel {
           .select({
             context: {
               accessedAt: userMemoriesContexts.accessedAt,
+              agentId: userMemoriesContexts.agentId,
+              scope: userMemoriesContexts.scope,
               createdAt: userMemoriesContexts.createdAt,
               currentStatus: userMemoriesContexts.currentStatus,
               description: userMemoriesContexts.description,
@@ -1200,6 +1256,8 @@ export class UserMemoryModel {
           .select({
             activity: {
               accessedAt: userMemoriesActivities.accessedAt,
+              agentId: userMemoriesActivities.agentId,
+              scope: userMemoriesActivities.scope,
               associatedLocations: userMemoriesActivities.associatedLocations,
               associatedObjects: userMemoriesActivities.associatedObjects,
               associatedSubjects: userMemoriesActivities.associatedSubjects,
@@ -1306,6 +1364,8 @@ export class UserMemoryModel {
           .select({
             experience: {
               accessedAt: userMemoriesExperiences.accessedAt,
+              agentId: userMemoriesExperiences.agentId,
+              scope: userMemoriesExperiences.scope,
               action: userMemoriesExperiences.action,
               createdAt: userMemoriesExperiences.createdAt,
               id: userMemoriesExperiences.id,
@@ -1397,6 +1457,8 @@ export class UserMemoryModel {
           .select({
             identity: {
               accessedAt: userMemoriesIdentities.accessedAt,
+              agentId: userMemoriesIdentities.agentId,
+              scope: userMemoriesIdentities.scope,
               capturedAt: userMemoriesIdentities.capturedAt,
               createdAt: userMemoriesIdentities.createdAt,
               description: userMemoriesIdentities.description,
@@ -1499,6 +1561,8 @@ export class UserMemoryModel {
             memory: baseSelection,
             preference: {
               accessedAt: userMemoriesPreferences.accessedAt,
+              agentId: userMemoriesPreferences.agentId,
+              scope: userMemoriesPreferences.scope,
               conclusionDirectives: userMemoriesPreferences.conclusionDirectives,
               createdAt: userMemoriesPreferences.createdAt,
               id: userMemoriesPreferences.id,
@@ -1749,6 +1813,8 @@ export class UserMemoryModel {
         const [context] = await this.db
           .select({
             accessedAt: userMemoriesContexts.accessedAt,
+            agentId: userMemoriesContexts.agentId,
+            scope: userMemoriesContexts.scope,
             associatedObjects: userMemoriesContexts.associatedObjects,
             associatedSubjects: userMemoriesContexts.associatedSubjects,
             capturedAt: userMemoriesContexts.capturedAt,
@@ -1805,6 +1871,8 @@ export class UserMemoryModel {
         const [activity] = await this.db
           .select({
             accessedAt: userMemoriesActivities.accessedAt,
+            agentId: userMemoriesActivities.agentId,
+            scope: userMemoriesActivities.scope,
             associatedLocations: userMemoriesActivities.associatedLocations,
             associatedObjects: userMemoriesActivities.associatedObjects,
             associatedSubjects: userMemoriesActivities.associatedSubjects,
@@ -1855,6 +1923,8 @@ export class UserMemoryModel {
         const [experience] = await this.db
           .select({
             accessedAt: userMemoriesExperiences.accessedAt,
+            agentId: userMemoriesExperiences.agentId,
+            scope: userMemoriesExperiences.scope,
             action: userMemoriesExperiences.action,
             createdAt: userMemoriesExperiences.createdAt,
             id: userMemoriesExperiences.id,
@@ -1900,6 +1970,8 @@ export class UserMemoryModel {
         const [identity] = await this.db
           .select({
             accessedAt: userMemoriesIdentities.accessedAt,
+            agentId: userMemoriesIdentities.agentId,
+            scope: userMemoriesIdentities.scope,
             capturedAt: userMemoriesIdentities.capturedAt,
             createdAt: userMemoriesIdentities.createdAt,
             description: userMemoriesIdentities.description,
@@ -1944,6 +2016,8 @@ export class UserMemoryModel {
         const [preference] = await this.db
           .select({
             accessedAt: userMemoriesPreferences.accessedAt,
+            agentId: userMemoriesPreferences.agentId,
+            scope: userMemoriesPreferences.scope,
             capturedAt: userMemoriesPreferences.capturedAt,
             conclusionDirectives: userMemoriesPreferences.conclusionDirectives,
             createdAt: userMemoriesPreferences.createdAt,
@@ -2183,8 +2257,13 @@ export class UserMemoryModel {
 
     return this.db.transaction(async (tx) => {
       const base = params.base ?? {};
+      const scopeFields = this.resolveScopeFields({
+        agentId: (base as { agentId?: string | null }).agentId,
+        scope: (base as { scope?: 'agent' | 'global' }).scope ?? 'global',
+      });
       const baseValues: typeof userMemories.$inferInsert = {
         accessedCount: 0,
+        agentId: scopeFields.agentId,
         capturedAt: base.capturedAt,
         details: base.details ?? null,
         detailsVector1024: base.detailsVector1024 ?? null,
@@ -2193,6 +2272,7 @@ export class UserMemoryModel {
         memoryLayer: base.memoryLayer ?? 'identity',
         memoryType: base.memoryType ?? null,
         metadata: base.metadata ?? null,
+        scope: scopeFields.scope,
         status: base.status === undefined ? 'active' : base.status,
         summary: base.summary ?? null,
         summaryVector1024: base.summaryVector1024 ?? null,
@@ -2208,6 +2288,7 @@ export class UserMemoryModel {
 
       const identity = params.identity ?? {};
       const identityValues: typeof userMemoriesIdentities.$inferInsert = {
+        agentId: scopeFields.agentId,
         capturedAt: identity.capturedAt,
         description: identity.description ?? null,
         descriptionVector: identity.descriptionVector ?? null,
@@ -2221,6 +2302,7 @@ export class UserMemoryModel {
               ? null
               : (normalizeRelationshipValue(identity.relationship) ?? null),
         role: identity.role ?? null,
+        scope: scopeFields.scope,
         tags: identity.tags ?? null,
         type:
           identity.type === undefined
@@ -2463,6 +2545,8 @@ export class UserMemoryModel {
     let query = this.db
       .select({
         accessedAt: userMemoriesActivities.accessedAt,
+        agentId: userMemoriesActivities.agentId,
+        scope: userMemoriesActivities.scope,
         associatedLocations: userMemoriesActivities.associatedLocations,
         associatedObjects: userMemoriesActivities.associatedObjects,
         associatedSubjects: userMemoriesActivities.associatedSubjects,
@@ -2517,6 +2601,8 @@ export class UserMemoryModel {
     let query = this.db
       .select({
         accessedAt: userMemoriesContexts.accessedAt,
+        agentId: userMemoriesContexts.agentId,
+        scope: userMemoriesContexts.scope,
         associatedObjects: userMemoriesContexts.associatedObjects,
         associatedSubjects: userMemoriesContexts.associatedSubjects,
         capturedAt: userMemoriesContexts.capturedAt,
@@ -2569,6 +2655,8 @@ export class UserMemoryModel {
     let query = this.db
       .select({
         accessedAt: userMemoriesExperiences.accessedAt,
+        agentId: userMemoriesExperiences.agentId,
+        scope: userMemoriesExperiences.scope,
         action: userMemoriesExperiences.action,
         capturedAt: userMemoriesExperiences.capturedAt,
         createdAt: userMemoriesExperiences.createdAt,
@@ -2619,6 +2707,8 @@ export class UserMemoryModel {
     let query = this.db
       .select({
         accessedAt: userMemoriesPreferences.accessedAt,
+        agentId: userMemoriesPreferences.agentId,
+        scope: userMemoriesPreferences.scope,
         capturedAt: userMemoriesPreferences.capturedAt,
         conclusionDirectives: userMemoriesPreferences.conclusionDirectives,
         createdAt: userMemoriesPreferences.createdAt,

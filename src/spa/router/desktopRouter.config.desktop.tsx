@@ -108,6 +108,8 @@ import EvalCaseDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/runs/[r
 import FeedbackPage from '@/routes/(main)/feedback';
 import FleetPage from '@/routes/(main)/fleet';
 import FunctionsPage from '@/routes/(main)/functions';
+import OperationsFunctionPage from '@/routes/(main)/functions/[functionId]';
+import OperationsFunctionRunPage from '@/routes/(main)/functions/[functionId]/[runId]';
 import AmazonOldProductKeywordPage from '@/routes/(main)/functions/amazon-old-product-keyword-analysis';
 import AmazonOldProductKeywordRunPage from '@/routes/(main)/functions/amazon-old-product-keyword-analysis/[runId]';
 import LingxingAdsPage from '@/routes/(main)/functions/lingxing-ads';
@@ -514,6 +516,20 @@ export const sharedMainAreaChildren: RouteObject[] = [
           }),
         },
         path: 'amazon-old-product-keyword-analysis/:runId',
+      },
+      {
+        element: <OperationsFunctionPage />,
+        handle: {
+          meta: routeMeta({ icon: LayoutGridIcon, titleKey: 'navigation.functions' }),
+        },
+        path: ':functionId',
+      },
+      {
+        element: <OperationsFunctionRunPage />,
+        handle: {
+          meta: routeMeta({ icon: LayoutGridIcon, titleKey: 'navigation.functions' }),
+        },
+        path: ':functionId/:runId',
       },
     ],
     errorElement: <ErrorBoundary />,

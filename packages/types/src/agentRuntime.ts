@@ -2,6 +2,8 @@ export enum RequestTrigger {
   AgentSignal = 'agent_signal',
   Api = 'api',
   Bot = 'bot',
+  /** Hidden topic for fixed operations function runs (excluded from chat sidebar). */
+  BusinessFunction = 'business_function',
   Chat = 'chat',
   Cli = 'cli',
   Cron = 'cron',

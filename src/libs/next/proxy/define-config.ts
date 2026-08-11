@@ -45,6 +45,44 @@ const persistLocaleCookie = (
   });
 };
 
+const isUnusablePublicHost = (host: string) => {
+  const hostname = host.split(':')[0]?.toLowerCase() || '';
+  // Bind-all / empty hosts are never browser-facing origins.
+  return !hostname || hostname === '0.0.0.0' || hostname === '::' || hostname === '[::]';
+};
+
+/**
+ * Browser-facing origin for auth redirects / callbackUrl.
+ * Docker binds HOSTNAME=0.0.0.0 so `req.nextUrl.origin` becomes
+ * `http://0.0.0.0:3210` behind nginx — better-auth rejects that as
+ * Invalid callbackURL. Prefer forwarded / Host headers, then APP_URL.
+ */
+export const resolvePublicOrigin = (req: NextRequest, fallbackAppUrl?: string): string => {
+  const forwardedHost = (req.headers.get('x-forwarded-host') || '').split(',')[0]?.trim();
+  const host = (forwardedHost || req.headers.get('host') || '').trim();
+  const proto =
+    (req.headers.get('x-forwarded-proto') || '').split(',')[0]?.trim() ||
+    req.nextUrl.protocol.replace(':', '') ||
+    'http';
+
+  if (host && !isUnusablePublicHost(host)) {
+    return `${proto}://${host}`;
+  }
+
+  if (fallbackAppUrl) {
+    try {
+      return new URL(fallbackAppUrl).origin;
+    } catch {
+      // fall through
+    }
+  }
+
+  const nextOrigin = req.nextUrl.origin;
+  if (nextOrigin && !isUnusablePublicHost(req.nextUrl.hostname)) return nextOrigin;
+
+  return 'http://localhost:3010';
+};
+
 export function defineConfig() {
   // `/oauth/connector` is a backend route handler (custom connector OAuth callback);
   // the rest of `/oauth/*` (e.g. /oauth/callback/success) are SPA pages, so scope
@@ -262,11 +300,10 @@ export function defineConfig() {
       if (isProtected) {
         logBetterAuth('Request a protected route, redirecting to sign-in page');
 
-        // Prefer the browser-facing origin over APP_URL. Workbench / LAN /
-        // tunnel hosts often open as http://192.168.x.x:3010 while APP_URL is
-        // http://localhost:3010 — redirecting to APP_URL makes DingTalk open a
-        // dead host and shows a blank page after free-login.
-        const publicOrigin = req.nextUrl.origin || appEnv.APP_URL || 'http://localhost:3010';
+        // Prefer browser-facing host (X-Forwarded-*/Host) over nextUrl.origin.
+        // In docker, nextUrl is often http://0.0.0.0:3210 which better-auth
+        // rejects as Invalid callbackURL. APP_URL is the last safe fallback.
+        const publicOrigin = resolvePublicOrigin(req, appEnv.APP_URL);
         const callbackUrl = `${publicOrigin}${req.nextUrl.pathname}${req.nextUrl.search}`;
         const signInUrl = new URL('/signin', publicOrigin);
         signInUrl.searchParams.set('callbackUrl', callbackUrl);

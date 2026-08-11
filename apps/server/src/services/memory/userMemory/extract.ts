@@ -944,7 +944,7 @@ export class MemoryExtractionExecutor {
   ) {
     const insertedIds: string[] = [];
     const errors: MemoryExtractionTaskErrorItem[] = [];
-    const userMemoryModel = new UserMemoryModel(db, job.userId);
+    const userMemoryModel = new UserMemoryModel(db, job.userId, job.agentId);
 
     for (const [index, rawItem] of (result?.memories ?? []).entries()) {
       const normalizedItem = normalizeActivityMemoryCandidate(rawItem);
@@ -991,6 +991,22 @@ export class MemoryExtractionExecutor {
           activityTags,
         );
 
+        if (!job.agentId) {
+          errors.push(
+            makeTaskErrorItem(
+              'persist',
+              new Error('skip agent-scoped activity memory: topic has no agentId'),
+              {
+                layer: LAYER_LABEL_MAP[LayersEnum.Activity],
+                memoryIndex: index,
+                preview: normalizedItem,
+                sourceId: job.sourceId,
+                sourceType: job.source,
+              },
+            ),
+          );
+          continue;
+        }
         const { memory } = await userMemoryModel.createActivityMemory({
           activity: {
             associatedLocations: associatedLocations.length > 0 ? associatedLocations : [],
@@ -1010,12 +1026,14 @@ export class MemoryExtractionExecutor {
             timezone: item.withActivity?.timezone ?? null,
             type: item.withActivity?.type ?? 'other',
           },
+          agentId: job.agentId,
           capturedAt: job.sourceUpdatedAt,
           details: item.details ?? '',
           detailsEmbedding: detailsVector ?? undefined,
           memoryCategory: item.memoryCategory ?? null,
           memoryLayer: LayersEnum.Activity,
           memoryType: (item.memoryType as TypesEnum) ?? TypesEnum.Activity,
+          scope: 'agent',
           summary: item.summary ?? '',
           summaryEmbedding: summaryVector ?? undefined,
           title: item.title ?? '',
@@ -1048,7 +1066,7 @@ export class MemoryExtractionExecutor {
     db: Awaited<ReturnType<typeof getServerDB>>,
   ) {
     const insertedIds: string[] = [];
-    const userMemoryModel = new UserMemoryModel(db, job.userId);
+    const userMemoryModel = new UserMemoryModel(db, job.userId, job.agentId);
 
     for (const item of result?.memories ?? []) {
       const [summaryVector, detailsVector, descriptionVector] = await this.generateEmbeddings(
@@ -1065,7 +1083,9 @@ export class MemoryExtractionExecutor {
         item.withContext?.labels,
       );
 
+      if (!job.agentId) continue;
       const { memory } = await userMemoryModel.createContextMemory({
+        agentId: job.agentId,
         capturedAt: job.sourceUpdatedAt,
         context: {
           associatedObjects: UserMemoryModel.parseAssociatedObjects(
@@ -1090,6 +1110,7 @@ export class MemoryExtractionExecutor {
         memoryCategory: item.memoryCategory ?? null,
         memoryLayer: LayersEnum.Context,
         memoryType: (item.memoryType as TypesEnum) ?? TypesEnum.Context,
+        scope: 'agent',
         summary: item.summary ?? '',
         summaryEmbedding: summaryVector ?? undefined,
         title: item.title ?? '',
@@ -1111,7 +1132,7 @@ export class MemoryExtractionExecutor {
     db: Awaited<ReturnType<typeof getServerDB>>,
   ) {
     const insertedIds: string[] = [];
-    const userMemoryModel = new UserMemoryModel(db, job.userId);
+    const userMemoryModel = new UserMemoryModel(db, job.userId, job.agentId);
 
     for (const item of result?.memories ?? []) {
       const [summaryVector, detailsVector, situationVector, actionVector, keyLearningVector] =
@@ -1135,7 +1156,9 @@ export class MemoryExtractionExecutor {
         item.withExperience?.labels,
       );
 
+      if (!job.agentId) continue;
       const { memory } = await userMemoryModel.createExperienceMemory({
+        agentId: job.agentId,
         capturedAt: job.sourceUpdatedAt,
         details: item.details ?? '',
         detailsEmbedding: detailsVector ?? undefined,
@@ -1157,6 +1180,7 @@ export class MemoryExtractionExecutor {
         memoryCategory: item.memoryCategory ?? null,
         memoryLayer: LayersEnum.Experience,
         memoryType: (item.memoryType as TypesEnum) ?? TypesEnum.Activity,
+        scope: 'agent',
         summary: item.summary ?? '',
         summaryEmbedding: summaryVector ?? undefined,
         title: item.title ?? '',
@@ -1178,7 +1202,7 @@ export class MemoryExtractionExecutor {
     db: Awaited<ReturnType<typeof getServerDB>>,
   ) {
     const insertedIds: string[] = [];
-    const userMemoryModel = new UserMemoryModel(db, job.userId);
+    const userMemoryModel = new UserMemoryModel(db, job.userId, job.agentId);
 
     for (const item of result?.memories ?? []) {
       const [summaryVector, detailsVector, directiveVector] = await this.generateEmbeddings(
@@ -1195,7 +1219,9 @@ export class MemoryExtractionExecutor {
         item.withPreference?.extractedLabels,
       );
 
+      if (!job.agentId) continue;
       const { memory } = await userMemoryModel.createPreferenceMemory({
+        agentId: job.agentId,
         capturedAt: job.sourceUpdatedAt,
         details: item.details ?? '',
         detailsEmbedding: detailsVector ?? undefined,
@@ -1215,6 +1241,7 @@ export class MemoryExtractionExecutor {
           tags: item.withPreference?.extractedLabels ?? null,
           type: item.withPreference?.type ?? null,
         },
+        scope: 'agent',
         summary: item.summary ?? '',
         summaryEmbedding: summaryVector ?? undefined,
         title: item.title ?? '',
@@ -1236,7 +1263,7 @@ export class MemoryExtractionExecutor {
     db: Awaited<ReturnType<typeof getServerDB>>,
   ) {
     const insertedIds: string[] = [];
-    const userMemoryModel = new UserMemoryModel(db, job.userId);
+    const userMemoryModel = new UserMemoryModel(db, job.userId, job.agentId);
 
     const addActions = result?.add ?? [];
     const updateActions = result?.update ?? [];
@@ -1259,6 +1286,8 @@ export class MemoryExtractionExecutor {
 
       const res = await userMemoryModel.addIdentityEntry({
         base: {
+          // Identity facts are personal-global across agents.
+          scope: 'global',
           capturedAt: job.sourceUpdatedAt,
           details: action.details,
           detailsVector1024: detailsVector ?? undefined,
@@ -1354,7 +1383,17 @@ export class MemoryExtractionExecutor {
       })
       .from(messages)
       .where(
-        and(buildWorkspaceWhere({ userId, workspaceId }, messages), eq(messages.topicId, topicId)),
+        and(
+          buildWorkspaceWhere(
+            { userId, workspaceId },
+            {
+              userId: messages.userId,
+              visibility: messages.visibility,
+              workspaceId: messages.workspaceId,
+            },
+          ),
+          eq(messages.topicId, topicId),
+        ),
       )
       .orderBy(asc(messages.createdAt));
 
@@ -1386,7 +1425,8 @@ export class MemoryExtractionExecutor {
     tokenLimit?: number,
   ): Promise<UserMemoryHybridSearchAggregatedResult> {
     const db = await this.db;
-    const userMemoryModel = new UserMemoryModel(db, userId);
+    // Dual-layer retrieval: personal global + this topic's agent memories.
+    const userMemoryModel = new UserMemoryModel(db, userId, job.agentId);
     // TODO: make topK configurable
     const topK = 10;
     const aggregatedContent = await this.trimTextToTokenLimit(
@@ -1448,7 +1488,8 @@ export class MemoryExtractionExecutor {
     userId: string,
   ): Promise<IdentityMemoryDetail[]> {
     const db = await this.db;
-    const userMemoryModel = new UserMemoryModel(db, userId);
+    // Identity is personal-global; still pass agentId so dual-layer model stays consistent.
+    const userMemoryModel = new UserMemoryModel(db, userId, job.agentId);
 
     const res = await userMemoryModel.getAllIdentitiesWithMemory();
 
@@ -1509,10 +1550,24 @@ export class MemoryExtractionExecutor {
         try {
           const db = await this.db;
           const topic = await db.query.topics.findFirst({
-            columns: { createdAt: true, id: true, metadata: true, updatedAt: true, userId: true },
+            columns: {
+              agentId: true,
+              createdAt: true,
+              id: true,
+              metadata: true,
+              updatedAt: true,
+              userId: true,
+            },
             where: and(
               eq(topics.id, job.topicId),
-              buildWorkspaceWhere({ userId: job.userId, workspaceId: job.workspaceId }, topics),
+              buildWorkspaceWhere(
+                { userId: job.userId, workspaceId: job.workspaceId },
+                {
+                  userId: topics.userId,
+                  visibility: topics.visibility,
+                  workspaceId: topics.workspaceId,
+                },
+              ),
             ),
           });
 
@@ -1551,6 +1606,7 @@ export class MemoryExtractionExecutor {
           }
 
           extractionJob = {
+            agentId: topic.agentId ?? undefined,
             force: job.forceAll || job.forceTopics,
             layers: job.layers,
             source: job.source,
@@ -1700,7 +1756,11 @@ export class MemoryExtractionExecutor {
             retrievedIdentityContext.context,
             extractorContextLimit,
           );
-          const taxonomyOptions = await new UserMemoryModel(db, job.userId).queryTaxonomyOptions({
+          const taxonomyOptions = await new UserMemoryModel(
+            db,
+            extractionJob.userId,
+            extractionJob.agentId,
+          ).queryTaxonomyOptions({
             include: ['categories', 'labels', 'tags'],
             limit: 20,
           });

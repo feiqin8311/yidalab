@@ -552,6 +552,26 @@ export const sharedMainAreaChildren: RouteObject[] = [
         },
         path: 'amazon-old-product-keyword-analysis/:runId',
       },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/[functionId]'),
+          'Desktop > Functions > Operations',
+        ),
+        handle: {
+          meta: routeMeta({ icon: LayoutGridIcon, titleKey: 'navigation.functions' }),
+        },
+        path: ':functionId',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/functions/[functionId]/[runId]'),
+          'Desktop > Functions > Operations Run',
+        ),
+        handle: {
+          meta: routeMeta({ icon: LayoutGridIcon, titleKey: 'navigation.functions' }),
+        },
+        path: ':functionId/:runId',
+      },
     ],
     errorElement: <ErrorBoundary />,
     path: 'functions',

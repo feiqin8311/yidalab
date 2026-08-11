@@ -65,8 +65,11 @@ export async function executeAgentRuntimeStepJob(body: Record<string, unknown>):
     verifyAsyncToolBarrier,
   });
 
+  // Another worker already holds the step lock — not a failure. Throwing would
+  // retry into DLQ while the holder is still executing (ops runs stalled forever).
   if (result.locked) {
-    throw new Error(`Step locked for operation ${operationId} step ${stepIndex}`);
+    log('step locked for %s step %s — skip (holder in progress)', operationId, stepIndex);
+    return;
   }
 }
 
@@ -209,6 +212,35 @@ export function ensureInternalJobWorkersStarted(): void {
       },
       body.workspaceId,
     );
+  });
+
+  // Ops function runs: avoid Upstash Workflow signature on the HTTP route when
+  // AGENT_RUNTIME_MODE=queue delivers onComplete via internal fetch/qstash path.
+  queue.register(JOB_NAMES.opsFunctionComplete, async (payload) => {
+    const body = payload as {
+      errorMessage?: string;
+      lastAssistantContent?: string;
+      operationId?: string;
+      reason?: string;
+      runId?: string;
+      userId?: string;
+      workspaceId?: string;
+    };
+    if (!body.runId || !body.userId || !body.workspaceId) {
+      throw new Error('ops.function.on-complete missing runId/userId/workspaceId');
+    }
+    const { getServerDB } = await import('@/database/server');
+    const { OperationsFunctionService } = await import('@/server/services/operationsFunction');
+    const db = await getServerDB();
+    const service = new OperationsFunctionService(db, body.userId, body.workspaceId);
+    await service.completeFromOperation({
+      errorMessage: body.errorMessage,
+      force: true,
+      lastAssistantContent: body.lastAssistantContent,
+      operationId: body.operationId,
+      reason: body.reason,
+      runId: body.runId,
+    });
   });
 
   queue.start();
