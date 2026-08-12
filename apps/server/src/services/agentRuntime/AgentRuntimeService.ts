@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type {
   Agent,
+  AgentContextPolicy,
   AgentRuntimeContext,
   AgentState,
   GeneralAgentConfig,
@@ -478,6 +479,7 @@ export class AgentRuntimeService {
       userTimezone,
       initialStepCount = 0,
       workspaceId,
+      contextPolicy,
     } = params;
 
     // YidaLab run brakes: default maxSteps / token / fail-streak when caller
@@ -578,6 +580,7 @@ export class AgentRuntimeService {
           agentGroup,
           botContext,
           botPlatformContext,
+          ...(contextPolicy ? { contextPolicy } : {}),
           deviceAccessPolicy,
           deviceSystemInfo,
           discordContext,
@@ -2743,11 +2746,39 @@ export class AgentRuntimeService {
         : undefined;
 
     // Create Agent instance — use custom factory if provided, otherwise default to GeneralChatAgent
+    const contextPolicy = metadata?.contextPolicy as AgentContextPolicy | undefined;
+    const policyBudgets = contextPolicy?.budgets;
+    const compressionRatio =
+      policyBudgets?.compressionRatio ??
+      metadata?.agentConfig?.chatConfig?.compressionThresholdRatio;
+    const allowedToolNames =
+      contextPolicy?.toolScope?.mode === 'replace'
+        ? contextPolicy.toolScope.allowedToolNames
+        : undefined;
+
+    // economicInputTokens caps the effective compression threshold (soft budget).
+    // threshold = min(window * ratio, economicInputTokens) when both are set.
+    const maxWindowToken = contextWindowTokens ?? undefined;
+    let effectiveThresholdRatio = compressionRatio;
+    if (
+      maxWindowToken &&
+      maxWindowToken > 0 &&
+      policyBudgets?.economicInputTokens &&
+      policyBudgets.economicInputTokens > 0
+    ) {
+      const ratioCap = policyBudgets.economicInputTokens / maxWindowToken;
+      const base = compressionRatio ?? 0.65;
+      effectiveThresholdRatio = Math.min(base, ratioCap);
+    }
+
     const generalConfig = {
       agentConfig: metadata?.agentConfig,
+      ...(allowedToolNames ? { allowedToolNames } : {}),
+      ...(contextPolicy ? { contextPolicy } : {}),
       compressionConfig: {
         enabled: metadata?.agentConfig?.chatConfig?.enableContextCompression ?? true,
-        maxWindowToken: contextWindowTokens ?? undefined,
+        maxWindowToken,
+        ...(effectiveThresholdRatio != null ? { thresholdRatio: effectiveThresholdRatio } : {}),
       },
       dynamicInterventionAudits,
       modelRuntimeConfig: metadata?.modelRuntimeConfig,

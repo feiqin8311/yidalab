@@ -465,6 +465,29 @@ export const buildServerCallLlmContext = async ({
     botPlatformContext: ctx.botPlatformContext,
     discordContext: ctx.discordContext,
     enableHistoryCount: agentConfig.chatConfig?.enableHistoryCount ?? undefined,
+    maxHistoryTokens: (() => {
+      const budgets = state.metadata?.contextPolicy?.budgets as
+        { maxHistoryTokens?: number } | undefined;
+      if (budgets?.maxHistoryTokens) return budgets.maxHistoryTokens;
+      if (state.metadata?.contextPolicy) {
+        const window = contextWindowTokens as number | undefined;
+        if (window && window > 0) return Math.min(64_000, Math.floor(window * 0.35));
+        return 64_000;
+      }
+      return undefined;
+    })(),
+    toolResultPrune: (() => {
+      const budgets = state.metadata?.contextPolicy?.budgets as
+        { maxHistoricalToolTokens?: number } | undefined;
+      if (!budgets?.maxHistoricalToolTokens) {
+        // Default prune budget when context budget v2 policy is present
+        if (state.metadata?.contextPolicy) {
+          return { enabled: true, maxHistoricalToolTokens: 40_000 };
+        }
+        return undefined;
+      }
+      return { enabled: true, maxHistoricalToolTokens: budgets.maxHistoricalToolTokens };
+    })(),
     evalContext: ctx.evalContext,
     forceFinish: state.forceFinish,
     // Align with resolveServerCallLlmTooling: bot/dingpan + no successful upload yet
@@ -527,6 +550,30 @@ export const buildServerCallLlmContext = async ({
     ...(onboardingContext && { onboardingContext }),
   };
 
+  // Shadow / OTEL: pre-process estimate includes messages + tools schema + system + skills
+  // (these are the main fixed costs in the original high-token traces).
+  const preTokenEstimate = (() => {
+    try {
+      const msgText = (messagesForContext as Array<{ content?: unknown; tools?: unknown }>)
+        .map((m) => {
+          const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
+          const t = Array.isArray(m.tools) ? JSON.stringify(m.tools) : '';
+          return c + t;
+        })
+        .join('\n');
+      const toolsSchema = JSON.stringify(resolved.promptManifestMap ?? {});
+      const system = agentConfig.systemRole ?? '';
+      const skills = JSON.stringify(resolvedSkills?.enabledSkills ?? []);
+      return Math.ceil((msgText.length + toolsSchema.length + system.length + skills.length) / 4);
+    } catch {
+      return undefined;
+    }
+  })();
+  const windowRatio =
+    preTokenEstimate && contextWindowTokens
+      ? Math.round((preTokenEstimate / contextWindowTokens) * 1000) / 1000
+      : undefined;
+
   const processedMessages = await agentRuntimeTracer.startActiveSpan(
     CONTEXT_ENGINEERING_SPAN_NAME,
     {
@@ -554,13 +601,33 @@ export const buildServerCallLlmContext = async ({
         operationId,
         stepIndex,
         systemRoleLength: contextEngineInput.systemRole?.length,
+        tokenUsage: preTokenEstimate,
         toolCount: contextEngineInput.toolsConfig?.tools?.length ?? 0,
+        windowRatio,
       }),
     },
     async (ceSpan) => {
       try {
         const result = await serverMessagesEngine(contextEngineInput);
         ceSpan.setAttribute('lobehub.context.message_count', result.length);
+        // Post-process token shadow (after prune / truncate)
+        try {
+          const postText = result
+            .map((m: any) =>
+              typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+            )
+            .join('\n');
+          const postTokens = Math.ceil(postText.length / 4);
+          ceSpan.setAttribute('lobehub.context.token_usage_post', postTokens);
+          if (preTokenEstimate != null) {
+            ceSpan.setAttribute(
+              'lobehub.context.tokens_pruned_est',
+              Math.max(0, preTokenEstimate - postTokens),
+            );
+          }
+        } catch {
+          // ignore shadow metric failures
+        }
         return result;
       } catch (error) {
         ceSpan.recordException(error as Error);

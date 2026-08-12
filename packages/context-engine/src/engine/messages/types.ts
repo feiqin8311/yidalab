@@ -238,6 +238,16 @@ export interface MessagesEngineParams {
   enableAgentMode?: boolean;
   /** Whether to enable history message count limit */
   enableHistoryCount?: boolean;
+  /**
+   * Micro-prune historical tool result bodies for the model view.
+   * When maxHistoricalToolTokens is set, ToolResultPruneProcessor runs after HistoryTruncate.
+   */
+  toolResultPrune?: {
+    enabled?: boolean;
+    maxHistoricalToolTokens?: number;
+  };
+  /** Optional token budget for retained history groups (from tail). */
+  maxHistoryTokens?: number;
   /** Force finish flag: when true, injects summary prompt for max-steps completion */
   forceFinish?: boolean;
   /**

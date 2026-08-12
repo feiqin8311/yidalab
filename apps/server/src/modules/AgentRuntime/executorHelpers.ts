@@ -35,6 +35,7 @@ export const archiveRuntimeToolResult = async (
     agentId,
     identifier,
     limit,
+    maxToolResultTokens,
     serverDB,
     toolCallId,
     topicId,
@@ -44,6 +45,7 @@ export const archiveRuntimeToolResult = async (
     agentId?: string | null;
     identifier?: string;
     limit?: number;
+    maxToolResultTokens?: number;
     serverDB: LobeChatDatabase;
     toolCallId?: string;
     topicId?: string | null;
@@ -56,6 +58,7 @@ export const archiveRuntimeToolResult = async (
     content: result.content,
     identifier,
     limit,
+    maxToolResultTokens,
     serverDB,
     toolCallId,
     topicId,

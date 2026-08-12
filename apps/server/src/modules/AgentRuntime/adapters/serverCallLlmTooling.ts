@@ -103,7 +103,11 @@ export const resolveServerCallLlmTooling = (
   );
 
   const tools = resolved.tools.length > 0 ? resolved.tools : undefined;
-  const toolDiscoveryConfig = buildToolDiscoveryConfig(operationToolSet, resolved.enabledToolIds);
+  // Fixed ops / replace-scope runs can disable discovery (no activator surface).
+  const discoveryEnabled = state.metadata?.contextPolicy?.toolScope?.discovery !== false;
+  const toolDiscoveryConfig = discoveryEnabled
+    ? buildToolDiscoveryConfig(operationToolSet, resolved.enabledToolIds)
+    : undefined;
 
   if (stepDelta.activatedTools.length > 0) {
     log(

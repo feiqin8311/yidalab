@@ -1,3 +1,4 @@
+import { approxTokensFromText } from '@lobechat/types';
 import debug from 'debug';
 
 import { BaseProcessor } from '../base/BaseProcessor';
@@ -6,6 +7,7 @@ import type { PipelineContext, ProcessorOptions } from '../types';
 declare module '../types' {
   interface PipelineContextMetadataOverrides {
     finalMessageCount?: number;
+    historyTokenTruncated?: number;
     historyTruncated?: number;
   }
 }
@@ -17,6 +19,11 @@ export interface HistoryTruncateConfig {
   enableHistoryCount?: boolean;
   /** Maximum number of historical messages to keep */
   historyCount?: number;
+  /**
+   * Optional token budget for retained history (group-aware, from tail).
+   * Applied after count-based slice when both are set.
+   */
+  maxHistoryTokens?: number;
 }
 
 /**
@@ -219,60 +226,32 @@ const collectGroupIds = (
  * @param options Configuration options for slicing
  * @returns Sliced messages array
  */
-export const getSlicedMessages = (
-  messages: any[],
-  options: {
-    enableHistoryCount?: boolean;
-    historyCount?: number;
-  },
-): any[] => {
-  // if historyCount is not enabled, return all messages
-  if (!options.enableHistoryCount || options.historyCount === undefined) return messages;
+const estimateMessageTokens = (msg: any): number => {
+  const content =
+    typeof msg?.content === 'string' ? msg.content : JSON.stringify(msg?.content ?? '');
+  const tools = Array.isArray(msg?.tools) ? JSON.stringify(msg.tools) : '';
+  return approxTokensFromText(content) + approxTokensFromText(tools);
+};
 
-  // Always retain active compression checkpoints. Also keep the current user turn
-  // when it is the trailing message (the prompt that triggered this request).
-  // Do not re-attach earlier user messages — that would defeat historyCount.
-  const protectedIds = new Set<string>();
-  for (const msg of messages as MinimalMessage[]) {
-    if (msg.role === 'compressedGroup') protectedIds.add(msg.id);
-  }
-  const trailing = messages.at(-1) as MinimalMessage | undefined;
-  if (trailing?.role === 'user') {
-    protectedIds.add(trailing.id);
-  }
-
-  // if historyCount is negative or set to 0, keep only protected anchors
-  if (options.historyCount <= 0) {
-    if (protectedIds.size === 0) return [];
-    return messages.filter((msg: any) => protectedIds.has(msg.id));
-  }
-
-  // Build message relationship maps
+const buildGroups = (messages: any[]) => {
   const { messageMap, childrenMap } = buildMessageMaps(messages as MinimalMessage[]);
-
-  // Step 1: Identify all groups by walking forward
-  // Build messageId → groupIndex mapping
   const messageToGroup = new Map<string, number>();
   const groups: Set<string>[] = [];
   const processed = new Set<string>();
   let groupIndex = 0;
 
-  // Walk forward to identify all groups
   for (const msg of messages as MinimalMessage[]) {
     if (processed.has(msg.id)) continue;
 
-    // Check if this message starts a group
     if (isGroupStart(msg, messageMap, childrenMap)) {
       const groupIds = collectGroupIds(msg.id, messageMap, childrenMap);
       groups.push(groupIds);
-      // Map each message in the group to this group index
       groupIds.forEach((id) => {
         messageToGroup.set(id, groupIndex);
         processed.add(id);
       });
       groupIndex++;
     } else {
-      // Single message (not part of a group)
       const singleGroup = new Set([msg.id]);
       groups.push(singleGroup);
       messageToGroup.set(msg.id, groupIndex);
@@ -281,38 +260,124 @@ export const getSlicedMessages = (
     }
   }
 
-  // Step 2: Walk backwards through messages to select last N groups
-  const selectedGroupIndices = new Set<number>();
-  for (
-    let i = messages.length - 1;
-    i >= 0 && selectedGroupIndices.size < options.historyCount;
-    i--
-  ) {
-    const msg = messages[i] as MinimalMessage;
-    const groupIdx = messageToGroup.get(msg.id);
-    if (groupIdx !== undefined) {
-      selectedGroupIndices.add(groupIdx);
+  return { groups, messageToGroup };
+};
+
+const collectProtectedIds = (messages: any[]): Set<string> => {
+  const protectedIds = new Set<string>();
+  for (const msg of messages as MinimalMessage[]) {
+    if (msg.role === 'compressedGroup') protectedIds.add(msg.id);
+  }
+  const trailing = messages.at(-1) as MinimalMessage | undefined;
+  if (trailing?.role === 'user') {
+    protectedIds.add(trailing.id);
+  }
+  return protectedIds;
+};
+
+export const getSlicedMessages = (
+  messages: any[],
+  options: {
+    enableHistoryCount?: boolean;
+    historyCount?: number;
+    maxHistoryTokens?: number;
+  },
+): any[] => {
+  const useCount = !!options.enableHistoryCount && options.historyCount !== undefined;
+  const useTokens = !!options.maxHistoryTokens && options.maxHistoryTokens > 0;
+
+  if (!useCount && !useTokens) return messages;
+
+  const protectedIds = collectProtectedIds(messages);
+
+  // Count path: keep last N groups (+ anchors)
+  let working = messages;
+  if (useCount) {
+    if (options.historyCount! <= 0) {
+      working =
+        protectedIds.size === 0 ? [] : messages.filter((msg: any) => protectedIds.has(msg.id));
+    } else {
+      const { groups, messageToGroup } = buildGroups(messages);
+      const selectedGroupIndices = new Set<number>();
+      for (
+        let i = messages.length - 1;
+        i >= 0 && selectedGroupIndices.size < options.historyCount!;
+        i--
+      ) {
+        const msg = messages[i] as MinimalMessage;
+        const groupIdx = messageToGroup.get(msg.id);
+        if (groupIdx !== undefined) selectedGroupIndices.add(groupIdx);
+      }
+      const selectedIds = new Set<string>(protectedIds);
+      for (const groupIdx of selectedGroupIndices) {
+        groups[groupIdx]?.forEach((id) => selectedIds.add(id));
+      }
+      working = messages.filter((msg: any) => selectedIds.has(msg.id));
+      log(
+        `Group-aware count truncation: ${messages.length} → ${groups.length} groups → kept ${selectedGroupIndices.size} groups (${working.length} messages)`,
+      );
     }
   }
 
-  // Step 3: Collect all message IDs from selected groups + protected anchors
-  const selectedIds = new Set<string>(protectedIds);
-  for (const groupIdx of selectedGroupIndices) {
-    const group = groups[groupIdx];
-    if (group) {
-      group.forEach((id) => selectedIds.add(id));
+  // Token path: keep complete groups from the tail until budget is filled
+  if (useTokens && working.length > 0) {
+    const budget = options.maxHistoryTokens!;
+    const { groups, messageToGroup } = buildGroups(working);
+    const groupTokens = groups.map((group) => {
+      let tokens = 0;
+      for (const id of group) {
+        const msg = working.find((m: any) => m.id === id);
+        if (msg) tokens += estimateMessageTokens(msg);
+      }
+      return tokens;
+    });
+
+    // Continuous tail window: walk groups from newest → oldest, stop at first
+    // group that does not fit. Never skip a large recent group to pick an older
+    // small one (that creates history holes). Active/protected groups may
+    // exceed budget alone, but once a non-protected group fails we stop.
+    const selected = new Set<number>();
+    let used = 0;
+    const protectedGroups = new Set<number>();
+    for (let g = 0; g < groups.length; g++) {
+      for (const id of groups[g]) {
+        if (protectedIds.has(id)) {
+          protectedGroups.add(g);
+          break;
+        }
+      }
     }
+
+    // Newest group index first (groups are in message order)
+    for (let g = groups.length - 1; g >= 0; g--) {
+      const cost = groupTokens[g] ?? 0;
+      const isProtected = protectedGroups.has(g);
+      if (selected.size > 0 && !isProtected && used + cost > budget) {
+        // First non-fitting non-protected group — stop; do not continue older
+        break;
+      }
+      selected.add(g);
+      used += cost;
+    }
+
+    // Ensure protected anchors are still present even if they fell outside
+    for (const g of protectedGroups) {
+      if (!selected.has(g)) {
+        selected.add(g);
+        used += groupTokens[g] ?? 0;
+      }
+    }
+
+    const selectedIds = new Set<string>(protectedIds);
+    for (const g of selected) groups[g]?.forEach((id) => selectedIds.add(id));
+    const before = working.length;
+    working = working.filter((msg: any) => selectedIds.has(msg.id));
+    log(
+      `Token history truncation: budget=${budget} tok, groups kept=${selected.size}/${groups.length}, messages ${before} → ${working.length}`,
+    );
   }
 
-  // Step 4: Filter original messages array to keep only selected messages
-  // Preserve original order
-  const result = messages.filter((msg: any) => selectedIds.has(msg.id));
-
-  log(
-    `Group-aware truncation: ${messages.length} messages → ${groups.length} groups → kept ${selectedGroupIndices.size} groups + ${protectedIds.size} anchors (${result.length} messages)`,
-  );
-
-  return result;
+  return working;
 };
 
 /**
@@ -334,10 +399,11 @@ export class HistoryTruncateProcessor extends BaseProcessor {
 
     const originalCount = clonedContext.messages.length;
 
-    // Apply group-aware history truncation
+    // Apply group-aware history truncation (count and/or token budget)
     clonedContext.messages = getSlicedMessages(clonedContext.messages, {
       enableHistoryCount: this.config.enableHistoryCount,
       historyCount: this.config.historyCount,
+      maxHistoryTokens: this.config.maxHistoryTokens,
     });
 
     const finalCount = clonedContext.messages.length;
@@ -346,6 +412,9 @@ export class HistoryTruncateProcessor extends BaseProcessor {
     // Update metadata
     clonedContext.metadata.historyTruncated = truncatedCount;
     clonedContext.metadata.finalMessageCount = finalCount;
+    if (this.config.maxHistoryTokens) {
+      clonedContext.metadata.historyTokenTruncated = truncatedCount;
+    }
 
     log(
       `History truncation completed (group-aware), truncated ${truncatedCount} messages (${originalCount} → ${finalCount})`,

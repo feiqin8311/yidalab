@@ -69,6 +69,8 @@ export const serverMessagesEngine = async ({
   enableHistoryCount,
   forceFinish,
   historyCount,
+  maxHistoryTokens,
+  toolResultPrune,
   historySummary,
   formatHistorySummary,
   initialContext,
@@ -103,6 +105,8 @@ export const serverMessagesEngine = async ({
     // Agent configuration
     enableAgentMode,
     enableHistoryCount,
+    maxHistoryTokens,
+    toolResultPrune,
 
     // Server-side file access URLs resolve to stable file-proxy URLs in production.
     fileContext: { enabled: true, includeFileUrl: true },

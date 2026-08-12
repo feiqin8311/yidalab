@@ -59,6 +59,13 @@ export type OperationsCapabilityRequirement = {
   optional?: OperationsCapabilityId[];
 };
 
+/** Precise API allow-list entry for a mode (identifier + apiName). */
+export type OperationsToolApiRef = {
+  apiName: string;
+  identifier: string;
+  type?: string;
+};
+
 export type OperationsModeDef = {
   capabilities: OperationsCapabilityRequirement;
   description: string;
@@ -71,6 +78,14 @@ export type OperationsModeDef = {
   reportSections: string[];
   requiresTools: boolean;
   requiresVision?: boolean;
+  /**
+   * Optional API-level tool allow-list for replace-mode context policy.
+   * When set, only these tools are exposed (plus document read for archives).
+   * When omitted, all APIs from capability-resolved plugins are allowed.
+   */
+  toolApis?: OperationsToolApiRef[];
+  /** Optional skill identifiers to pre-activate (replace skill scope). */
+  skillNames?: string[];
   /** Build the fixed operator prompt from validated params. */
   buildPrompt: (params: Record<string, unknown>) => string;
   /** Zod object schema for server createRun. */

@@ -399,25 +399,80 @@ export class OperationsFunctionService {
     availability['model.tools'] = true;
     if (mode.requiresVision) availability['model.vision'] = true;
 
-    const prompt = mode.buildPrompt(config.params);
+    const basePrompt = mode.buildPrompt(config.params);
     const pluginIds = this.pluginIdsForMode(mode, availability);
     const ai = new AiAgentService(this.db, this.userId, { workspaceId: this.workspaceId });
 
+    const { buildOpsContextPolicy } = await import('./buildOpsContextPolicy');
+    const { resolveManifestApisForPlugins } = await import('./resolveManifestApis');
+    const manifestApis = await resolveManifestApisForPlugins(this.db, this.workspaceId, pluginIds);
+    const contextPolicy = buildOpsContextPolicy({ mode, pluginIds, manifestApis });
+
+    // traffic-single-asin: deterministic evidence prefetch → one report LLM pass
+    let prompt = basePrompt;
+    let maxSteps = mode.maxSteps;
+    const instructions = [
+      '你正在执行功能中心的固定运营分析任务。',
+      '只使用本次已开放的工具；不要索要权限；不要闲聊。',
+      '不要调用 activator 或安装新工具；必需能力已预加载。',
+      '最终必须输出一个完整的 <lobeArtifact type="text/html"> HTML 报告。',
+    ];
+
+    // Only modes with an explicit ordered toolApis DAG get deterministic prefetch.
+    // No regex tool guessing — missing allow-list falls through to agent tools.
+    if (mode.toolApis?.length) {
+      try {
+        const { buildEvidenceDossier } = await import('./buildEvidenceDossier');
+        const dossier = await buildEvidenceDossier({
+          db: this.db,
+          params: config.params,
+          pluginIds,
+          toolApis: mode.toolApis,
+          workspaceId: this.workspaceId,
+        });
+        if (dossier?.text) {
+          prompt = [
+            basePrompt,
+            '',
+            '---',
+            '以下为服务端确定性预取的 Evidence Dossier（已裁剪）。',
+            '请优先基于该 dossier 撰写报告；仅在关键数字缺失时再调用工具补全。',
+            '禁止重复拉取已在 dossier 中出现的相同参数只读查询。',
+            '',
+            dossier.text,
+          ].join('\n');
+          // Prefer a short report-generation loop once evidence is prefetched
+          maxSteps = Math.min(mode.maxSteps, 6);
+          instructions.push(
+            `Evidence dossier 已注入（≈${dossier.tokens} tokens, ${dossier.toolCalls} tool calls）。优先用它写报告。`,
+          );
+          log(
+            'ops dossier ready mode=%s tokens≈%d tools=%d',
+            mode.id,
+            dossier.tokens,
+            dossier.toolCalls,
+          );
+        }
+      } catch (e) {
+        log('evidence dossier failed, falling back to agent tools: %O', e);
+      }
+    }
+
     const result = await ai.execAgent({
       slug: 'inbox',
+      // Replace-scope: only mode plugins — do not inherit inbox Memory/Skill Store/Web noise
+      // beyond what capabilities resolved. disableLocalSystem keeps sandbox off.
       additionalPluginIds: pluginIds,
+      contextPolicy,
+      disableLocalSystem: true,
       model: config.model.model,
       provider: config.model.provider,
-      maxSteps: mode.maxSteps,
+      maxSteps,
       prompt,
       title: `[运营分析] ${mode.name}`,
       trigger: RequestTrigger.BusinessFunction,
       userInterventionConfig: { approvalMode: 'headless' },
-      instructions: [
-        '你正在执行功能中心的固定运营分析任务。',
-        '只使用本次已开放的工具；不要索要权限；不要闲聊。',
-        '最终必须输出一个完整的 <lobeArtifact type="text/html"> HTML 报告。',
-      ].join('\n'),
+      instructions: instructions.join('\n'),
       hooks: [
         {
           handler: async (event) => {

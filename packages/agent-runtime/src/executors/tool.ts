@@ -1,8 +1,16 @@
-import type { ChatToolPayload } from '@lobechat/types';
+import { applyRoundToolResultBudgets } from '@lobechat/context-engine';
+import { approxTokensFromText, type ChatToolPayload } from '@lobechat/types';
 
 import { UsageCounter } from '../core';
 import type { AgentRuntimeHost, ToolRunContext, ToolRunResult } from '../transport';
-import type { AgentEvent, AgentInstruction, AgentState, InstructionExecutor } from '../types';
+import type {
+  AgentContextPolicy,
+  AgentEvent,
+  AgentInstruction,
+  AgentState,
+  InstructionExecutor,
+} from '../types';
+import { resolveContextBudgets } from '../types/contextPolicy';
 import {
   applyMcpAvailabilityClaimGuard,
   applyToolFailStreakBrake,
@@ -546,6 +554,16 @@ export const callToolsBatch =
     const deferredTools: ChatToolPayload[] = [];
     const toolsToExecute = serverTools.length > 0 ? serverTools : toolsCalling;
 
+    // Collect executions first so we can apply maxToolRoundTokens across the batch
+    // before persisting tool messages (second-pass reshape when over budget).
+    type PendingBatch = {
+      attempts: number;
+      executionResult: ToolRunResult;
+      runContext: ToolRunContext;
+      tool: ChatToolPayload;
+    };
+    const pending: PendingBatch[] = [];
+
     await Promise.all(
       toolsToExecute.map(async (rawTool) => {
         const tool = scrubDingpanHtmlToolArgs(rawTool, state);
@@ -565,51 +583,12 @@ export const callToolsBatch =
             return;
           }
 
-          const executionResult = execution.result;
-          const executionTime = executionResult.executionTime ?? 0;
-          const isSuccess = executionResult.success;
-
-          await host.transports.stream.publishEvent({
-            data: {
-              executionTime,
-              isSuccess,
-              attempts: execution.attempts,
-              maxAttempts: (tools.maxRetries ?? DEFAULT_TOOL_MAX_RETRIES) + 1,
-              payload: { parentMessageId, toolCalling: tool },
-              phase: TOOL_EXECUTION_PHASE,
-              result: executionResult,
-            },
-            stepIndex: host.operation.stepIndex,
-            type: 'tool_end',
-          });
-
-          const toolMessage = await createToolMessage({
-            host,
-            parentMessageId,
-            result: executionResult,
-            state,
+          pending.push({
+            attempts: execution.attempts,
+            executionResult: execution.result,
+            runContext,
             tool,
           });
-          toolMessageIds.push(toolMessage.id);
-
-          const resultEntry: ToolResultEntry = {
-            data: executionResult,
-            executionTime,
-            isSuccess,
-            toolCall: tool,
-            toolCallId: tool.id,
-          };
-
-          events.push({ id: tool.id, result: executionResult, type: 'tool_result' });
-
-          const toolCost = tools.getCost?.(runContext.toolName) ?? 0;
-          resultEntry.usageParams = {
-            executionTime,
-            success: isSuccess,
-            toolCost,
-            toolName: runContext.toolName,
-          };
-          toolResults.push(resultEntry);
         } catch (error) {
           if (isPersistFatal(error)) throw error;
 
@@ -620,6 +599,96 @@ export const callToolsBatch =
         }
       }),
     );
+
+    // Round budget: only when run has an explicit contextPolicy (context_budget_v2 /
+    // ops). Flag-off paths must not reshape all agents via default 20k.
+    const policy = state.metadata?.contextPolicy as AgentContextPolicy | undefined;
+    const roundBudget = policy ? resolveContextBudgets(policy).maxToolRoundTokens : undefined;
+    const reshaped =
+      roundBudget != null && roundBudget > 0
+        ? applyRoundToolResultBudgets(
+            pending.map((p) => ({
+              apiName: p.tool.apiName,
+              content: p.executionResult.content ?? '',
+              identifier: p.tool.identifier,
+              success: p.executionResult.success,
+              toolCallId: p.tool.id,
+            })),
+            roundBudget,
+          )
+        : pending.map((p) => ({
+            content: p.executionResult.content ?? '',
+            reshaped: false,
+          }));
+
+    for (let i = 0; i < pending.length; i++) {
+      const { attempts, executionResult, runContext, tool } = pending[i];
+      const adjusted = reshaped[i];
+      const finalResult: ToolRunResult =
+        adjusted.reshaped && adjusted.content !== executionResult.content
+          ? { ...executionResult, content: adjusted.content }
+          : executionResult;
+
+      const executionTime = finalResult.executionTime ?? 0;
+      const isSuccess = finalResult.success;
+
+      await host.transports.stream.publishEvent({
+        data: {
+          attempts,
+          executionTime,
+          isSuccess,
+          maxAttempts: (tools.maxRetries ?? DEFAULT_TOOL_MAX_RETRIES) + 1,
+          payload: { parentMessageId, toolCalling: tool },
+          phase: TOOL_EXECUTION_PHASE,
+          result: finalResult,
+        },
+        stepIndex: host.operation.stepIndex,
+        type: 'tool_end',
+      });
+
+      const toolMessage = await createToolMessage({
+        host,
+        parentMessageId,
+        result: finalResult,
+        state,
+        tool,
+      });
+      toolMessageIds.push(toolMessage.id);
+
+      const resultEntry: ToolResultEntry = {
+        data: finalResult,
+        executionTime,
+        isSuccess,
+        toolCall: tool,
+        toolCallId: tool.id,
+      };
+
+      events.push({ id: tool.id, result: finalResult, type: 'tool_result' });
+
+      const toolCost = tools.getCost?.(runContext.toolName) ?? 0;
+      resultEntry.usageParams = {
+        executionTime,
+        success: isSuccess,
+        toolCost,
+        toolName: runContext.toolName,
+      };
+      toolResults.push(resultEntry);
+    }
+
+    // Shadow metric: round token sum after reshape
+    if (policy && pending.length > 0) {
+      const roundTokens = pending.reduce(
+        (s, _, idx) => s + approxTokensFromText(reshaped[idx]?.content ?? ''),
+        0,
+      );
+      if (!state.metadata) state.metadata = {};
+      state.metadata.contextBudgetShadow = {
+        ...(state.metadata.contextBudgetShadow as object),
+        lastRoundToolTokens: roundTokens,
+        maxToolRoundTokens: roundBudget,
+        reshapedCount: reshaped.filter((r) => r.reshaped).length,
+      };
+    }
 
     const newState = structuredClone(state);
     for (const result of toolResults) {

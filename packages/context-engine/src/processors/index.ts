@@ -26,6 +26,7 @@ export { TaskMessageProcessor } from './TaskMessage';
 export { TasksFlattenProcessor } from './TasksFlatten';
 export { ToolCallProcessor } from './ToolCall';
 export { ToolMessageReorder } from './ToolMessageReorder';
+export { collectProtectedToolIds, ToolResultPruneProcessor } from './ToolResultPrune';
 export { VerifyMessageProcessor } from './VerifyMessage';
 
 // Re-export types
@@ -41,3 +42,4 @@ export type {
 export type { ReactionFeedbackConfig } from './ReactionFeedback';
 export type { TaskMessageConfig } from './TaskMessage';
 export type { ToolCallConfig } from './ToolCall';
+export type { ToolResultPruneConfig } from './ToolResultPrune';

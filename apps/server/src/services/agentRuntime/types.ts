@@ -1,4 +1,8 @@
-import { type AgentRuntimeContext, type AgentState } from '@lobechat/agent-runtime';
+import {
+  type AgentContextPolicy,
+  type AgentRuntimeContext,
+  type AgentState,
+} from '@lobechat/agent-runtime';
 import type {
   AgentGroupConfig,
   BotPlatformContext,
@@ -368,6 +372,11 @@ export interface OperationCreationParams {
   botContext?: ChatTopicBotContext;
   /** Bot platform context for injecting platform capabilities (e.g. markdown support) */
   botPlatformContext?: BotPlatformContext;
+  /**
+   * Run-level context policy (tool/skill scope + token budgets).
+   * Stored on state.metadata.contextPolicy for resume.
+   */
+  contextPolicy?: AgentContextPolicy;
   /**
    * Device-access policy decision computed once per turn by
    * `resolveDeviceAccessPolicy`. Forwarded into `state.metadata.deviceAccessPolicy`

@@ -50,7 +50,8 @@ describe('archiveToolResultIfNeeded', () => {
       userId: 'user-1',
     });
 
-    expect(result).toEqual({ archived: false, content: 'short result' });
+    expect(result.archived).toBe(false);
+    expect(result.content).toBe('short result');
     expect(AgentDocumentVfsService).not.toHaveBeenCalled();
   });
 

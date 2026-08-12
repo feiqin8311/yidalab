@@ -256,6 +256,37 @@ describe('HistoryTruncateProcessor', () => {
         expect(result.map((m: any) => m.id)).toEqual(['2', '3', '4']);
       });
 
+      it('token budget keeps continuous tail, no holes', () => {
+        // u1 a1 (small) u2 a2 (huge) u3 (small) — must not drop a2 and keep u1
+        const huge = 'x'.repeat(40_000);
+        const messages = [
+          { id: 'u1', content: 'old user', role: 'user' },
+          { id: 'a1', content: 'old asst', role: 'assistant', parentId: 'u1' },
+          { id: 'u2', content: 'mid user', role: 'user' },
+          { id: 'a2', content: huge, role: 'assistant', parentId: 'u2' },
+          { id: 'u3', content: 'new user', role: 'user' },
+        ];
+        // Budget fits ~u3 + partial a2 only if we skip a2 — continuous rule keeps
+        // from tail: u3 first, then a2 (even if over budget alone as first), stop
+        // before older groups once over budget after first non-fit attempt.
+        const result = getSlicedMessages(messages, {
+          maxHistoryTokens: 500,
+        });
+        const ids = result.map((m: any) => m.id);
+        // Continuous from tail: must include u3; if a2 kept, u1/a1 must not appear alone without a2/u2
+        expect(ids).toContain('u3');
+        // No hole: if u1 kept, everything after u1 must also be kept
+        if (ids.includes('u1')) {
+          expect(ids).toEqual(['u1', 'a1', 'u2', 'a2', 'u3']);
+        } else if (ids.includes('u2')) {
+          expect(ids).toEqual(expect.arrayContaining(['u2', 'a2', 'u3']));
+          expect(ids).not.toContain('u1');
+        } else {
+          // only tail
+          expect(ids.every((id: string) => ['a2', 'u3'].includes(id))).toBe(true);
+        }
+      });
+
       it('should handle mixed groups correctly', () => {
         const mixedMessages = [
           { id: '1', content: 'User 1', role: 'user' },

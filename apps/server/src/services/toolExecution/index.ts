@@ -242,9 +242,33 @@ export class ToolExecutionService {
 
       log('MCP tool execution successful for: %s:%s', identifier, apiName);
 
+      // Strict envelope split only for execution envelopes
+      // ({ content, state?, success? } with no extra domain keys).
+      // Ordinary business JSON that happens to have a `content` field is kept whole.
+      const { unwrapMcpEnvelope } = await import('@lobechat/context-engine');
+      const { content: unwrapped, unwrapped: isEnvelope } = unwrapMcpEnvelope(result);
+      if (isEnvelope) {
+        const envelope = result as {
+          content?: unknown;
+          state?: Record<string, any>;
+          success?: boolean;
+        };
+        const content =
+          typeof unwrapped === 'string'
+            ? unwrapped
+            : unwrapped !== undefined
+              ? JSON.stringify(unwrapped)
+              : '';
+        return {
+          content,
+          state: envelope.state && typeof envelope.state === 'object' ? envelope.state : undefined,
+          success: envelope.success !== false,
+        };
+      }
+
       return {
         content: typeof result === 'string' ? result : JSON.stringify(result),
-        state: typeof result === 'object' ? result : undefined,
+        state: typeof result === 'object' ? (result as Record<string, any>) : undefined,
         success: true,
       };
     } catch (error) {

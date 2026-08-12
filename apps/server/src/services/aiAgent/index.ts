@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentContextPolicy,
   AgentRuntimeContext,
   AgentState,
   GeneralAgentConfig,
@@ -321,6 +322,11 @@ interface InternalExecAgentParams extends ExecAgentParams {
   botContext?: ChatTopicBotContext;
   /** Bot platform context for injecting platform capabilities (e.g. markdown support) */
   botPlatformContext?: BotPlatformContext;
+  /**
+   * Run-level context policy (tool/skill scope + token budgets).
+   * Prefer for fixed ops modes (replace tool scope) and budget governance.
+   */
+  contextPolicy?: AgentContextPolicy;
   /** Cron job ID that triggered this execution (if trigger is 'cron') */
   cronJobId?: string;
   /** Disable only local-system while preserving other tools. Useful for signal-only evals. */
@@ -979,7 +985,24 @@ export class AiAgentService {
       suppressUserMessage,
       ephemeralUserMessage,
       operationIdempotencyKey,
+      contextPolicy: contextPolicyParam,
     } = params;
+
+    // Default inherit policy when context_budget_v2 is on (ops passes explicit policy).
+    let contextPolicy = contextPolicyParam;
+    if (!contextPolicy) {
+      try {
+        const { getServerFeatureFlagsStateFromRuntimeConfig } =
+          await import('@/server/featureFlags');
+        const flags = await getServerFeatureFlagsStateFromRuntimeConfig(this.userId);
+        if (flags.enableContextBudgetV2) {
+          const { defaultInheritContextPolicy } = await import('@lobechat/agent-runtime');
+          contextPolicy = defaultInheritContextPolicy();
+        }
+      } catch {
+        // Feature flag optional — keep undefined for legacy path
+      }
+    }
 
     // Validate that either agentId or slug is provided
     if (!agentId && !slug) {
@@ -2289,14 +2312,27 @@ export class AiAgentService {
     // (deduped) alongside the agent's pinned plugins and any internal
     // `additionalPluginIds` so a mentioned-but-not-pinned tool (e.g. a custom MCP
     // connector) is both queried for manifests and enabled by the tools engine.
-    let agentPlugins: string[] = [
-      ...new Set([
-        ...getActivePluginIds(agentConfig?.plugins),
-        ...(additionalPluginIds || []),
-        ...(selectedToolIds || []),
-        ...(hasMentionedAgents ? ['lobe-agent-management'] : []),
-      ]),
-    ];
+    //
+    // Replace tool scope (fixed ops modes): do NOT inherit inbox pinned plugins
+    // (Memory / Skill Store / Documents / Web …) — only additionalPluginIds +
+    // always-needed archive reader.
+    const replaceToolScope = contextPolicy?.toolScope?.mode === 'replace';
+    let agentPlugins: string[] = replaceToolScope
+      ? [
+          ...new Set([
+            ...(additionalPluginIds || []),
+            'lobe-agent-documents',
+            ...(selectedToolIds || []),
+          ]),
+        ]
+      : [
+          ...new Set([
+            ...getActivePluginIds(agentConfig?.plugins),
+            ...(additionalPluginIds || []),
+            ...(selectedToolIds || []),
+            ...(hasMentionedAgents ? ['lobe-agent-management'] : []),
+          ]),
+        ];
 
     // Model metadata is needed both for tool support checks and agent-management context.
     const { loadModels } = await import('@/business/client/model-bank/loadModels');
@@ -3633,10 +3669,21 @@ export class AiAgentService {
       // against, so a disabled identifier absent here is neither listed nor
       // activatable — mirrors the tool-manifest treatment above (installedPlugins/
       // additionalManifests), which this array had never received.
+      const skillScope = contextPolicy?.skillScope;
+      const skillScopeMode = skillScope?.mode ?? 'inherit';
+      const allowedSkillNames = new Set(skillScope?.allowedSkillNames ?? []);
       const seenNames = new Set<string>();
       const skills = [...projectMetas, ...dbMetas, ...agentSkillMetas, ...builtinMetas].filter(
         (skill) => {
           if (disabledPluginIds.includes(skill.identifier)) return false;
+          if (skillScopeMode === 'none') return false;
+          if (
+            skillScopeMode === 'replace' &&
+            !allowedSkillNames.has(skill.name) &&
+            !allowedSkillNames.has(skill.identifier)
+          ) {
+            return false;
+          }
           if (seenNames.has(skill.name)) return false;
           seenNames.add(skill.name);
           return true;
@@ -3662,6 +3709,25 @@ export class AiAgentService {
       operationSkillSet = skillEngine.generate(agentPlugins ?? []);
     } catch (error) {
       log('execAgent: failed to build operationSkillSet: %O', error);
+    }
+
+    // Fixed ops / replace-scope: drop activator so discovery cannot re-expand tools.
+    if (contextPolicy?.toolScope?.discovery === false) {
+      const activatorId = 'lobe-activator';
+      toolsResult.enabledToolIds = toolsResult.enabledToolIds.filter((id) => id !== activatorId);
+      if (tools) {
+        tools = tools.filter(
+          (t: any) =>
+            !(
+              typeof t?.function?.name === 'string' &&
+              t.function.name.startsWith(`${activatorId}____`)
+            ),
+        );
+      }
+      delete toolManifestMap[activatorId];
+      delete toolSourceMap[activatorId];
+      delete toolExecutorMap[activatorId];
+      log('execAgent: stripped activator (contextPolicy.toolScope.discovery=false)');
     }
 
     // 19. Create operation using AgentRuntimeService
@@ -3750,6 +3816,7 @@ export class AiAgentService {
         userInterventionConfig,
         userMemory,
         workspaceId: this.workspaceId,
+        ...(contextPolicy ? { contextPolicy } : {}),
       });
 
       // Prefer the resolved id from createOperation (idempotency may return an
