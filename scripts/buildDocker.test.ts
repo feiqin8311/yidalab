@@ -23,9 +23,9 @@ describe('runDockerBuild', () => {
         step++;
         return 42; // spa build fails
       }
-      // finally restore
+      // finally restore via tsx (Docker has no bun)
       expect(env?.YIDALAB_BUILD_PROFILE).toBe('full');
-      expect(cmd).toContain('applyBuildProfile');
+      expect(cmd).toMatch(/tsx.*applyBuildProfile|applyBuildProfile/);
       return 0;
     };
 

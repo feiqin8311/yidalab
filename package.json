@@ -41,9 +41,9 @@
   "scripts": {
     "build": "bun scripts/applyBuildProfile.ts && bun run build:spa && bun run build:spa:auth && bun run build:spa:copy && bun run build:next",
     "build:analyze": "cross-env NODE_OPTIONS=--max-old-space-size=81920 next experimental-analyze",
-    "build:docker": "bun scripts/buildDocker.mts",
-    "build:docker:full": "bun scripts/buildDocker.mts --full",
-    "build:metrics": "bun scripts/buildMetrics.mts",
+    "build:docker": "tsx scripts/buildDocker.mts",
+    "build:docker:full": "tsx scripts/buildDocker.mts --full",
+    "build:metrics": "tsx scripts/buildMetrics.mts",
     "build:next": "cross-env NODE_OPTIONS=--max-old-space-size=7168 bun run build:next:raw",
     "build:next:raw": "next build",
     "build:profile": "bun scripts/applyBuildProfile.ts",
