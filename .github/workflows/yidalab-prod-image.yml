@@ -60,17 +60,27 @@ jobs:
       image_ref: ${{ steps.out.outputs.image_ref }}
       short_sha: ${{ steps.out.outputs.short_sha }}
     steps:
-      - name: Free disk space
-        # Monorepo docker build + buildkit cache needs ~20GB free on ubuntu-latest (~14GB free by default)
+      - name: Free disk space + swap
+        # Monorepo docker build needs disk + RAM headroom. ubuntu-latest ~7GB free RAM;
+        # Next/Vite with 8G heap OOMs. Add swap so peak RSS can spill.
         run: |
           set -euo pipefail
           echo "Before:"
           df -h /
+          free -h
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
             /usr/local/share/boost /usr/share/swift /usr/local/.ghcup 2>/dev/null || true
           sudo docker system prune -af 2>/dev/null || true
+          if ! swapon --show | grep -q .; then
+            sudo fallocate -l 12G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
+          fi
           echo "After:"
           df -h /
+          free -h
+          swapon --show
 
       - name: Checkout
         uses: actions/checkout@v6
