@@ -74,7 +74,8 @@ ENV NEXT_PUBLIC_ANALYTICS_UMAMI="${NEXT_PUBLIC_ANALYTICS_UMAMI}" \
     NEXT_PUBLIC_UMAMI_WEBSITE_ID="${NEXT_PUBLIC_UMAMI_WEBSITE_ID}"
 
 # Node / CI (pnpm must not prompt to purge modules in Docker)
-ENV NODE_OPTIONS="--max-old-space-size=8192" \
+# Keep under GitHub ubuntu-latest free RAM (~7GB after OS). 8G heap OOMs the runner.
+ENV NODE_OPTIONS="--max-old-space-size=5120" \
     PNPM_STORE_DIR="/pnpm/store" \
     CI="true"
 
