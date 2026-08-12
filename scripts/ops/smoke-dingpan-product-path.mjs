@@ -14,7 +14,6 @@
  *
  * Exit: 0 only when happy-path product gates pass.
  */
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, parse as parseUrl } from 'node:url';
@@ -319,18 +318,16 @@ const main = async () => {
         log('folder list error (continue upload)', e.message);
       }
 
-      // uploadInfos → OSS → commit (same core path as uploadHtmlToDingpan)
+      // uploadInfos → OSS → commit (match uploadCore: no contentMd5; OSS headers only)
       const infoResp = await fetch(
         `https://api.dingtalk.com/v1.0/storage/spaces/${spaceId}/files/uploadInfos/query?unionId=${encodeURIComponent(unionId || '')}`,
         {
           body: JSON.stringify({
-            protocol: 'HEADER_SIGNATURE',
-            multipart: false,
-            parentId: folderId,
             fileName,
             fileSize: htmlBytes.length,
-            contentMd5: createHash('md5').update(htmlBytes).digest('base64'),
-            contentType: 'text/html',
+            multipart: false,
+            parentId: folderId,
+            protocol: 'HEADER_SIGNATURE',
           }),
           headers: {
             'Content-Type': 'application/json',
@@ -346,13 +343,17 @@ const main = async () => {
 
       const resourceUrls = headerSignatureInfo.resourceUrls || headerSignatureInfo.resourceUrl;
       const url = Array.isArray(resourceUrls) ? resourceUrls[0] : resourceUrls;
+      // Signed OSS headers must not be extended (extra Content-Type → 403).
       const headers = headerSignatureInfo.headers || {};
       const put = await fetch(url, {
         body: htmlBytes,
-        headers: { ...headers, 'Content-Type': 'text/html' },
+        headers,
         method: 'PUT',
       });
-      assert(put.ok, `OSS PUT failed HTTP ${put.status}`);
+      if (!put.ok) {
+        const putBody = await put.text().catch(() => '');
+        assert(false, `OSS PUT failed HTTP ${put.status} ${putBody.slice(0, 300)}`);
+      }
 
       const commitResp = await fetch(
         `https://api.dingtalk.com/v1.0/storage/spaces/${spaceId}/files/commit?unionId=${encodeURIComponent(unionId || '')}`,
