@@ -93,6 +93,19 @@ const trafficModes: OperationsModeDef[] = [
       required: [...baseModelTools.required, 'company.mcp.sif-mcp'],
       optional: ['company.mcp.lingxing-mcp', 'company.mcp.sellersprite-mcp'],
     },
+    // Ordered evidence DAG for deterministic prefetch + API-level replace scope.
+    // Identifiers match capabilityMap / company market MCP rows.
+    toolApis: [
+      { apiName: 'ops_get_asin_traffic_trend', identifier: 'company.mcp.sif-mcp', type: 'mcp' },
+      { apiName: 'market_get_keyword_history', identifier: 'company.mcp.sif-mcp', type: 'mcp' },
+      // Optional plugins: skipped at dossier time if connection missing
+      {
+        apiName: 'ads_get_asin_ad_structure',
+        identifier: 'company.mcp.lingxing-mcp',
+        type: 'mcp',
+      },
+    ],
+    skillNames: [],
     reportSections: [
       '结论摘要',
       '广告 vs 自然流量',

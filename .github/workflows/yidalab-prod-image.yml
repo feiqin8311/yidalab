@@ -110,9 +110,10 @@ jobs:
           build-args: |
             USE_CN_MIRROR=false
             NEXT_PUBLIC_BASE_PATH=
-          # Registry cache only (mode=min): mode=max + dual GHA cache fills runner disk on this monorepo
-          cache-from: type=registry,ref=${{ env.CACHE_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.CACHE_IMAGE }}:buildcache,mode=min,image-manifest=true,oci-mediatypes=true,ignore-error=true
+          # Inline cache only. Registry buildcache repeatedly hung this monorepo build
+          # (60–90m stuck on "Build and push" with no log export). ignore-error kept.
+          cache-from: type=gha
+          cache-to: type=gha,mode=min,ignore-error=true
           provenance: false
 
       - name: Export image ref

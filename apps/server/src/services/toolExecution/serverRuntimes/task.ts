@@ -398,9 +398,14 @@ export const createTaskRuntime = (deps: TaskRuntimeDeps) => {
 
     setTaskSchedule: async (args: {
       automationMode?: TaskAutomationMode | null;
+      eventSourceType?: string | null;
       heartbeatInterval?: number;
       identifier: string;
       maxExecutions?: number | null;
+      overduePolicy?: 'latest' | 'skip' | 'all' | null;
+      scheduleAt?: string | null;
+      scheduleEverySeconds?: number | null;
+      scheduleKind?: 'at' | 'every' | 'cron' | null;
       schedulePattern?: string | null;
       scheduleTimezone?: string | null;
     }) => {
@@ -413,12 +418,7 @@ export const createTaskRuntime = (deps: TaskRuntimeDeps) => {
       // Mirrors client executor: schedule columns go through taskCaller.update;
       // maxExecutions lives in `tasks.config.schedule.maxExecutions` (JSONB) and
       // routes through updateConfig so server-side merge preserves siblings.
-      const scheduleUpdate: {
-        automationMode?: TaskAutomationMode | null;
-        heartbeatInterval?: number;
-        schedulePattern?: string | null;
-        scheduleTimezone?: string | null;
-      } = {};
+      const scheduleUpdate: Record<string, unknown> = {};
       if (args.automationMode !== undefined) {
         scheduleUpdate.automationMode = args.automationMode;
         changes.push(
@@ -431,6 +431,22 @@ export const createTaskRuntime = (deps: TaskRuntimeDeps) => {
           args.heartbeatInterval > 0
             ? `heartbeat interval → ${args.heartbeatInterval}s`
             : 'heartbeat interval cleared',
+        );
+      }
+      if (args.scheduleKind !== undefined) {
+        scheduleUpdate.scheduleKind = args.scheduleKind;
+        changes.push(
+          args.scheduleKind ? `schedule kind → ${args.scheduleKind}` : 'schedule kind cleared',
+        );
+      }
+      if (args.scheduleAt !== undefined) {
+        scheduleUpdate.scheduleAt = args.scheduleAt;
+        changes.push(args.scheduleAt ? `schedule at → ${args.scheduleAt}` : 'schedule at cleared');
+      }
+      if (args.scheduleEverySeconds !== undefined) {
+        scheduleUpdate.scheduleEverySeconds = args.scheduleEverySeconds;
+        changes.push(
+          args.scheduleEverySeconds ? `every → ${args.scheduleEverySeconds}s` : 'every cleared',
         );
       }
       if (args.schedulePattern !== undefined) {
@@ -448,6 +464,16 @@ export const createTaskRuntime = (deps: TaskRuntimeDeps) => {
             ? `schedule timezone → ${args.scheduleTimezone}`
             : 'schedule timezone cleared',
         );
+      }
+      if (args.eventSourceType !== undefined) {
+        scheduleUpdate.eventSourceType = args.eventSourceType;
+        changes.push(
+          args.eventSourceType ? `event → ${args.eventSourceType}` : 'event source cleared',
+        );
+      }
+      if (args.overduePolicy !== undefined) {
+        scheduleUpdate.overduePolicy = args.overduePolicy;
+        changes.push(args.overduePolicy ? `overdue → ${args.overduePolicy}` : 'overdue cleared');
       }
       if (Object.keys(scheduleUpdate).length > 0) {
         ops.push(taskCaller().update({ id: task.id, ...scheduleUpdate }));
@@ -474,6 +500,81 @@ export const createTaskRuntime = (deps: TaskRuntimeDeps) => {
       await Promise.all(ops);
 
       return { content: formatTaskEdited(task.identifier, changes), success: true };
+    },
+
+    setTaskNextCheck: async (args: { nextCheckAt?: string; nextCheckInSeconds?: number }) => {
+      const hasAt = args.nextCheckAt !== undefined && args.nextCheckAt !== '';
+      const hasIn = args.nextCheckInSeconds !== undefined;
+      if (hasAt === hasIn) {
+        return {
+          content: 'Provide exactly one of nextCheckAt or nextCheckInSeconds.',
+          success: false,
+        };
+      }
+
+      // operationId is closed over from TaskRuntimeDeps (current agent run).
+      if (!operationId) {
+        return { content: 'setTaskNextCheck requires an active agent operation.', success: false };
+      }
+
+      const { TaskAutomationModel } = await import('@/database/models/taskAutomation');
+      const { clampPacingSeconds } = await import('@/server/services/taskAutomation/nextRun');
+      const { getServerDB } = await import('@/database/server');
+      const autoModel = new TaskAutomationModel(await getServerDB());
+      const attempt = await autoModel.findAttemptByOperationId(operationId);
+      if (!attempt) {
+        return {
+          content:
+            'No automation attempt bound to this operation (not a heartbeat automation run).',
+          success: false,
+        };
+      }
+
+      const run = await autoModel.findRunById(attempt.runId);
+      if (!run || run.trigger !== 'heartbeat') {
+        return {
+          content: 'setTaskNextCheck is only valid for heartbeat automation runs.',
+          success: false,
+        };
+      }
+
+      const task = await taskModel().findById(run.taskId);
+      if (!task || task.automationMode !== 'heartbeat') {
+        return { content: 'Task is not in heartbeat mode.', success: false };
+      }
+
+      const now = Date.now();
+      let requestedSeconds: number;
+      let requestedAt: Date;
+      if (hasAt) {
+        requestedAt = new Date(args.nextCheckAt!);
+        if (Number.isNaN(requestedAt.getTime())) {
+          return { content: 'nextCheckAt is not a valid ISO datetime.', success: false };
+        }
+        requestedSeconds = Math.round((requestedAt.getTime() - now) / 1000);
+      } else {
+        requestedSeconds = Math.round(args.nextCheckInSeconds!);
+        requestedAt = new Date(now + requestedSeconds * 1000);
+      }
+
+      const { effective } = clampPacingSeconds(requestedSeconds, task);
+      const effectiveAt = new Date(now + effective * 1000);
+
+      await autoModel.setRunNextCheck({
+        effectiveNextCheckAt: effectiveAt,
+        operationId,
+        requestedNextCheckAt: requestedAt,
+      });
+
+      return {
+        content: `Next check recorded: effective ${effectiveAt.toISOString()} (requested ${requestedAt.toISOString()}).`,
+        state: {
+          effectiveNextCheckAt: effectiveAt.toISOString(),
+          requestedNextCheckAt: requestedAt.toISOString(),
+          success: true,
+        },
+        success: true,
+      };
     },
 
     setTaskVerify: async (args: {

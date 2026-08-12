@@ -396,6 +396,27 @@ export class TaskService {
       });
     }
 
+    // Scheduler V2: ensure next_run_at is set when the user arms automation.
+    // Skip the natural running→scheduled park (lifecycle owns that path).
+    // Event mode has no next_run_at until an event arrives.
+    if (
+      status === 'scheduled' &&
+      task.automationMode &&
+      task.automationMode !== 'event' &&
+      resolved.status !== 'running'
+    ) {
+      try {
+        const { ensureTaskNextRunAt, isTaskSchedulerV2Enabled } =
+          await import('@/server/services/taskAutomation');
+        if (isTaskSchedulerV2Enabled()) {
+          const fresh = (await this.taskModel.findById(task.id)) ?? task;
+          await ensureTaskNextRunAt(this.db, fresh);
+        }
+      } catch (error) {
+        console.error('[TaskService.updateStatus] ensureTaskNextRunAt failed:', error);
+      }
+    }
+
     const unlocked: string[] = [];
     const paused: string[] = [];
     let allSubtasksDone = false;

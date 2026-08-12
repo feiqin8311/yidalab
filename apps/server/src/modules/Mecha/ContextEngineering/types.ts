@@ -110,6 +110,15 @@ export interface ServerMessagesEngineParams {
   /** Whether to enable history message count limit */
   enableHistoryCount?: boolean;
 
+  /** Historical tool-result micro-prune (model view). */
+  toolResultPrune?: {
+    enabled?: boolean;
+    maxHistoricalToolTokens?: number;
+  };
+
+  /** Optional token budget for retained history groups. */
+  maxHistoryTokens?: number;
+
   /** Force finish flag: when true, injects summary prompt for max-steps completion */
   forceFinish?: boolean;
 

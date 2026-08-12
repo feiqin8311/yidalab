@@ -1,4 +1,8 @@
-import { type AgentRuntimeContext, type AgentState } from '@lobechat/agent-runtime';
+import {
+  type AgentContextPolicy,
+  type AgentRuntimeContext,
+  type AgentState,
+} from '@lobechat/agent-runtime';
 import type {
   AgentGroupConfig,
   BotPlatformContext,
@@ -369,6 +373,11 @@ export interface OperationCreationParams {
   /** Bot platform context for injecting platform capabilities (e.g. markdown support) */
   botPlatformContext?: BotPlatformContext;
   /**
+   * Run-level context policy (tool/skill scope + token budgets).
+   * Stored on state.metadata.contextPolicy for resume.
+   */
+  contextPolicy?: AgentContextPolicy;
+  /**
    * Device-access policy decision computed once per turn by
    * `resolveDeviceAccessPolicy`. Forwarded into `state.metadata.deviceAccessPolicy`
    * so the dispatch site can include `reason` in the audit entry without
@@ -392,6 +401,11 @@ export interface OperationCreationParams {
    * Registered once, auto-adapt to local (in-memory) or production (webhook) mode
    */
   hooks?: AgentHook[];
+  /**
+   * Optional stable idempotency key written to agent_operations.idempotency_key.
+   * Concurrent createOperation with the same key reuses the existing operation.
+   */
+  idempotencyKey?: string;
   initialContext: AgentRuntimeContext;
   initialMessages?: any[];
   /** Initial step count offset for resumed operations (accumulated from previous runs) */

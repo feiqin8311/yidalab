@@ -439,9 +439,14 @@ class TaskExecutor extends BaseExecutor<typeof TaskApiName> {
   setTaskSchedule = async (
     params: {
       automationMode?: TaskAutomationMode | null;
+      eventSourceType?: string | null;
       heartbeatInterval?: number;
       identifier: string;
       maxExecutions?: number | null;
+      overduePolicy?: 'latest' | 'skip' | 'all' | null;
+      scheduleAt?: string | null;
+      scheduleEverySeconds?: number | null;
+      scheduleKind?: 'at' | 'every' | 'cron' | null;
       schedulePattern?: string | null;
       scheduleTimezone?: string | null;
     },
@@ -458,12 +463,7 @@ class TaskExecutor extends BaseExecutor<typeof TaskApiName> {
       // Top-level schedule columns — direct service.update bypasses the
       // store.updateTask optimistic path, which would otherwise need to map
       // flat columns onto the detail's nested `schedule.*` shape.
-      const scheduleUpdate: {
-        automationMode?: TaskAutomationMode | null;
-        heartbeatInterval?: number;
-        schedulePattern?: string | null;
-        scheduleTimezone?: string | null;
-      } = {};
+      const scheduleUpdate: Record<string, unknown> = {};
       if (params.automationMode !== undefined) {
         scheduleUpdate.automationMode = params.automationMode;
         changes.push(
@@ -478,6 +478,24 @@ class TaskExecutor extends BaseExecutor<typeof TaskApiName> {
           params.heartbeatInterval > 0
             ? `heartbeat interval → ${params.heartbeatInterval}s`
             : 'heartbeat interval cleared',
+        );
+      }
+      if (params.scheduleKind !== undefined) {
+        scheduleUpdate.scheduleKind = params.scheduleKind;
+        changes.push(
+          params.scheduleKind ? `schedule kind → ${params.scheduleKind}` : 'schedule kind cleared',
+        );
+      }
+      if (params.scheduleAt !== undefined) {
+        scheduleUpdate.scheduleAt = params.scheduleAt;
+        changes.push(
+          params.scheduleAt ? `schedule at → ${params.scheduleAt}` : 'schedule at cleared',
+        );
+      }
+      if (params.scheduleEverySeconds !== undefined) {
+        scheduleUpdate.scheduleEverySeconds = params.scheduleEverySeconds;
+        changes.push(
+          params.scheduleEverySeconds ? `every → ${params.scheduleEverySeconds}s` : 'every cleared',
         );
       }
       if (params.schedulePattern !== undefined) {
@@ -496,8 +514,20 @@ class TaskExecutor extends BaseExecutor<typeof TaskApiName> {
             : 'schedule timezone cleared',
         );
       }
+      if (params.eventSourceType !== undefined) {
+        scheduleUpdate.eventSourceType = params.eventSourceType;
+        changes.push(
+          params.eventSourceType ? `event → ${params.eventSourceType}` : 'event source cleared',
+        );
+      }
+      if (params.overduePolicy !== undefined) {
+        scheduleUpdate.overduePolicy = params.overduePolicy;
+        changes.push(
+          params.overduePolicy ? `overdue → ${params.overduePolicy}` : 'overdue cleared',
+        );
+      }
       if (Object.keys(scheduleUpdate).length > 0) {
-        ops.push(taskService.update(identifier, scheduleUpdate));
+        ops.push(taskService.update(identifier, scheduleUpdate as any));
       }
 
       // maxExecutions lives in `tasks.config.schedule.maxExecutions` (JSONB);
@@ -541,6 +571,21 @@ class TaskExecutor extends BaseExecutor<typeof TaskApiName> {
         success: false,
       };
     }
+  };
+
+  setTaskNextCheck = async (
+    params: { nextCheckAt?: string; nextCheckInSeconds?: number },
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    // Client-side: pacing is only meaningful during a server automation run.
+    // Delegate is not available on the client path — surface a clear error.
+    void params;
+    void _ctx;
+    return {
+      content: 'setTaskNextCheck can only run during a server-side heartbeat automation execution.',
+      error: { message: 'Server-only tool', type: 'ServerOnly' },
+      success: false,
+    };
   };
 
   setTaskVerify = async (

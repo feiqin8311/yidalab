@@ -36,14 +36,13 @@ jobs:
 
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -122,14 +121,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -157,14 +155,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -198,14 +195,13 @@ jobs:
 
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -243,14 +239,13 @@ jobs:
 
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -278,14 +273,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env
@@ -331,14 +325,13 @@ jobs:
 
     steps:
       - name: Checkout
-        env:
-          REF_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-        run: |
-          git init .
-          git remote add origin "https://github.com/${REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${REF_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
+        with:
+          # For PRs, check out the head commit (works for same-repo and fork PRs).
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          # Use GITHUB_TOKEN so private repos can fetch over HTTPS.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
       - name: Setup environment
         uses: ./.github/actions/setup-env

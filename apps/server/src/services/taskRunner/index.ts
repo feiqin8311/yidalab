@@ -21,6 +21,12 @@ const log = debug('task-runner');
 export interface RunTaskParams {
   continueTopicId?: string;
   extraPrompt?: string;
+  /**
+   * Stable key for agent_operations.idempotency_key so a crash between
+   * execAgent and writing operationId back to the automation attempt cannot
+   * create a second agent operation for the same attempt.
+   */
+  operationIdempotencyKey?: string;
   taskId: string;
   /**
    * What triggered this run. Defaults to `'manual'` — the ad-hoc "run now"
@@ -66,7 +72,13 @@ export class TaskRunnerService {
   }
 
   async runTask(params: RunTaskParams): Promise<RunTaskResult> {
-    const { taskId: idOrIdentifier, continueTopicId, extraPrompt, trigger = 'manual' } = params;
+    const {
+      taskId: idOrIdentifier,
+      continueTopicId,
+      extraPrompt,
+      operationIdempotencyKey,
+      trigger = 'manual',
+    } = params;
 
     const task = await this.taskModel.resolve(idOrIdentifier);
     if (!task) {
@@ -193,6 +205,7 @@ export class TaskRunnerService {
         additionalPluginIds: pluginIds,
         ...(typeof taskConfig.model === 'string' && { model: taskConfig.model }),
         ...(typeof taskConfig.provider === 'string' && { provider: taskConfig.provider }),
+        ...(operationIdempotencyKey ? { operationIdempotencyKey } : {}),
         hooks: [
           {
             handler: async (event) => {

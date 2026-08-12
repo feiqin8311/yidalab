@@ -5,8 +5,8 @@ import { setAgentTemplatesFetcher } from '@lobechat/builtin-tool-web-onboarding/
 import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import type { SendMessageParams } from '@lobechat/types';
 import { RequestTrigger } from '@lobechat/types';
-import { Button, ErrorBoundary, Flexbox } from '@lobehub/ui';
-import { Drawer } from 'antd';
+import { Drawer, ErrorBoundary, Flexbox } from '@lobehub/ui';
+import { Button } from '@lobehub/ui/base-ui';
 import { History } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

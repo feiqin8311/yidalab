@@ -1505,10 +1505,15 @@ export const createAgentExecutors = (context: {
 
           if (status.status === 'completed') {
             log('[%s] Task completed successfully', taskLogId);
-            if (status.result) {
+            // Cap parent-visible summary; full child trajectory stays on the thread
+            const { capSubAgentReturnContent } = await import('@lobechat/agent-runtime');
+            const cappedResult = status.result
+              ? capSubAgentReturnContent(status.result)
+              : status.result;
+            if (cappedResult) {
               await context
                 .get()
-                .optimisticUpdateMessageContent(resultMessageId, status.result, undefined, {
+                .optimisticUpdateMessageContent(resultMessageId, cappedResult, undefined, {
                   operationId: state.operationId,
                 });
             }
@@ -1520,7 +1525,7 @@ export const createAgentExecutors = (context: {
                 payload: {
                   parentMessageId,
                   result: {
-                    result: status.result,
+                    result: cappedResult,
                     success: true,
                     threadId: createResult.threadId,
                   },

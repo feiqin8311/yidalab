@@ -1,3 +1,4 @@
+export * from './contextPolicy';
 export * from './event';
 export * from './generalAgent';
 export * from './hooks';

@@ -1,6 +1,6 @@
 import type { VerifyCheckItem } from '@lobechat/types';
 import { verifyRunStatuses } from '@lobechat/types';
-import { boolean, index, integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { amountNumeric, timestamps, timestamptz } from './_helpers';
 import { agents } from './agent';
@@ -134,6 +134,14 @@ export const agentOperations = pgTable(
     trigger: text('trigger'),
 
     /**
+     * Optional caller-supplied idempotency key. Used by task automation so a
+     * crash between execAgent and writing operationId back to the attempt row
+     * cannot create a second agent operation for the same attempt.
+     * Format for automation: `task-auto:${runId}:${attemptNumber}`.
+     */
+    idempotencyKey: text('idempotency_key'),
+
+    /**
      * Extra appContext fields not extracted as columns
      * (sessionId, documentId, groupId, scope, sourceMessageId, ...).
      */
@@ -159,6 +167,7 @@ export const agentOperations = pgTable(
     index('agent_operations_status_idx').on(t.status),
     index('agent_operations_user_id_created_at_idx').on(t.userId, t.createdAt),
     index('agent_operations_metadata_idx').using('gin', t.metadata),
+    uniqueIndex('agent_operations_idempotency_key_uidx').on(t.idempotencyKey),
   ],
 );
 

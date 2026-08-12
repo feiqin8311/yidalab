@@ -397,6 +397,7 @@ export default {
   'builtins.lobe-task.apiName.runTask': 'Run task',
   'builtins.lobe-task.apiName.runTasks': 'Run tasks',
   'builtins.lobe-task.apiName.setTaskSchedule': 'Set schedule',
+  'builtins.lobe-task.apiName.setTaskNextCheck': 'Set next check',
   'builtins.lobe-task.apiName.setTaskVerify': 'Set verify',
   'builtins.lobe-task.apiName.updateTaskComment': 'Update comment',
   'builtins.lobe-task.apiName.updateTaskStatus': 'Update status',

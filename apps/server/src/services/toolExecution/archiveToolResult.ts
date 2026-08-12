@@ -1,4 +1,6 @@
+import { shapeToolResultForModel } from '@lobechat/context-engine';
 import type { LobeChatDatabase } from '@lobechat/database';
+import { approxTokensFromText } from '@lobechat/types';
 
 import { TopicDocumentModel } from '@/database/models/topicDocument';
 import { AgentDocumentVfsService } from '@/server/services/agentDocumentVfs';
@@ -17,6 +19,8 @@ export interface ToolResultArchiveOutcome {
   archivePath?: string;
   content: string;
   error?: string;
+  /** True when structured shape / token budget altered content. */
+  shaped?: boolean;
 }
 
 interface ArchiveToolResultParams {
@@ -24,6 +28,8 @@ interface ArchiveToolResultParams {
   content: string;
   identifier?: string;
   limit?: number;
+  /** Token budget for model-facing content (default 8k). */
+  maxToolResultTokens?: number;
   serverDB?: LobeChatDatabase;
   toolCallId?: string;
   topicId?: string | null;
@@ -42,6 +48,7 @@ export const archiveToolResultIfNeeded = async ({
   content,
   identifier,
   limit,
+  maxToolResultTokens,
   serverDB,
   toolCallId,
   topicId,
@@ -52,16 +59,50 @@ export const archiveToolResultIfNeeded = async ({
     return { archived: false, content };
   }
 
-  const maxLength = limit ?? DEFAULT_TOOL_RESULT_MAX_LENGTH;
-
-  if (!content || content.length <= maxLength) {
-    return { archived: false, content };
+  if (!content) {
+    return { archived: false, content: content ?? '' };
   }
 
-  const truncatedContent = truncateToolResult(content, maxLength);
+  const maxLength = limit ?? DEFAULT_TOOL_RESULT_MAX_LENGTH;
+  // Token shaping only when policy explicitly supplies a budget (context_budget_v2).
+  // Without it, keep legacy char-only truncate so flag-off behavior is unchanged.
+  const tokenBudget = maxToolResultTokens;
+
+  let modelContent = content;
+  let truncatedByShape = false;
+  let unwrapped = false;
+  let originalTokens = 0;
+
+  if (tokenBudget != null && tokenBudget > 0) {
+    const shaped = shapeToolResultForModel({
+      maxTokens: tokenBudget,
+      raw: content,
+    });
+    modelContent = shaped.content;
+    truncatedByShape = shaped.truncated;
+    unwrapped = shaped.unwrapped;
+    originalTokens = shaped.originalTokens;
+  }
+
+  if (modelContent.length > maxLength) {
+    modelContent = truncateToolResult(modelContent, maxLength);
+  }
+
+  const needsArchive =
+    truncatedByShape ||
+    content.length > maxLength ||
+    (tokenBudget != null && approxTokensFromText(content) > tokenBudget);
+
+  if (!needsArchive) {
+    return {
+      archived: false,
+      content: modelContent,
+      shaped: unwrapped || modelContent !== content,
+    };
+  }
 
   if (!agentId || !topicId || !toolCallId || !serverDB || !userId) {
-    return { archived: false, content: truncatedContent };
+    return { archived: false, content: modelContent, shaped: true };
   }
 
   const archivePath = buildArchivePath(topicId, toolCallId);
@@ -88,7 +129,8 @@ export const archiveToolResultIfNeeded = async ({
     return {
       archivePath,
       archived: true,
-      content: `${truncatedContent}\nFull content archived to the agent-document VFS.\nPath: ${archivePath}\nAgent Document ID: ${agentDocumentIdHint}\nTo inspect specific sections, call the lobe-agent-documents tool with apiName=readDocument and id=<Agent Document ID above>. Do NOT activate cloud-sandbox or local-system file tools — this archive exists only inside the agent document tree.`,
+      content: `${modelContent}\nFull content archived to the agent-document VFS.\nPath: ${archivePath}\nAgent Document ID: ${agentDocumentIdHint}\ncoverage_tokens≈${originalTokens || approxTokensFromText(content)}\nTo inspect specific sections, call the lobe-agent-documents tool with apiName=readDocument and id=<Agent Document ID above>. Do NOT activate cloud-sandbox or local-system file tools — this archive exists only inside the agent document tree.`,
+      shaped: true,
     };
   } catch (error) {
     const message = getErrorMessage(error);
@@ -96,8 +138,9 @@ export const archiveToolResultIfNeeded = async ({
     return {
       archivePath,
       archived: false,
-      content: `${truncatedContent}\n[Archive failed: ${message}. Full content was not persisted.]`,
+      content: `${modelContent}\n[Archive failed: ${message}. Full content was not persisted.]`,
       error: message,
+      shaped: true,
     };
   }
 };

@@ -18,7 +18,13 @@ export type HeartbeatTickOutcome =
   { ran: true; taskIdentifier: string } | { ran: false; reason: HeartbeatTickSkipReason };
 
 export type HeartbeatTickSkipReason =
-  'human-waiting' | 'in-flight' | 'mode-changed' | 'no-interval' | 'not-found' | 'terminal';
+  | 'human-waiting'
+  | 'in-flight'
+  | 'mode-changed'
+  | 'no-interval'
+  | 'not-found'
+  | 'scheduler-v2'
+  | 'terminal';
 
 /**
  * Run a heartbeat tick — invoked by both the LocalScheduler `setTimeout`
@@ -27,11 +33,21 @@ export type HeartbeatTickSkipReason =
  * DB is the authority: every check below re-reads task state because the
  * scheduled message may arrive after the user paused, canceled, or changed
  * the task's automation mode.
+ *
+ * When TASK_SCHEDULER_V2=on this path is a no-op: next_run_at + ledger own ticks.
  */
 export async function runHeartbeatTick(
   taskId: string,
   userId: string,
 ): Promise<HeartbeatTickOutcome> {
+  const { shouldV2BlockLegacy, shouldV2BlockLegacyGlobally } =
+    await import('@/server/services/taskAutomation/mode');
+
+  if (shouldV2BlockLegacyGlobally()) {
+    log('skip task=%s reason=scheduler-v2 (global V2 owns dispatch)', taskId);
+    return { ran: false, reason: 'scheduler-v2' };
+  }
+
   const db = await getServerDB();
 
   // System-level dispatch: read the task row directly to learn its
@@ -44,6 +60,11 @@ export async function runHeartbeatTick(
   if (!task) {
     log('skip task=%s reason=not-found', taskId);
     return { ran: false, reason: 'not-found' };
+  }
+
+  if (shouldV2BlockLegacy(task.workspaceId)) {
+    log('skip task=%s reason=scheduler-v2 (workspace in V2 canary)', taskId);
+    return { ran: false, reason: 'scheduler-v2' };
   }
   if (task.automationMode !== 'heartbeat') {
     log('skip task=%s reason=mode-changed (mode=%s)', taskId, task.automationMode);

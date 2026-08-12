@@ -24,6 +24,11 @@ export interface RecordOperationStartParams {
   agentId?: string | null;
   appContext?: AgentOperationAppContext;
   chatGroupId?: string | null;
+  /**
+   * Optional stable idempotency key. When set, concurrent/retried recordStart
+   * for the same key returns the existing row instead of inserting a second op.
+   */
+  idempotencyKey?: string | null;
   maxSteps?: number;
   /**
    * Durable per-run metadata persisted on the operation row (jsonb). Carries the
@@ -94,13 +99,22 @@ export class AgentOperationModel {
    * Insert the initial row when an operation is created. Idempotent via
    * `onConflictDoNothing` on the primary key so resumed operations don't
    * blow up on the second createOperation call.
+   *
+   * When `idempotencyKey` is set and a row already exists for that key,
+   * returns the existing operation id without inserting.
    */
-  async recordStart(params: RecordOperationStartParams): Promise<void> {
+  async recordStart(params: RecordOperationStartParams): Promise<{ operationId: string }> {
+    if (params.idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(params.idempotencyKey);
+      if (existing) return { operationId: existing.id };
+    }
+
     const values: NewAgentOperation = {
       agentId: params.agentId ?? null,
       appContext: params.appContext,
       chatGroupId: params.chatGroupId ?? null,
       id: params.operationId,
+      ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
       maxSteps: params.maxSteps,
       ...(params.metadata ? { metadata: params.metadata } : {}),
       model: params.model,
@@ -117,7 +131,34 @@ export class AgentOperationModel {
       workspaceId: this.workspaceId ?? null,
     };
 
-    await this.db.insert(agentOperations).values(values).onConflictDoNothing();
+    try {
+      await this.db.insert(agentOperations).values(values).onConflictDoNothing();
+    } catch (error) {
+      // Race on unique idempotency_key: another worker won the insert.
+      if (params.idempotencyKey) {
+        const existing = await this.findByIdempotencyKey(params.idempotencyKey);
+        if (existing) return { operationId: existing.id };
+      }
+      throw error;
+    }
+
+    if (params.idempotencyKey) {
+      // PK conflict path (same operationId re-inserted) or concurrent insert —
+      // re-resolve by key so callers always get the canonical id.
+      const resolved = await this.findByIdempotencyKey(params.idempotencyKey);
+      if (resolved) return { operationId: resolved.id };
+    }
+
+    return { operationId: params.operationId };
+  }
+
+  async findByIdempotencyKey(idempotencyKey: string) {
+    const [row] = await this.db
+      .select()
+      .from(agentOperations)
+      .where(and(eq(agentOperations.idempotencyKey, idempotencyKey), this.ownership()))
+      .limit(1);
+    return row ?? null;
   }
 
   /**

@@ -22,6 +22,7 @@ import {
   TasksFlattenProcessor,
   ToolCallProcessor,
   ToolMessageReorder,
+  ToolResultPruneProcessor,
   VerifyMessageProcessor,
 } from '../../processors';
 import {
@@ -168,6 +169,8 @@ export class MessagesEngine {
       enableAgentMode,
       enableHistoryCount,
       historyCount,
+      maxHistoryTokens,
+      toolResultPrune,
       forceFinish,
       forceFinishDeliveryOnly,
       forceFinishReason,
@@ -251,7 +254,13 @@ export class MessagesEngine {
       // MUST run first — all subsequent processors work on truncated messages only
       // =============================================
 
-      new HistoryTruncateProcessor({ enableHistoryCount, historyCount }),
+      new HistoryTruncateProcessor({ enableHistoryCount, historyCount, maxHistoryTokens }),
+
+      // Historical tool-body micro-prune (model view only; protects current tool chain)
+      new ToolResultPruneProcessor({
+        enabled: toolResultPrune?.enabled ?? !!toolResultPrune?.maxHistoricalToolTokens,
+        maxHistoricalToolTokens: toolResultPrune?.maxHistoricalToolTokens,
+      }),
 
       // =============================================
       // Phase 2: System Message Assembly

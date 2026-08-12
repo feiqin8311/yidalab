@@ -22,6 +22,14 @@ export class LocalTaskScheduler implements TaskSchedulerImpl {
     const { taskId, userId, delay = 0 } = params;
     const scheduleId = `local-task-${taskId}-${Date.now()}`;
 
+    // V2 owns in-scope workspaces (on|drain). Skip legacy delayed ticks.
+    const { shouldV2BlockLegacy, shouldV2BlockLegacyGlobally } =
+      await import('@/server/services/taskAutomation/mode');
+    if (shouldV2BlockLegacyGlobally() || shouldV2BlockLegacy(params.workspaceId)) {
+      log('skip schedule for task %s: V2 owns workspace', taskId);
+      return scheduleId;
+    }
+
     log('Scheduling next topic for task %s (delay: %ds)', taskId, delay);
 
     const timer = setTimeout(async () => {

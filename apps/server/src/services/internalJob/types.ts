@@ -33,6 +33,8 @@ export const JOB_NAMES = {
   taskHeartbeatTick: 'task.heartbeat-tick',
   taskScheduleExecute: 'task.schedule-execute',
   taskScheduleDispatch: 'task.schedule-dispatch',
+  /** Scheduler V2: process one automation run by runId. */
+  taskAutomationExecute: 'task.automation-execute',
   taskWatchdog: 'task.watchdog',
   opsFunctionComplete: 'ops.function.on-complete',
   verifyComplete: 'verify.on-complete',

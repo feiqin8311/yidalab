@@ -444,6 +444,11 @@
       "count": 1
     }
   },
+  "src/features/Electron/connection/Connection.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
   "src/features/Electron/connection/ConnectionMode.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -555,6 +560,11 @@
     }
   },
   "src/features/Messenger/Verify/index.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/features/NavPanel/SideBarDrawer.tsx": {
     "no-restricted-imports": {
       "count": 1
     }
@@ -704,6 +714,11 @@
       "count": 1
     }
   },
+  "src/features/ResourceManager/components/ChunkDrawer/index.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
   "src/features/ResourceManager/components/Explorer/ListView/ListItem/FileListItemActions.tsx": {
     "no-restricted-imports": {
       "count": 1
@@ -807,6 +822,11 @@
   "src/features/Verify/CheckerDock.tsx": {
     "no-restricted-imports": {
       "count": 2
+    }
+  },
+  "src/features/Verify/ReportViewer.tsx": {
+    "no-restricted-imports": {
+      "count": 1
     }
   },
   "src/features/Verify/RunResult.tsx": {
@@ -1320,6 +1340,11 @@
     }
   },
   "src/routes/(main)/settings/system-tools/features/ToolDetectorSection.tsx": {
+    "no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/routes/(mobile)/community/(list)/_layout/Nav.tsx": {
     "no-restricted-imports": {
       "count": 1
     }

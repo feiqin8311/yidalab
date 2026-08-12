@@ -1,7 +1,6 @@
 'use client';
 
-import { ActionIcon, Flexbox, Text } from '@lobehub/ui';
-import { Drawer } from 'antd';
+import { ActionIcon, Drawer, Flexbox, Text } from '@lobehub/ui';
 import { cssVar } from 'antd-style';
 import { XIcon } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';

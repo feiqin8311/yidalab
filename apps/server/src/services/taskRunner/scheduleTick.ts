@@ -26,6 +26,7 @@ export type ScheduleTickSkipReason =
   | 'no-pattern'
   | 'not-found'
   | 'paused'
+  | 'scheduler-v2'
   | 'terminal';
 
 /**
@@ -34,11 +35,22 @@ export type ScheduleTickSkipReason =
  *
  * DB is the authority: re-checks task state because the dispatch message may
  * arrive after the user paused, canceled, or changed the automation mode.
+ *
+ * When TASK_SCHEDULER_V2=on this path is a no-op: the ledger owns dispatch.
  */
 export async function runScheduleTick(
   taskId: string,
   userId: string,
 ): Promise<ScheduleTickOutcome> {
+  const { shouldV2BlockLegacy, shouldV2BlockLegacyGlobally } =
+    await import('@/server/services/taskAutomation/mode');
+
+  // Global V2: no legacy schedule ticks at all.
+  if (shouldV2BlockLegacyGlobally()) {
+    log('skip task=%s reason=scheduler-v2 (global V2 owns dispatch)', taskId);
+    return { ran: false, reason: 'scheduler-v2' };
+  }
+
   const db = await getServerDB();
 
   // System-level dispatch: we don't have the workspace context here. Read the
@@ -53,6 +65,12 @@ export async function runScheduleTick(
   if (!task) {
     log('skip task=%s reason=not-found', taskId);
     return { ran: false, reason: 'not-found' };
+  }
+
+  // Scoped canary: V2-owned workspaces must not run via legacy tick.
+  if (shouldV2BlockLegacy(task.workspaceId)) {
+    log('skip task=%s reason=scheduler-v2 (workspace in V2 canary)', taskId);
+    return { ran: false, reason: 'scheduler-v2' };
   }
   const wsId = task.workspaceId ?? undefined;
   if (task.automationMode !== 'schedule') {

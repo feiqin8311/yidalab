@@ -67,7 +67,7 @@ export const tasks = pgTable(
     sortOrder: integer('sort_order').default(0), // manual sort within parent, lower = higher
 
     // Automation mode (mutually exclusive with each other; null = no automation)
-    automationMode: text('automation_mode').$type<'heartbeat' | 'schedule'>(),
+    automationMode: text('automation_mode').$type<'heartbeat' | 'schedule' | 'event'>(),
 
     // Heartbeat
     heartbeatInterval: integer('heartbeat_interval'), // seconds, null = no heartbeat configured
@@ -77,6 +77,48 @@ export const tasks = pgTable(
     // Schedule (optional)
     schedulePattern: text('schedule_pattern'),
     scheduleTimezone: text('schedule_timezone').default('UTC'),
+
+    /**
+     * Next logical fire time for the automation planner (indexed range scan).
+     * Source of truth for "when is this task due" under scheduler V2.
+     */
+    nextRunAt: timestamptz('next_run_at'),
+    /**
+     * Bumped whenever automation config changes so in-flight/old jobs can be
+     * rejected by comparing against the run's captured revision.
+     */
+    automationRevision: integer('automation_revision').default(0).notNull(),
+    /**
+     * Wall-clock schedule kind when automationMode='schedule'.
+     * cron maps from schedulePattern; at/every use dedicated columns.
+     */
+    scheduleKind: text('schedule_kind').$type<'at' | 'every' | 'cron'>(),
+    /** Absolute fire time for scheduleKind='at' (ISO wall clock, stored UTC). */
+    scheduleAt: timestamptz('schedule_at'),
+    /** Fixed interval in seconds for scheduleKind='every'. */
+    scheduleEverySeconds: integer('schedule_every_seconds'),
+    /** Anchor for every-mode (startAt); fires at anchor + n*every. */
+    scheduleAnchorAt: timestamptz('schedule_anchor_at'),
+    /**
+     * Overdue catch-up policy for wall-clock schedules.
+     * latest (default) | skip | all (cap 10 per planner tick).
+     */
+    overduePolicy: text('overdue_policy').$type<'latest' | 'skip' | 'all'>().default('latest'),
+    /**
+     * Product event catalog key when automationMode='event'
+     * (e.g. agent_run_completed) — never raw Agent Signal sourceType.
+     */
+    eventSourceType: text('event_source_type'),
+    /** Typed filter list: [{ field, op: 'eq'|'in', value }...] max 5. */
+    eventFilter:
+      jsonb('event_filter').$type<
+        Array<{ field: string; op: 'eq' | 'in'; value: string | string[] }>
+      >(),
+    /** Event cooldown seconds; same task/source/scope bucket forms one plan. */
+    eventCooldownSeconds: integer('event_cooldown_seconds').default(60),
+    /** Dynamic pacing bounds for heartbeat next-check (seconds). */
+    pacingMinSeconds: integer('pacing_min_seconds').default(600),
+    pacingMaxSeconds: integer('pacing_max_seconds').default(86_400),
 
     // Topic management
     totalTopics: integer('total_topics').default(0),
@@ -120,6 +162,8 @@ export const tasks = pgTable(
     index('tasks_priority_idx').on(t.priority),
     index('tasks_automation_mode_idx').on(t.automationMode),
     index('tasks_heartbeat_idx').on(t.status, t.lastHeartbeatAt),
+    index('tasks_next_run_at_idx').on(t.nextRunAt),
+    index('tasks_automation_due_idx').on(t.status, t.automationMode, t.nextRunAt),
     index('tasks_workspace_id_idx').on(t.workspaceId),
     index('tasks_workspace_visibility_idx').on(t.workspaceId, t.visibility, t.createdByUserId),
     uniqueIndex('tasks_identifier_workspace_id_unique')
@@ -127,6 +171,163 @@ export const tasks = pgTable(
       .where(isNotNull(t.workspaceId)),
   ],
 );
+
+// ── Task Automation Runs (logical plan points) ───────────
+//
+// One row = one logical trigger (schedule fire / heartbeat due / event).
+// UNIQUE(dedupe_key) guarantees at-most-one logical run per plan point.
+// Attempts live in task_automation_run_attempts (execution audit).
+
+export const TASK_AUTOMATION_RUN_STATUSES = [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'skipped',
+  'canceled',
+] as const;
+
+export type TaskAutomationRunStatus = (typeof TASK_AUTOMATION_RUN_STATUSES)[number];
+
+export const TASK_AUTOMATION_TRIGGERS = ['schedule', 'heartbeat', 'event'] as const;
+export type TaskAutomationTrigger = (typeof TASK_AUTOMATION_TRIGGERS)[number];
+
+export const taskAutomationRuns = pgTable(
+  'task_automation_runs',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => idGenerator('taskAutomationRuns'))
+      .notNull(),
+
+    taskId: text('task_id')
+      .references(() => tasks.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+
+    trigger: text('trigger').$type<TaskAutomationTrigger>().notNull(),
+    /** Wall-clock / relative plan time for this logical run. */
+    plannedAt: timestamptz('planned_at').notNull(),
+    status: text('status').$type<TaskAutomationRunStatus>().notNull().default('pending'),
+
+    /**
+     * Stable unique key for this logical plan point.
+     * schedule/heartbeat: `${taskId}:${trigger}:${plannedAt.toISOString()}`
+     * event: `${taskId}:event:${sourceEventId}`
+     */
+    dedupeKey: text('dedupe_key').notNull(),
+
+    /** Snapshot of tasks.automation_revision when the run was planned. */
+    automationRevision: integer('automation_revision').notNull().default(0),
+    /** How many prior plan points were skipped under overdue=latest. */
+    missedCount: integer('missed_count').notNull().default(0),
+
+    /** Aggregate attempt counter (mirrors max attemptNumber). */
+    attemptCount: integer('attempt_count').notNull().default(0),
+    /** When a failed run becomes eligible for another attempt. */
+    nextAttemptAt: timestamptz('next_attempt_at'),
+
+    /** Winning attempt's agent operation / topic (denormalized for list UI). */
+    operationId: text('operation_id'),
+    topicId: text('topic_id'),
+
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    /** Set once when failure alert was delivered (brief / notification). */
+    alertedAt: timestamptz('alerted_at'),
+    /**
+     * Heartbeat pacing request recorded during the run (applied only on success).
+     * requested may be clamped into effective.
+     */
+    requestedNextCheckAt: timestamptz('requested_next_check_at'),
+    effectiveNextCheckAt: timestamptz('effective_next_check_at'),
+    startedAt: timestamptz('started_at'),
+    finishedAt: timestamptz('finished_at'),
+
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('task_automation_runs_dedupe_key_uidx').on(t.dedupeKey),
+    index('task_automation_runs_task_id_idx').on(t.taskId),
+    index('task_automation_runs_user_id_idx').on(t.userId),
+    index('task_automation_runs_workspace_id_idx').on(t.workspaceId),
+    index('task_automation_runs_status_planned_idx').on(t.status, t.plannedAt),
+    index('task_automation_runs_pending_dispatch_idx').on(t.status, t.nextAttemptAt, t.plannedAt),
+    index('task_automation_runs_task_status_idx').on(t.taskId, t.status),
+    index('task_automation_runs_finished_at_idx').on(t.finishedAt),
+  ],
+);
+
+export type NewTaskAutomationRun = typeof taskAutomationRuns.$inferInsert;
+export type TaskAutomationRunItem = typeof taskAutomationRuns.$inferSelect;
+
+// ── Task Automation Run Attempts (execution attempts) ────
+//
+// One row = one actual execution attempt of a logical run.
+// UNIQUE(run_id, attempt_number). Claim/lease live here, not on the run.
+
+export const TASK_AUTOMATION_ATTEMPT_STATUSES = [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'skipped',
+  'canceled',
+] as const;
+
+export type TaskAutomationAttemptStatus = (typeof TASK_AUTOMATION_ATTEMPT_STATUSES)[number];
+
+export const taskAutomationRunAttempts = pgTable(
+  'task_automation_run_attempts',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => idGenerator('taskAutomationRunAttempts'))
+      .notNull(),
+
+    runId: text('run_id')
+      .references(() => taskAutomationRuns.id, { onDelete: 'cascade' })
+      .notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+
+    status: text('status').$type<TaskAutomationAttemptStatus>().notNull().default('pending'),
+
+    /** Why this attempt was created: dispatch | recover | manual_retry */
+    reason: text('reason').notNull().default('dispatch'),
+
+    claimToken: text('claim_token'),
+    claimedBy: text('claimed_by'),
+    leaseUntil: timestamptz('lease_until'),
+
+    /**
+     * Agent operation idempotency key: `${runId}:${attemptNumber}`.
+     * Also stored on agent_operations.idempotency_key for unique enforcement.
+     */
+    operationIdempotencyKey: text('operation_idempotency_key').notNull(),
+    operationId: text('operation_id'),
+    topicId: text('topic_id'),
+
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    startedAt: timestamptz('started_at'),
+    finishedAt: timestamptz('finished_at'),
+
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('task_automation_run_attempts_run_attempt_uidx').on(t.runId, t.attemptNumber),
+    uniqueIndex('task_automation_run_attempts_op_idem_uidx').on(t.operationIdempotencyKey),
+    index('task_automation_run_attempts_run_id_idx').on(t.runId),
+    index('task_automation_run_attempts_status_lease_idx').on(t.status, t.leaseUntil),
+    index('task_automation_run_attempts_operation_id_idx').on(t.operationId),
+  ],
+);
+
+export type NewTaskAutomationRunAttempt = typeof taskAutomationRunAttempts.$inferInsert;
+export type TaskAutomationRunAttemptItem = typeof taskAutomationRunAttempts.$inferSelect;
 
 // ── Task Dependencies ────────────────────────────────────
 

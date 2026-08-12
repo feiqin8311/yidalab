@@ -4,7 +4,15 @@ import { Select, Tabs } from '@lobehub/ui/base-ui';
 import { Switch } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
 import dayjs from 'dayjs';
-import { CalendarClockIcon, CalendarDays, Clock, RefreshCw, TimerIcon, Zap } from 'lucide-react';
+import {
+  CalendarClockIcon,
+  CalendarDays,
+  Clock,
+  RadioIcon,
+  RefreshCw,
+  TimerIcon,
+  Zap,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -173,6 +181,59 @@ const SchedulerTab = memo<SchedulerTabProps>(({ disabled, taskId }) => {
   );
 });
 
+const PRODUCT_EVENTS = [
+  'agent_run_completed',
+  'agent_run_failed',
+  'tool_run_completed',
+  'tool_run_failed',
+  'bot_message_received',
+] as const;
+
+interface EventTabProps {
+  disabled?: boolean;
+  taskId?: string;
+}
+
+const EventTab = memo<EventTabProps>(({ disabled, taskId }) => {
+  const { t } = useTranslation('chat');
+  const detail = useTaskStore(taskDetailSelectors.activeTaskDetail);
+  const eventSourceType =
+    (detail as { eventSourceType?: string | null } | null)?.eventSourceType ??
+    'agent_run_completed';
+
+  const handleChange = useCallback(
+    (value: string) => {
+      if (disabled || !taskId) return;
+      void useTaskStore.getState();
+      // Persist via taskService.update directly (event fields are flat columns).
+      import('@/services/task').then(({ taskService }) =>
+        taskService
+          .update(taskId, {
+            automationMode: 'event',
+            eventSourceType: value,
+          })
+          .then(() => useTaskStore.getState().internal_refreshTaskDetail(taskId)),
+      );
+    },
+    [disabled, taskId],
+  );
+
+  return (
+    <Flexbox gap={8}>
+      <Text className={styles.fieldLabel}>{t('taskSchedule.eventSource')}</Text>
+      <Select
+        disabled={disabled}
+        value={eventSourceType}
+        options={PRODUCT_EVENTS.map((k) => ({
+          label: t(`taskSchedule.event.${k}` as never),
+          value: k,
+        }))}
+        onChange={(v) => handleChange(String(v))}
+      />
+    </Flexbox>
+  );
+});
+
 interface TaskScheduleConfigProps {
   children?: ReactNode;
   currentInterval?: number;
@@ -201,14 +262,10 @@ const TaskScheduleConfig = memo(function TaskScheduleConfig({
 
   const enabled = !!automationMode;
   const [isStartingSchedule, setIsStartingSchedule] = useState(false);
-  // Heartbeat tasks are re-armed only by maybeRearmHeartbeat after a topic
-  // completes; there is no dispatcher that picks up `scheduled` heartbeat tasks,
-  // so flipping one to `scheduled` from here would leave it dormant.
+  // V2: status→scheduled arms next_run_at for schedule/heartbeat; event mode
+  // waits for product events (no next_run_at). Still useful to mark resting state.
   const canStartSchedule =
-    automationMode === 'schedule' &&
-    !!finalTaskId &&
-    status !== 'scheduled' &&
-    status !== 'running';
+    !!automationMode && !!finalTaskId && status !== 'scheduled' && status !== 'running';
 
   const summary = useMemo<{ primary: string; secondary?: string } | null>(() => {
     if (automationMode === 'heartbeat' && finalCurrentInterval > 0) {
@@ -349,6 +406,16 @@ const TaskScheduleConfig = memo(function TaskScheduleConfig({
                   </Flexbox>
                 ),
               },
+              {
+                disabled: !canEditTask,
+                key: 'event',
+                label: (
+                  <Flexbox horizontal align="center" gap={6} justify="center">
+                    <Icon icon={RadioIcon} size={14} />
+                    <span>{t('taskSchedule.eventTab')}</span>
+                  </Flexbox>
+                ),
+              },
             ]}
             styles={{
               list: { display: 'flex', width: '100%' },
@@ -366,6 +433,7 @@ const TaskScheduleConfig = memo(function TaskScheduleConfig({
           {automationMode === 'schedule' && (
             <SchedulerTab disabled={!canEditTask} taskId={finalTaskId} />
           )}
+          {automationMode === 'event' && <EventTab disabled={!canEditTask} taskId={finalTaskId} />}
           {canStartSchedule && (
             <Button
               block

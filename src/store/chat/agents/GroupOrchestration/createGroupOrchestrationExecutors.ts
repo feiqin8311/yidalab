@@ -730,7 +730,8 @@ export const createGroupOrchestrationExecutors = (
         const subMessageKey = messageMapKey(subContext);
         const subTaskMessages = get().dbMessagesMap[subMessageKey] || [];
         const lastAssistant = subTaskMessages.findLast((m) => m.role === 'assistant');
-        const resultContent = lastAssistant?.content || 'Task completed';
+        const { capSubAgentReturnContent } = await import('@lobechat/agent-runtime');
+        const resultContent = capSubAgentReturnContent(lastAssistant?.content || 'Task completed');
 
         log(`[${sessionLogId}] Got result from sub-task: ${resultContent.length} chars`);
 

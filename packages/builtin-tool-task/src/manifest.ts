@@ -301,19 +301,24 @@ export const TaskManifest: BuiltinToolManifest = {
     },
     {
       description:
-        'Configure (or clear) the recurring schedule of a task. Use this to turn a task into a periodically running one, switch between cron (`schedule`) and fixed-interval (`heartbeat`) automation, or disable automation entirely. Pass automationMode=null to stop the task from auto-running. For schedule mode, supply schedulePattern (cron) and scheduleTimezone (IANA). For heartbeat mode, supply heartbeatInterval (seconds). maxExecutions caps how many scheduled runs may fire (null = unlimited). Status changes still go through updateTaskStatus; this tool only touches schedule configuration.',
+        'Configure (or clear) the recurring schedule of a task. Use this to turn a task into a periodically running one, switch between wall-clock schedule (`schedule`), fixed-interval (`heartbeat`), or event-driven (`event`) automation, or disable automation entirely. Pass automationMode=null to stop auto-running. For schedule mode: scheduleKind at|every|cron with scheduleAt / scheduleEverySeconds / schedulePattern+timezone. For heartbeat: heartbeatInterval (seconds). For event: eventSourceType from the product catalog. maxExecutions caps scheduled runs (null = unlimited).',
       name: TaskApiName.setTaskSchedule,
       parameters: {
         properties: {
           automationMode: {
             description:
-              'Enables periodic execution. "schedule" fires on the cron `schedulePattern`; "heartbeat" ticks every `heartbeatInterval` seconds. Pass null to disable automation entirely.',
-            enum: ['heartbeat', 'schedule', null],
+              'Enables periodic execution. "schedule" = wall clock; "heartbeat" = after-completion delay; "event" = product event. Pass null to disable.',
+            enum: ['heartbeat', 'schedule', 'event', null],
+            type: ['string', 'null'],
+          },
+          eventSourceType: {
+            description:
+              'Product event key for event mode: agent_run_completed | agent_run_failed | tool_run_completed | tool_run_failed | bot_message_received.',
             type: ['string', 'null'],
           },
           heartbeatInterval: {
             description:
-              'Periodic execution interval in seconds (heartbeat mode). Pass 0 to clear the interval. Minimum 600s (10 minutes); the server rejects positive values below 600.',
+              'Periodic execution interval in seconds (heartbeat mode). Pass 0 to clear. Minimum 600s (10 minutes).',
             type: 'number',
           },
           identifier: {
@@ -321,22 +326,58 @@ export const TaskManifest: BuiltinToolManifest = {
             type: 'string',
           },
           maxExecutions: {
-            description:
-              'Cap on the number of scheduled executions for this task. Pass null to remove the cap (run indefinitely).',
+            description: 'Cap on the number of scheduled executions. Pass null to remove the cap.',
             type: ['number', 'null'],
+          },
+          overduePolicy: {
+            description: 'Overdue catch-up: latest (default) | skip | all.',
+            enum: ['latest', 'skip', 'all', null],
+            type: ['string', 'null'],
+          },
+          scheduleAt: {
+            description: 'ISO datetime for one-shot scheduleKind=at. Pass null to clear.',
+            type: ['string', 'null'],
+          },
+          scheduleEverySeconds: {
+            description: 'Fixed wall-clock interval seconds for scheduleKind=every.',
+            type: ['number', 'null'],
+          },
+          scheduleKind: {
+            description: 'Wall-clock sub-kind when automationMode=schedule: at | every | cron.',
+            enum: ['at', 'every', 'cron', null],
+            type: ['string', 'null'],
           },
           schedulePattern: {
             description:
-              'Cron expression for scheduled mode, e.g. "0 9 * * *" (every day at 09:00). Pass null to clear the pattern.',
+              'Cron expression for scheduleKind=cron, e.g. "0 9 * * *". Pass null to clear.',
             type: ['string', 'null'],
           },
           scheduleTimezone: {
-            description:
-              'IANA timezone for the cron expression, e.g. "Asia/Shanghai" or "America/New_York". Pass null to clear; defaults to UTC when unset.',
+            description: 'IANA timezone for cron, e.g. "Asia/Shanghai". Pass null to clear.',
             type: ['string', 'null'],
           },
         },
         required: ['identifier'],
+        type: 'object',
+      },
+    },
+    {
+      description:
+        'During a heartbeat automation run, suggest when this task should next check in. Provide exactly one of nextCheckAt (ISO) or nextCheckInSeconds. Values are clamped to the task pacing bounds (default 600–86400s, hard max 30 days). Only takes effect if this run succeeds. Non-heartbeat tasks reject the call.',
+      name: TaskApiName.setTaskNextCheck,
+      parameters: {
+        properties: {
+          nextCheckAt: {
+            description:
+              'Absolute ISO timestamp for the next check. Mutually exclusive with nextCheckInSeconds.',
+            type: 'string',
+          },
+          nextCheckInSeconds: {
+            description:
+              'Seconds from now until the next check. Mutually exclusive with nextCheckAt.',
+            type: 'number',
+          },
+        },
         type: 'object',
       },
     },

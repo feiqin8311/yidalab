@@ -33,6 +33,8 @@ export const FeatureFlagsSchema = z.object({
   // internal flag
   agent_self_iteration: FeatureFlagValue.optional(),
   agent_onboarding: FeatureFlagValue.optional(),
+  /** Context budget v2: tool prune, tighter result caps, policy-driven compression. */
+  context_budget_v2: FeatureFlagValue.optional(),
   // Cloud feature flag. Keep here until cloud owns a separate runtime flag domain.
   auth_captcha: FeatureFlagValue.optional(),
   cloud_promotion: FeatureFlagValue.optional(),
@@ -85,6 +87,8 @@ export const DEFAULT_FEATURE_FLAGS: IFeatureFlags = {
 
   agent_self_iteration: isDev,
   agent_onboarding: isDev,
+  // Default on in dev; production rollout via env / Redis flag.
+  context_budget_v2: isDev,
   auth_captcha: true,
   cloud_promotion: false,
   storage_overage: true,
@@ -123,6 +127,7 @@ export const mapFeatureFlagsEnvToState = (config: IFeatureFlags, userId?: string
     enableRAGEval: evaluateFeatureFlag(config.rag_eval, userId),
     enableAgentSelfIteration: evaluateFeatureFlag(config.agent_self_iteration, userId),
     enableAgentOnboarding: evaluateFeatureFlag(config.agent_onboarding, userId),
+    enableContextBudgetV2: evaluateFeatureFlag(config.context_budget_v2, userId),
     enableAuthCaptcha: evaluateFeatureFlag(config.auth_captcha, userId),
     enableStorageOverage: evaluateFeatureFlag(config.storage_overage, userId),
 

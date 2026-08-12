@@ -7,5 +7,6 @@ export * from './runBrakes';
 export * from './runtimeRetry';
 export * from './status';
 export * from './stepContextComputer';
+export * from './subAgentReturn';
 export * from './tokenCounter';
 export * from './toolFailStreak';

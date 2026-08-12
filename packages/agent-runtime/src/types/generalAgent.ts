@@ -5,6 +5,8 @@ import {
   type MessageToolCall,
 } from '@lobechat/types';
 
+import type { AgentContextPolicy } from './contextPolicy';
+
 export interface GeneralAgentCallLLMInstructionPayload {
   allowedToolNames?: string[];
   /**
@@ -93,6 +95,8 @@ export interface GeneralAgentConfig {
     /** Threshold ratio for triggering compression (default: 0.5) */
     thresholdRatio?: number;
   };
+  /** Run-level context policy (tool/skill scope + budgets). */
+  contextPolicy?: AgentContextPolicy;
   /**
    * Dynamic intervention audits registry (per-tool)
    * Used to evaluate runtime intervention policies for tools with dynamic config

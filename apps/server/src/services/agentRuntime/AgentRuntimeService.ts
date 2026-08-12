@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type {
   Agent,
+  AgentContextPolicy,
   AgentRuntimeContext,
   AgentState,
   GeneralAgentConfig,
@@ -448,6 +449,7 @@ export class AgentRuntimeService {
       activeDeviceId,
       activeDeviceScope,
       operationId,
+      idempotencyKey,
       initialContext,
       agentConfig,
       agentGroup,
@@ -477,6 +479,7 @@ export class AgentRuntimeService {
       userTimezone,
       initialStepCount = 0,
       workspaceId,
+      contextPolicy,
     } = params;
 
     // YidaLab run brakes: default maxSteps / token / fail-streak when caller
@@ -489,8 +492,9 @@ export class AgentRuntimeService {
     // Persist initial agent_operations row. CompletionLifecycle owns both
     // ends of the persistence lifecycle (start row here, terminal update
     // in dispatchHooks) and swallows DB errors so runtime startup is never
-    // blocked.
-    await this.completionLifecycle.recordStart({
+    // blocked. When idempotencyKey is set, a concurrent insert may resolve
+    // to an existing operation id — use that as the canonical id below.
+    const startResult = await this.completionLifecycle.recordStart({
       agentId: appContext?.agentId ?? null,
       appContext: {
         defaultTaskAssigneeAgentId: appContext?.defaultTaskAssigneeAgentId,
@@ -500,6 +504,7 @@ export class AgentRuntimeService {
         sourceMessageId: appContext?.sourceMessageId,
       },
       chatGroupId: appContext?.groupId ?? null,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       maxSteps,
       // Persist the Agent Signal run marker on the operation row so server-side
       // self-iteration tools can read it back (metadata.agentSignal) at tool-call
@@ -515,6 +520,17 @@ export class AgentRuntimeService {
       topicId: appContext?.topicId ?? null,
       trigger: appContext?.trigger,
     });
+
+    const resolvedOperationId = startResult?.operationId ?? operationId;
+    if (resolvedOperationId !== operationId) {
+      // Another worker already created the op for this idempotency key.
+      // Do not start a second runtime — return the existing id.
+      return {
+        autoStarted: false,
+        operationId: resolvedOperationId,
+        success: true,
+      };
+    }
 
     // Protocol dual-path: persist sub-agent graph edge when this op has a parent.
     if (parentOperationId) {
@@ -564,6 +580,7 @@ export class AgentRuntimeService {
           agentGroup,
           botContext,
           botPlatformContext,
+          ...(contextPolicy ? { contextPolicy } : {}),
           deviceAccessPolicy,
           deviceSystemInfo,
           discordContext,
@@ -2729,11 +2746,39 @@ export class AgentRuntimeService {
         : undefined;
 
     // Create Agent instance — use custom factory if provided, otherwise default to GeneralChatAgent
+    const contextPolicy = metadata?.contextPolicy as AgentContextPolicy | undefined;
+    const policyBudgets = contextPolicy?.budgets;
+    const compressionRatio =
+      policyBudgets?.compressionRatio ??
+      metadata?.agentConfig?.chatConfig?.compressionThresholdRatio;
+    const allowedToolNames =
+      contextPolicy?.toolScope?.mode === 'replace'
+        ? contextPolicy.toolScope.allowedToolNames
+        : undefined;
+
+    // economicInputTokens caps the effective compression threshold (soft budget).
+    // threshold = min(window * ratio, economicInputTokens) when both are set.
+    const maxWindowToken = contextWindowTokens ?? undefined;
+    let effectiveThresholdRatio = compressionRatio;
+    if (
+      maxWindowToken &&
+      maxWindowToken > 0 &&
+      policyBudgets?.economicInputTokens &&
+      policyBudgets.economicInputTokens > 0
+    ) {
+      const ratioCap = policyBudgets.economicInputTokens / maxWindowToken;
+      const base = compressionRatio ?? 0.65;
+      effectiveThresholdRatio = Math.min(base, ratioCap);
+    }
+
     const generalConfig = {
       agentConfig: metadata?.agentConfig,
+      ...(allowedToolNames ? { allowedToolNames } : {}),
+      ...(contextPolicy ? { contextPolicy } : {}),
       compressionConfig: {
         enabled: metadata?.agentConfig?.chatConfig?.enableContextCompression ?? true,
-        maxWindowToken: contextWindowTokens ?? undefined,
+        maxWindowToken,
+        ...(effectiveThresholdRatio != null ? { thresholdRatio: effectiveThresholdRatio } : {}),
       },
       dynamicInterventionAudits,
       modelRuntimeConfig: metadata?.modelRuntimeConfig,

@@ -58,10 +58,41 @@ export {
   buildToolExecutionResult,
   modelContentFromExecutionResult,
 } from './utils/toolExecutionResult';
+export type {
+  CacheableToolHint,
+  ToolResultCacheEntry,
+  ToolResultCacheIndex,
+} from './utils/toolResultCache';
+export {
+  buildDedupHitContent,
+  buildToolCacheKey,
+  canonicalJson,
+  createToolResultCache,
+  ensureToolResultCache,
+  isToolCacheable,
+  lookupToolCache,
+  rebuildToolCacheFromMessages,
+  writeToolCache,
+} from './utils/toolResultCache';
+export type {
+  ShapeToolResultForModelOutcome,
+  ShapeToolResultForModelParams,
+} from './utils/toolResultShape';
+export {
+  allocateRoundToolBudgets,
+  applyRoundToolResultBudgets,
+  buildToolResultReceipt,
+  DEFAULT_MAX_TOOL_RESULT_TOKENS,
+  DEFAULT_MAX_TOOL_ROUND_TOKENS,
+  shapeStructuredJson,
+  shapeToolResultForModel,
+  unwrapMcpEnvelope,
+} from './utils/toolResultShape';
 // Processors
 export type { PlaceholderValue, PlaceholderValueMap } from './processors';
 export {
   buildPlaceholderGenerators,
+  collectProtectedToolIds,
   formatPlaceholderValues,
   getSlicedMessages,
   GroupMessageFlattenProcessor,
@@ -73,4 +104,5 @@ export {
   renderPlaceholderTemplate,
   ToolCallProcessor,
   ToolMessageReorder,
+  ToolResultPruneProcessor,
 } from './processors';

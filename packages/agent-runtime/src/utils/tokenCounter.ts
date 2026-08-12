@@ -12,7 +12,7 @@ export interface TokenCountOptions {
   driftMultiplier?: number;
   /** Model's max context window token count */
   maxWindowToken?: number;
-  /** Threshold ratio for triggering compression, default 0.5 */
+  /** Threshold ratio for triggering compression, default 0.5 (legacy). */
   thresholdRatio?: number;
   /**
    * Optional top-level tool definitions for the upcoming LLM call. When
@@ -26,7 +26,11 @@ export interface TokenCountOptions {
 /** Default max context window (128k tokens) */
 export const DEFAULT_MAX_CONTEXT = 128_000;
 
-/** Default threshold ratio (50% of max context) */
+/**
+ * Default threshold ratio when no compressionConfig / contextPolicy is set.
+ * Keep 0.5 so flag-off (no context_budget_v2 policy) does not change global
+ * compression behavior. Policy runs pass thresholdRatio: 0.65 explicitly.
+ */
 export const DEFAULT_THRESHOLD_RATIO = 0.5;
 
 /**

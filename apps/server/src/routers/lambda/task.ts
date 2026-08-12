@@ -55,15 +55,31 @@ const createSchema = z.object({
   // Optional schedule wiring at create time. When `automationMode` is
   // 'schedule', `schedulePattern` (cron) is required for the central
   // schedule-dispatch sweep to pick the task up.
-  automationMode: z.enum(['heartbeat', 'schedule']).optional(),
+  automationMode: z.enum(['heartbeat', 'schedule', 'event']).optional(),
   createdByAgentId: z.string().optional(),
   description: z.string().optional(),
   editorData: z.unknown().optional(),
+  eventCooldownSeconds: z.number().int().min(0).max(86_400).optional(),
+  eventFilter: z
+    .array(
+      z.object({
+        field: z.string(),
+        op: z.enum(['eq', 'in']),
+        value: z.union([z.string(), z.array(z.string())]),
+      }),
+    )
+    .max(5)
+    .optional(),
+  eventSourceType: z.string().optional(),
   identifierPrefix: z.string().optional(),
   instruction: z.string().min(1),
   name: z.string().optional(),
+  overduePolicy: z.enum(['latest', 'skip', 'all']).optional(),
   parentTaskId: z.string().optional(),
   priority: z.number().min(0).max(4).optional(),
+  scheduleAt: z.string().datetime().optional(),
+  scheduleEverySeconds: z.number().int().min(60).optional(),
+  scheduleKind: z.enum(['at', 'every', 'cron']).optional(),
   schedulePattern: z.string().optional(),
   scheduleTimezone: z.string().optional(),
   // When omitted, the server derives visibility from the parent task or the
@@ -75,11 +91,23 @@ const createSchema = z.object({
 const updateSchema = z.object({
   assigneeAgentId: z.string().nullish(),
   assigneeUserId: z.string().nullish(),
-  automationMode: z.enum(['heartbeat', 'schedule']).nullish(),
+  automationMode: z.enum(['heartbeat', 'schedule', 'event']).nullish(),
   config: z.record(z.string(), z.unknown()).optional(),
   context: z.record(z.string(), z.unknown()).optional(),
   description: z.string().optional(),
   editorData: z.unknown().optional(),
+  eventCooldownSeconds: z.number().int().min(0).max(86_400).nullish(),
+  eventFilter: z
+    .array(
+      z.object({
+        field: z.string(),
+        op: z.enum(['eq', 'in']),
+        value: z.union([z.string(), z.array(z.string())]),
+      }),
+    )
+    .max(5)
+    .nullish(),
+  eventSourceType: z.string().nullish(),
   // 0 clears the interval (disables heartbeat); any positive value must be
   // ≥600s (10 min) to match the UI minimum and prevent sub-minute ticks if an
   // LLM calls setTaskSchedule with a tiny number.
@@ -93,8 +121,19 @@ const updateSchema = z.object({
   heartbeatTimeout: z.number().min(1).nullish(),
   instruction: z.string().optional(),
   name: z.string().optional(),
+  overduePolicy: z.enum(['latest', 'skip', 'all']).nullish(),
+  pacingMaxSeconds: z
+    .number()
+    .int()
+    .min(600)
+    .max(30 * 86_400)
+    .nullish(),
+  pacingMinSeconds: z.number().int().min(60).max(86_400).nullish(),
   parentTaskId: z.string().nullish(),
   priority: z.number().min(0).max(4).optional(),
+  scheduleAt: z.string().datetime().nullish(),
+  scheduleEverySeconds: z.number().int().min(60).nullish(),
+  scheduleKind: z.enum(['at', 'every', 'cron']).nullish(),
   schedulePattern: z.string().nullish(),
   scheduleTimezone: z.string().nullish(),
 });
@@ -581,41 +620,9 @@ export const taskRouter = router({
 
   watchdog: taskProcedureWrite.mutation(async ({ ctx }) => {
     try {
-      const stuckTasks = await TaskModel.findStuckTasks(ctx.serverDB);
-      const failed: string[] = [];
-
-      for (const task of stuckTasks) {
-        const wsId = task.workspaceId ?? undefined;
-        const model = new TaskModel(ctx.serverDB, task.createdByUserId, wsId);
-        await model.updateStatus(task.id, 'failed', {
-          completedAt: new Date(),
-          error: 'Heartbeat timeout',
-        });
-
-        // Create error brief
-        const briefModel = new BriefModel(ctx.serverDB, task.createdByUserId, wsId);
-        await briefModel.create({
-          agentId: task.assigneeAgentId || undefined,
-          priority: 'urgent',
-          summary: `Task has been running without heartbeat update for more than ${task.heartbeatTimeout} seconds.`,
-          taskId: task.id,
-          title: `${task.identifier} heartbeat timeout`,
-          trigger: 'task',
-          type: 'error',
-        });
-
-        failed.push(task.identifier);
-      }
-
-      return {
-        checked: stuckTasks.length,
-        failed,
-        message:
-          failed.length > 0
-            ? `${failed.length} stuck tasks marked as failed`
-            : 'No stuck tasks found',
-        success: true,
-      };
+      const { runTaskAutomationWatchdog } =
+        await import('@/server/services/taskAutomation/watchdog');
+      return await runTaskAutomationWatchdog(ctx.serverDB);
     } catch (error) {
       console.error('[task:watchdog]', error);
       throw new TRPCError({
@@ -625,6 +632,110 @@ export const taskRouter = router({
       });
     }
   }),
+
+  previewAutomation: taskProcedure
+    .input(
+      z.object({
+        automationMode: z.enum(['heartbeat', 'schedule', 'event']).nullish(),
+        count: z.number().int().min(1).max(10).default(5),
+        heartbeatInterval: z.number().int().optional(),
+        scheduleAt: z.string().datetime().nullish(),
+        scheduleEverySeconds: z.number().int().nullish(),
+        scheduleKind: z.enum(['at', 'every', 'cron']).nullish(),
+        schedulePattern: z.string().nullish(),
+        scheduleTimezone: z.string().nullish(),
+      }),
+    )
+    .query(async ({ input }) => {
+      const { previewScheduleFires } = await import('@/server/services/taskAutomation/nextRun');
+      const fires = previewScheduleFires(
+        {
+          automationMode: input.automationMode ?? 'schedule',
+          heartbeatInterval: input.heartbeatInterval ?? null,
+          scheduleAt: input.scheduleAt ? new Date(input.scheduleAt) : null,
+          scheduleEverySeconds: input.scheduleEverySeconds ?? null,
+          scheduleKind: input.scheduleKind ?? null,
+          schedulePattern: input.schedulePattern ?? null,
+          scheduleTimezone: input.scheduleTimezone ?? 'UTC',
+        } as any,
+        input.count,
+      );
+      return {
+        fires: fires.map((d) => d.toISOString()),
+        success: true as const,
+      };
+    }),
+
+  listAutomationRuns: taskProcedure
+    .input(
+      z.object({
+        cursor: z.string().nullish(),
+        id: z.string(),
+        limit: z.number().int().min(1).max(100).default(20),
+        status: z
+          .union([
+            z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped', 'canceled']),
+            z.array(z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped', 'canceled'])),
+          ])
+          .optional(),
+        trigger: z
+          .union([
+            z.enum(['schedule', 'heartbeat', 'event']),
+            z.array(z.enum(['schedule', 'heartbeat', 'event'])),
+          ])
+          .optional(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      const task = await resolveOrThrow(ctx.taskModel, input.id);
+      const { TaskAutomationModel } = await import('@/database/models/taskAutomation');
+      const model = new TaskAutomationModel(ctx.serverDB);
+      const result = await model.listRunsForTask({
+        cursor: input.cursor,
+        limit: input.limit,
+        status: input.status as any,
+        taskId: task.id,
+        trigger: input.trigger as any,
+      });
+      return { ...result, success: true as const };
+    }),
+
+  retryAutomationRun: taskProcedureWrite
+    .input(z.object({ runId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { TaskAutomationModel } = await import('@/database/models/taskAutomation');
+      const model = new TaskAutomationModel(ctx.serverDB);
+      const existing = await model.findRunById(input.runId);
+      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Run not found' });
+      // Ownership: run must belong to a task the caller can write.
+      await resolveOrThrow(ctx.taskModel, existing.taskId);
+      const run = await model.retryRun(input.runId);
+      if (!run) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Run is not in a retryable terminal state',
+        });
+      }
+      return { run, success: true as const };
+    }),
+
+  cancelAutomationRun: taskProcedureWrite
+    .input(z.object({ runId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { TaskAutomationModel } = await import('@/database/models/taskAutomation');
+      const model = new TaskAutomationModel(ctx.serverDB);
+      const existing = await model.findRunById(input.runId);
+      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Run not found' });
+      await resolveOrThrow(ctx.taskModel, existing.taskId);
+      const run = await model.cancelRun(input.runId);
+      if (!run) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Only pending runs can be canceled',
+        });
+      }
+      return { run, success: true as const };
+    }),
 
   groupList: taskProcedure.input(groupListSchema).query(async ({ input, ctx }) => {
     try {
@@ -1086,6 +1197,36 @@ export const taskRouter = router({
 
       const updateData =
         parentTaskId === undefined ? data : { ...data, parentTaskId: resolvedParentTaskId };
+
+      // Bump automation_revision when schedule config changes so in-flight
+      // ledger runs with the old revision are skipped by the worker.
+      const automationKeys = [
+        'automationMode',
+        'eventCooldownSeconds',
+        'eventFilter',
+        'eventSourceType',
+        'heartbeatInterval',
+        'overduePolicy',
+        'pacingMaxSeconds',
+        'pacingMinSeconds',
+        'scheduleAt',
+        'scheduleEverySeconds',
+        'scheduleKind',
+        'schedulePattern',
+        'scheduleTimezone',
+      ] as const;
+      const touchesAutomation = automationKeys.some(
+        (k) => (updateData as Record<string, unknown>)[k] !== undefined,
+      );
+      if (touchesAutomation) {
+        try {
+          const { TaskAutomationModel } = await import('@/database/models/taskAutomation');
+          await new TaskAutomationModel(ctx.serverDB).bumpAutomationRevision(resolved.id);
+        } catch (e) {
+          console.error('[task:update] bumpAutomationRevision failed:', e);
+        }
+      }
+
       const task = await model.update(resolved.id, updateData);
       if (!task) throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       return { data: task, message: 'Task updated', success: true };

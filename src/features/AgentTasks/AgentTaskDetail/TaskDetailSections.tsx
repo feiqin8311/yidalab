@@ -3,6 +3,7 @@ import { memo } from 'react';
 
 import TaskActivities from './TaskActivities';
 import TaskArtifacts from './TaskArtifacts';
+import TaskAutomationHistory from './TaskAutomationHistory';
 import TaskDetailAssignee from './TaskDetailAssignee';
 import TaskDetailRunPauseAction from './TaskDetailRunPauseAction';
 import TaskDetailTitleInput from './TaskDetailTitleInput';
@@ -41,6 +42,7 @@ const TaskDetailSections = memo(() => {
         <TaskVerifyConfig />
         <TaskSubtasks />
         <TaskArtifacts />
+        <TaskAutomationHistory />
         <TaskActivities />
       </Flexbox>
     </>

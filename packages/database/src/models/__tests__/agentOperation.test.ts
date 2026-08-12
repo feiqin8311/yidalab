@@ -28,7 +28,7 @@ describe('AgentOperationModel', () => {
       const model = new AgentOperationModel(serverDB, userId);
       const operationId = 'op-start-1';
 
-      await model.recordStart({
+      const result = await model.recordStart({
         appContext: { scope: 'chat', sourceMessageId: 'msg-1' },
         maxSteps: 20,
         model: 'gpt-4o',
@@ -37,6 +37,7 @@ describe('AgentOperationModel', () => {
         provider: 'openai',
         trigger: 'chat',
       });
+      expect(result.operationId).toBe(operationId);
 
       const row = await model.findById(operationId);
       expect(row).toMatchObject({
@@ -92,6 +93,29 @@ describe('AgentOperationModel', () => {
         .select()
         .from(agentOperations)
         .where(eq(agentOperations.id, operationId));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('reuses existing operation for the same idempotencyKey', async () => {
+      const model = new AgentOperationModel(serverDB, userId);
+      const key = 'task-auto:run-1:1';
+
+      const first = await model.recordStart({
+        idempotencyKey: key,
+        operationId: 'op-idem-a',
+      });
+      const second = await model.recordStart({
+        idempotencyKey: key,
+        operationId: 'op-idem-b',
+      });
+
+      expect(first.operationId).toBe('op-idem-a');
+      expect(second.operationId).toBe('op-idem-a');
+
+      const rows = await serverDB
+        .select()
+        .from(agentOperations)
+        .where(eq(agentOperations.idempotencyKey, key));
       expect(rows).toHaveLength(1);
     });
   });
