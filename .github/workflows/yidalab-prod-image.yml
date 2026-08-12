@@ -72,7 +72,7 @@ jobs:
             /usr/local/share/boost /usr/share/swift /usr/local/.ghcup 2>/dev/null || true
           sudo docker system prune -af 2>/dev/null || true
           if ! swapon --show | grep -q .; then
-            sudo fallocate -l 12G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
+            sudo fallocate -l 20G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=20480
             sudo chmod 600 /swapfile
             sudo mkswap /swapfile
             sudo swapon /swapfile
@@ -109,6 +109,9 @@ jobs:
       - name: Build and push
         id: build
         uses: docker/build-push-action@v6
+        env:
+          # Reduce host pressure from concurrent buildkit workers
+          BUILDKIT_STEP_LOG_MAX_SIZE: '10485760'
         with:
           context: .
           file: ./Dockerfile
