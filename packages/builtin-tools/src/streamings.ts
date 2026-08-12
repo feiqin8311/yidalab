@@ -1,5 +1,7 @@
 import type { BuiltinStreaming } from '@lobechat/types';
 
+import { bumpBuiltinToolRegistryVersion } from './registryVersion';
+
 /**
  * Builtin tools streaming renderer registry
  * Organized by toolset (identifier) -> API name
@@ -17,6 +19,7 @@ export const registerBuiltinStreamings = (
     const current = builtinToolStreamings[identifier];
     builtinToolStreamings[identifier] = current ? Object.assign(current, streamings) : streamings;
   }
+  bumpBuiltinToolRegistryVersion();
 };
 
 export interface BuiltinStreamingRegistryEntry {

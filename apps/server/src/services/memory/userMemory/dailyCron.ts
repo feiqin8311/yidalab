@@ -31,9 +31,9 @@ const envInt = (key: string, fallback: number) => {
  * Default: on when REDIS_URL is available and not explicitly disabled.
  */
 export const isMemoryDailyCronEnabled = (): boolean => {
-  if (process.env.MEMORY_DAILY_ANALYSIS_ENABLED === '0') return false;
+  // Explicit opt-in only — do not auto-start just because Redis exists.
   if (process.env.MEMORY_DAILY_ANALYSIS_ENABLED === '1') return true;
-  return Boolean(process.env.REDIS_URL) && !process.env.VERCEL_ENV;
+  return false;
 };
 
 export const getMemoryDailyCronConfig = () => {

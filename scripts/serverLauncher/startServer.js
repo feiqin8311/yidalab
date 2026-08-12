@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports, regexp/no-unused-capturing-group -- CJS docker launcher */
 const dns = require('node:dns').promises;
 const fs = require('node:fs').promises;
 const path = require('node:path');
@@ -242,11 +243,18 @@ const runServer = async () => {
     }
   }
 
-  // Start gateway in background after server is ready
-  startGateway();
+  // Gateway is started once by Next instrumentation (src/instrumentation.ts).
+  // Opt back into the launcher HTTP path only for non-Next entrypoints:
+  //   GATEWAY_START_VIA_LAUNCHER=1
+  if (process.env.GATEWAY_START_VIA_LAUNCHER === '1') {
+    startGateway();
+  }
 
-  // Create QStash schedule for workflow task dispatching
-  createQstashSchedule();
+  // Create QStash schedule only when explicitly requested (in-process cron / V2
+  // own dispatch by default; avoid triple schedule paths).
+  if (process.env.QSTASH_CREATE_SCHEDULE === '1') {
+    createQstashSchedule();
+  }
 
   // Run the server in either database or non-database mode
   await runServer();

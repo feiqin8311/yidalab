@@ -4,6 +4,7 @@ import { type CSSProperties } from 'react';
 import { memo, useState } from 'react';
 
 import Actions from '@/features/Conversation/Messages/AssistantGroup/Tool/Actions';
+import { useBuiltinToolRegistryVersion } from '@/hooks/useBuiltinToolRegistryVersion';
 import dynamic from '@/libs/next/dynamic';
 
 import { dataSelectors, messageStateSelectors, useConversationStore } from '../../../store';
@@ -45,6 +46,8 @@ const Tool = memo<InspectorProps>(
     identifier,
     type,
   }) => {
+    useBuiltinToolRegistryVersion();
+
     const [showDebug, setShowDebug] = useState(false);
     const [showCustomToolRender, setShowCustomToolRender] = useState(true);
     // Default collapsed: light brief in the title; expand for white-box params/result.

@@ -1,5 +1,7 @@
 import type { BuiltinRender } from '@lobechat/types';
 
+import { bumpBuiltinToolRegistryVersion } from './registryVersion';
+
 export interface BuiltinRenderRegistryEntry {
   apiName: string;
   identifier: string;
@@ -19,6 +21,7 @@ export const registerBuiltinRenders = (
     const current = builtinToolsRenders[identifier];
     builtinToolsRenders[identifier] = current ? Object.assign(current, renders) : renders;
   }
+  bumpBuiltinToolRegistryVersion();
 };
 
 export const listBuiltinRenderEntries = (): BuiltinRenderRegistryEntry[] =>

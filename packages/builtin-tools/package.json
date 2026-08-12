@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./renders": "./src/renders.ts",
     "./register": "./src/register.ts",
+    "./register.lazy": "./src/register.lazy.ts",
+    "./registryVersion": "./src/registryVersion.ts",
     "./displayControls": "./src/displayControls.ts",
     "./inspectors": "./src/inspectors.ts",
     "./interventions": "./src/interventions.ts",

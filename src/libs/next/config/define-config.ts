@@ -27,23 +27,26 @@ export function defineConfig(config: CustomNextConfig) {
 
   const isStandaloneMode = buildWithDocker || process.env.NEXT_BUILD_STANDALONE === '1';
 
+  // SPA HTML is inlined into Next routes; runtime assets live at public/_spa
+  // (Dockerfile COPY). dist/desktop|mobile must NOT enter NFT or the image
+  // carries ~160MB of dead Vite trees.
+  const spaArtifactExcludes = ['dist/desktop/**', 'dist/mobile/**', 'dist/auth/**'];
+
   const standaloneConfig: NextConfig = {
     output: 'standalone',
 
+    outputFileTracingExcludes: {
+      '*': spaArtifactExcludes,
+    },
+
     outputFileTracingIncludes: {
       '*': [
-        'public/**/*',
-        '.next/static/**/*',
-
-        // Only needed for Docker standalone builds.
-        // On Vercel (serverless), including native bindings can easily exceed function size limits.
+        // public/** is already traced when referenced; only pin _spa for Docker
+        // so standalone serves Vite assets without shipping dist/* sources.
         ...(buildWithDocker
           ? [
-              // Exclude SPA/desktop/mobile build artifacts from serverless functions
               'public/_spa/**',
-              'dist/desktop/**',
-              'dist/mobile/**',
-
+              'public/_spa-auth/**',
               'packages/database/migrations/**',
 
               // Ensure native bindings are included in standalone output.
@@ -62,7 +65,7 @@ export function defineConfig(config: CustomNextConfig) {
   const assetPrefix = process.env.NEXT_PUBLIC_ASSET_PREFIX;
 
   const nextConfig: NextConfig = {
-    ...(isStandaloneMode ? standaloneConfig : {}),
+    ...(isStandaloneMode ? { output: standaloneConfig.output } : {}),
     assetPrefix,
 
     compiler: {
@@ -264,12 +267,28 @@ export function defineConfig(config: CustomNextConfig) {
         hmrRefreshes: true,
       },
     },
-    ...(config.outputFileTracingExcludes && {
-      outputFileTracingExcludes: config.outputFileTracingExcludes,
-    }),
-    ...(config.outputFileTracingIncludes && {
-      outputFileTracingIncludes: config.outputFileTracingIncludes,
-    }),
+    ...(isStandaloneMode || config.outputFileTracingExcludes
+      ? {
+          outputFileTracingExcludes: {
+            '*': [
+              ...((isStandaloneMode ? standaloneConfig.outputFileTracingExcludes?.['*'] : []) ??
+                []),
+              ...(config.outputFileTracingExcludes?.['*'] ?? []),
+            ],
+          },
+        }
+      : {}),
+    ...(isStandaloneMode || config.outputFileTracingIncludes
+      ? {
+          outputFileTracingIncludes: {
+            '*': [
+              ...((isStandaloneMode ? standaloneConfig.outputFileTracingIncludes?.['*'] : []) ??
+                []),
+              ...(config.outputFileTracingIncludes?.['*'] ?? []),
+            ],
+          },
+        }
+      : {}),
     reactStrictMode: true,
     redirects: async () => [
       // Sitemap generation lives on the landing site; keep legacy app sitemap URLs crawlable.

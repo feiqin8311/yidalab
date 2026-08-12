@@ -1,5 +1,7 @@
 import type { BuiltinIntervention } from '@lobechat/types';
 
+import { bumpBuiltinToolRegistryVersion } from './registryVersion';
+
 /**
  * Builtin tools interventions registry
  * Organized by toolset (identifier) -> API name
@@ -16,6 +18,7 @@ export const registerBuiltinInterventions = (
       ? Object.assign(current, interventions)
       : interventions;
   }
+  bumpBuiltinToolRegistryVersion();
 };
 
 export interface BuiltinInterventionRegistryEntry {

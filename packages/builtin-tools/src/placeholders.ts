@@ -1,5 +1,7 @@
 import type { BuiltinPlaceholder } from '@lobechat/types';
 
+import { bumpBuiltinToolRegistryVersion } from './registryVersion';
+
 /**
  * Builtin tools placeholders registry
  * Organized by toolset (identifier) -> API name
@@ -15,6 +17,7 @@ export const registerBuiltinPlaceholders = (
       ? Object.assign(current, placeholders)
       : placeholders;
   }
+  bumpBuiltinToolRegistryVersion();
 };
 
 export interface BuiltinPlaceholderRegistryEntry {

@@ -26,6 +26,7 @@ interface ToolRenderProps {
  */
 const ToolRender = memo<ToolRenderProps>(
   ({ showCustomToolRender, content, messageId, plugin, pluginState, toolCallId }) => {
+    // Parent Tool trees subscribe to registryVersion; re-read on each render.
     const hasCustomRender = !!getBuiltinRender(plugin?.identifier, plugin?.apiName);
     const requestArgs = plugin?.arguments;
     const hasArgs = !!(requestArgs && requestArgs.trim() && requestArgs.trim() !== '{}');

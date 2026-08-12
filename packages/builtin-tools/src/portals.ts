@@ -1,5 +1,7 @@
 import type { BuiltinPortal, BuiltinPortalTitle } from '@lobechat/types';
 
+import { bumpBuiltinToolRegistryVersion } from './registryVersion';
+
 const builtinToolsPortals: Record<string, BuiltinPortal> = {};
 
 /** Optional custom header content per tool, rendered in the portal title slot. */
@@ -22,6 +24,7 @@ export const registerBuiltinPortals = ({
   if (portals) Object.assign(builtinToolsPortals, portals);
   if (titles) Object.assign(builtinToolsPortalTitles, titles);
   if (actions) Object.assign(builtinToolsPortalActions, actions);
+  bumpBuiltinToolRegistryVersion();
 };
 
 export const getBuiltinPortal = (identifier?: string): BuiltinPortal | undefined => {
