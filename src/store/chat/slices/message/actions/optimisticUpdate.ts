@@ -204,6 +204,38 @@ export class MessageOptimisticUpdateActionImpl {
     }
   };
 
+  /**
+   * Atomic terminal settle for assistant rows: content + error in one dispatch/write.
+   * Used when clearing LOADING_FLAT placeholders after stream error/abort/empty completion.
+   */
+  optimisticUpdateMessageTerminal = async (
+    id: string,
+    params: {
+      content?: string;
+      error?: ChatMessageError | null;
+      metadata?: MessageMetadata;
+    },
+    context?: OptimisticUpdateContext,
+  ): Promise<void> => {
+    const value: {
+      content?: string;
+      error?: ChatMessageError | null;
+      metadata?: MessageMetadata;
+    } = {};
+    if (params.content !== undefined) value.content = params.content;
+    if (params.error !== undefined) value.error = params.error;
+    if (params.metadata !== undefined) value.metadata = params.metadata;
+
+    this.#get().internal_dispatchMessage({ id, type: 'updateMessage', value }, context);
+    const ctx = this.#get().internal_getConversationContext(context);
+    const result = await messageService.updateMessage(id, value, ctx);
+    if (result?.success && result.messages) {
+      this.#get().replaceMessages(result.messages, { context: ctx });
+    } else {
+      await this.#get().refreshMessages();
+    }
+  };
+
   optimisticUpdateMessageMetadata = async (
     id: string,
     metadata: Partial<MessageMetadata>,

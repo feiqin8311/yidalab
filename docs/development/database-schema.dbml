@@ -349,6 +349,13 @@ table agent_operations {
   verify_status text
   verify_plan jsonb
   verify_plan_confirmed_at "timestamp with time zone"
+  outcome_status text
+  outcome_type text
+  outcome_preview_url text
+  outcome_artifact_id text
+  outcome_error_code text
+  outcome_retryable boolean
+  outcome_verified_at "timestamp with time zone"
   started_at "timestamp with time zone"
   completed_at "timestamp with time zone"
   step_count integer
@@ -391,6 +398,7 @@ table agent_operations {
     chat_group_id [name: 'agent_operations_chat_group_id_idx']
     parent_operation_id [name: 'agent_operations_parent_operation_id_idx']
     status [name: 'agent_operations_status_idx']
+    outcome_status [name: 'agent_operations_outcome_status_idx']
     (user_id, created_at) [name: 'agent_operations_user_id_created_at_idx']
     metadata [name: 'agent_operations_metadata_idx']
     idempotency_key [name: 'agent_operations_idempotency_key_uidx', unique]
@@ -993,6 +1001,47 @@ table user_installed_plugins {
   indexes {
     (user_id, identifier) [pk]
     workspace_id [name: 'user_installed_plugins_workspace_id_idx']
+  }
+}
+
+table delivery_attempts {
+  id text [pk, not null]
+  operation_id text [not null]
+  user_id text [not null]
+  workspace_id text
+  delivery_type text [not null]
+  target_folder text [not null, default: 'default']
+  artifact_hash text [not null, default: 'report']
+  dedupe_key text [not null]
+  status text [not null, default: 'pending']
+  attempt integer [not null, default: 0]
+  claim_token text
+  claimed_by text
+  lease_until "timestamp with time zone"
+  next_attempt_at "timestamp with time zone"
+  file_id text
+  space_id text
+  preview_url text
+  artifact_id text
+  error_code text
+  error_message text
+  retryable boolean [not null, default: true]
+  verification_status text [not null, default: 'unverified']
+  verified_at "timestamp with time zone"
+  metadata jsonb [default: `{}`]
+  started_at "timestamp with time zone"
+  completed_at "timestamp with time zone"
+  accessed_at "timestamp with time zone" [not null, default: `now()`]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    (operation_id, delivery_type, target_folder, artifact_hash) [name: 'delivery_attempts_dedupe_uidx', unique]
+    dedupe_key [name: 'delivery_attempts_dedupe_key_uidx', unique]
+    operation_id [name: 'delivery_attempts_operation_id_idx']
+    (status, next_attempt_at) [name: 'delivery_attempts_status_next_idx']
+    user_id [name: 'delivery_attempts_user_id_idx']
+    workspace_id [name: 'delivery_attempts_workspace_id_idx']
   }
 }
 

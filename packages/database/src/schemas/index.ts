@@ -18,6 +18,7 @@ export * from './companyMarketMcp';
 export * from './companyMarketSkill';
 export * from './companyMemberQuota';
 export * from './connector';
+export * from './deliveryAttempt';
 export * from './device';
 export * from './documentHistory';
 export * from './documentShare';

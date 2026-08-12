@@ -269,9 +269,19 @@ export default {
   'builtins.lobe-dingpan.card.defaultTitle': 'HTML report',
   'builtins.lobe-dingpan.card.noLocalDoc':
     'No HTML kept on this message for in-app preview — use the Drive link to open elsewhere.',
-  'builtins.lobe-dingpan.card.openDingpan': 'Open in DingTalk Drive',
+  'builtins.lobe-dingpan.card.openDingpan': 'Open Dingpan file',
   'builtins.lobe-dingpan.card.partial': 'Upload incomplete',
+  'builtins.lobe-dingpan.card.retry': 'Retry',
+  'builtins.lobe-dingpan.card.retryFailed': 'Could not queue redrive',
+  'builtins.lobe-dingpan.card.retryHint':
+    'Ask the agent to retry upload, or check company DingTalk credentials and personal folder.',
+  'builtins.lobe-dingpan.card.retryQueued': 'Redrive queued — worker will re-upload shortly',
+  'builtins.lobe-dingpan.card.retryUnavailable':
+    'Delivery not redriveable (already succeeded or missing)',
+  'builtins.lobe-dingpan.card.uploadFailed': 'Dingpan upload failed',
+  'builtins.lobe-dingpan.card.uploadFailedHint': 'Tool did not return a verified preview URL.',
   'builtins.lobe-dingpan.card.uploaded': 'Uploaded · chat preview + shareable Drive link',
+  'builtins.lobe-dingpan.card.uploading': 'Uploading to Dingpan…',
   'builtins.lobe-dingpan.card.workspacePreview': 'Preview in workspace',
   'builtins.lobe-dingpan.portal.loadFailed':
     'Could not load HTML from this message or legacy resource — open the Drive link instead.',

@@ -1,8 +1,12 @@
 /**
  * Normalize dingpan upload tool output (pluginState + JSON content).
  * State uses camelCase; tool content JSON uses snake_case.
+ * Success requires a strictly trusted preview URL (report file dentry only).
  */
+import { parseTrustedDingpanPreviewUrl } from '@lobechat/types';
+
 export type DingpanUploadResult = {
+  deliveryAttemptId?: string;
   documentId?: string;
   /** Plain tool error / failure text when not JSON success. */
   errorText?: string;
@@ -38,12 +42,16 @@ export const parseDingpanUploadResult = (
 
   const documentId = String(state.documentId ?? body.document_id ?? body.documentId ?? '').trim();
   const name = String(state.name ?? body.name ?? '').trim();
-  const previewUrl = String(state.previewUrl ?? body.preview_url ?? body.previewUrl ?? '').trim();
+  const previewRaw = String(state.previewUrl ?? body.preview_url ?? body.previewUrl ?? '').trim();
+  const trusted = parseTrustedDingpanPreviewUrl(previewRaw);
+  const deliveryAttemptId = String(
+    state.deliveryAttemptId ?? body.delivery_attempt_id ?? body.deliveryAttemptId ?? '',
+  ).trim();
 
   const explicitSuccess = state.success === true || body.success === true;
   const explicitFailure = state.success === false || body.success === false;
-  const success =
-    !explicitFailure && (explicitSuccess || Boolean(previewUrl && previewUrl.startsWith('http')));
+  // Never treat arbitrary http URLs as success — only strict dingpan file preview.
+  const success = !explicitFailure && Boolean(trusted) && (explicitSuccess || Boolean(trusted));
 
   let errorText: string | undefined;
   if (!success) {
@@ -52,16 +60,18 @@ export const parseDingpanUploadResult = (
       (typeof body.message === 'string' && body.message) ||
       '';
     if (fromBody) errorText = fromBody;
+    else if (previewRaw && !trusted) errorText = 'Untrusted or invalid dingpan preview URL';
     else if (typeof content === 'string' && content.trim() && !parseContentObject(content)) {
       errorText = content.trim().slice(0, 500);
     }
   }
 
   return {
+    ...(deliveryAttemptId ? { deliveryAttemptId } : {}),
     ...(documentId ? { documentId } : {}),
     ...(errorText ? { errorText } : {}),
     ...(name ? { name } : {}),
-    ...(previewUrl ? { previewUrl } : {}),
+    ...(trusted ? { previewUrl: trusted.previewUrl } : {}),
     success,
   };
 };

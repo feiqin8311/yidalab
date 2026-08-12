@@ -1,5 +1,9 @@
-import type { VerifyRunStatus } from '@lobechat/types';
-import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
+import type {
+  OperationOutcomeStatus,
+  OperationOutcomeType,
+  VerifyRunStatus,
+} from '@lobechat/types';
+import { and, eq, gte, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import { today } from '@/utils/time';
 
@@ -79,6 +83,16 @@ export interface RecordOperationCompletionParams {
   totalTokens?: number | null;
   traceS3Key?: string | null;
   usage?: Record<string, unknown> | null;
+}
+
+export interface RecordOperationOutcomeParams {
+  outcomeArtifactId?: string | null;
+  outcomeErrorCode?: string | null;
+  outcomePreviewUrl?: string | null;
+  outcomeRetryable?: boolean | null;
+  outcomeStatus: OperationOutcomeStatus;
+  outcomeType?: OperationOutcomeType | null;
+  outcomeVerifiedAt?: Date | null;
 }
 
 export class AgentOperationModel {
@@ -200,6 +214,41 @@ export class AgentOperationModel {
       .update(agentOperations)
       .set(updates)
       .where(and(eq(agentOperations.id, operationId), this.ownership()));
+  }
+
+  /**
+   * Persist trusted delivery outcome separately from runtime completion.
+   * Model prose never writes these fields — only tool/outbox verification.
+   * Verified is sticky: failed/pending cannot overwrite a verified outcome
+   * (stale worker / out-of-order create+update tool messages).
+   */
+  async recordOutcome(operationId: string, params: RecordOperationOutcomeParams): Promise<boolean> {
+    const updates: Partial<NewAgentOperation> = {
+      outcomeStatus: params.outcomeStatus,
+    };
+    if (params.outcomeType !== undefined) updates.outcomeType = params.outcomeType;
+    if (params.outcomePreviewUrl !== undefined)
+      updates.outcomePreviewUrl = params.outcomePreviewUrl;
+    if (params.outcomeArtifactId !== undefined)
+      updates.outcomeArtifactId = params.outcomeArtifactId;
+    if (params.outcomeErrorCode !== undefined) updates.outcomeErrorCode = params.outcomeErrorCode;
+    if (params.outcomeRetryable !== undefined) updates.outcomeRetryable = params.outcomeRetryable;
+    if (params.outcomeVerifiedAt !== undefined)
+      updates.outcomeVerifiedAt = params.outcomeVerifiedAt;
+
+    const refuseDowngradeFromVerified =
+      params.outcomeStatus !== 'verified'
+        ? or(isNull(agentOperations.outcomeStatus), ne(agentOperations.outcomeStatus, 'verified'))
+        : undefined;
+
+    const [row] = await this.db
+      .update(agentOperations)
+      .set(updates)
+      .where(
+        and(eq(agentOperations.id, operationId), this.ownership(), refuseDowngradeFromVerified),
+      )
+      .returning({ id: agentOperations.id });
+    return Boolean(row);
   }
 
   async findById(operationId: string) {

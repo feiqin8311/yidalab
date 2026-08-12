@@ -415,6 +415,26 @@ describe('StreamingHandler', () => {
       expect(result.metadata.imageList?.[0].url).toBe('https://s3/img.png');
     });
 
+    it('getImageCount includes base64_image upload tasks', async () => {
+      const callbacks = createMockCallbacks();
+      callbacks.uploadBase64Image = vi.fn((): Promise<{ id?: string; url?: string }> =>
+        Promise.resolve({ id: 'img', url: 'https://s3/img.png' }),
+      );
+      const handler = new StreamingHandler(mockContext, callbacks);
+
+      expect(handler.getImageCount()).toBe(0);
+
+      handler.handleChunk({
+        type: 'base64_image',
+        image: { id: 'img-1', data: 'base64...' },
+        images: [{ id: 'img-1', data: 'base64...' }],
+      });
+
+      // Image-only stream must not look empty to empty-completion detector.
+      expect(handler.getImageCount()).toBe(1);
+      expect(handler.getOutput()).toBe('');
+    });
+
     it('should include reasoning with duration', async () => {
       const callbacks = createMockCallbacks();
       const handler = new StreamingHandler(mockContext, callbacks);

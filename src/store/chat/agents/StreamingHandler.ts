@@ -160,6 +160,13 @@ export class StreamingHandler {
   }
 
   /**
+   * Get accumulated reasoning / thinking text (for empty-completion detection).
+   */
+  getThinkingContent(): string {
+    return this.thinkingContent;
+  }
+
+  /**
    * Get reasoning duration
    */
   getThinkingDuration(): number | undefined {
@@ -192,6 +199,16 @@ export class StreamingHandler {
    */
   getFinishType(): string | undefined {
     return this.finishType;
+  }
+
+  /**
+   * Image count for empty-completion detection.
+   * Includes content_part images + base64_image stream chunks (uploadTasks).
+   * Image-only replies must not be treated as empty.
+   */
+  getImageCount(): number {
+    const contentPartImages = this.contentParts.filter((p) => p.type === 'image').length;
+    return contentPartImages + this.uploadTasks.size;
   }
 
   // ==================== Chunk handling methods ====================

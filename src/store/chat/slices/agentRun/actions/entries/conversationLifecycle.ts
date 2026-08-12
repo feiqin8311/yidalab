@@ -1455,6 +1455,7 @@ export class ConversationLifecycleActionImpl {
         // Never auto-mount them onto agents_files — that polluted the paperclip
         // knowledge menu and survived topic delete (no cascade to agents_files).
       } catch (e) {
+        // executeClientAgent settles orphan LOADING_FLAT + failOperation before rethrow.
         console.error(e);
       } finally {
         if (data.topicId) {

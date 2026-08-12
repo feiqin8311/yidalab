@@ -15,10 +15,11 @@ import { LobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
 import { createPathScopeAudit } from '@lobechat/builtin-tool-local-system';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
 import { manualModeExcludeToolIds } from '@lobechat/builtin-tools';
-import { isDesktop } from '@lobechat/const';
+import { isDesktop, LOADING_FLAT } from '@lobechat/const';
 import { type ToolsEngine } from '@lobechat/context-engine';
 import { buildTaskDetailPrompt, buildTaskListPrompt } from '@lobechat/prompts';
 import {
+  type ChatMessageError,
   type ConversationContext,
   type MessageMetadata,
   type RunSubAgentResult,
@@ -44,6 +45,7 @@ import { createAgentExecutors } from '@/store/chat/agents/createAgentExecutors';
 import { topicSelectors } from '@/store/chat/selectors';
 import { emitClientAgentSignalSourceEvent } from '@/store/chat/slices/agentRun/actions/lifecycle/agentSignalBridge';
 import { createClientEngineEventMapper } from '@/store/chat/slices/agentRun/actions/transports/client/clientProtocolAdapter';
+import { selectAssistantOwnedByOperation } from '@/store/chat/slices/agentRun/actions/transports/client/selectAssistantOwnedByOperation';
 import {
   selectActivatedSkillsFromMessages,
   selectActivatedToolIdsFromMessages,
@@ -531,352 +533,415 @@ export class StreamingExecutorActionImpl {
     // Create a new array to avoid modifying the original messages
     let messages = [...originalMessages];
 
-    // Decide tool / function-calling capability from real data, not a guess.
-    // The enabled-model list hydrates asynchronously (auth session → aiProvider
-    // runtime-state SWR); until it's ready `isCanUseFC` optimistically assumes
-    // tool use so we don't drop tools for a capable model. But this is the
-    // outbound path: `createAgentToolsEngine` below bakes the tool set into the
-    // payload and the `/webapi/chat/[provider]` route forwards it to the provider
-    // without rechecking capability. Wait (bounded) for the list so a fast first
-    // send after reload never attaches tools to a model that can't use them.
-    await getAiInfraStoreState().ensureAiProviderRuntimeStateReady();
+    const settleOrphanAssistantPlaceholder = async (error: unknown) => {
+      const store = this.#get();
+      const currentMessages =
+        store.dbMessagesMap[messageKey] || store.messagesMap[messageKey] || [];
 
-    // Prompt-time on_demand attachment text (client path only).
-    // Chat uploads skip documents/chunks; MessageModel leaves fileList.content
-    // empty. Gateway already resolves via resolveRunAttachments — mirror that
-    // here for send / regenerate / continue / tool resume / group. In-memory only.
-    // Single resolve across messages + initialState.messages (tool resume).
-    let initialState = params.initialState;
-    const initialMessages = (initialState?.messages ?? []) as UIChatMessage[];
-    const [hydratedMessages, hydratedInitialMessages] = await resolveAndMergeAttachmentContents([
-      messages,
-      initialMessages,
-    ]);
-    messages = hydratedMessages ?? messages;
-    if (initialState && hydratedInitialMessages && hydratedInitialMessages !== initialMessages) {
-      initialState = { ...initialState, messages: hydratedInitialMessages };
-    }
-
-    // ===========================================
-    // Step 1: Create Agent State (resolves config once)
-    // ===========================================
-    // agentConfig already has isSubAgent filtering applied and is passed to callLLM executor
-    const {
-      state: initialAgentState,
-      context: initialAgentContext,
-      agentConfig,
-      toolsEngine,
-    } = this.#get().internal_createAgentState({
-      messages,
-      parentMessageId: params.parentMessageId,
-      agentId,
-      disableTools,
-      topicId,
-      threadId: threadId ?? undefined,
-      initialState,
-      initialContext: params.initialContext,
-      operationId,
-      subAgentId, // Pass subAgentId for agent config retrieval (behavior depends on scope)
-      isSubAgent, // Pass isSubAgent to filter out lobe-agent tool in sub-agent context
-    });
-
-    // Use model/provider from resolved agentConfig
-    const { agentConfig: agentConfigData } = agentConfig;
-    const model = agentConfigData.model;
-    const provider = agentConfigData.provider;
-
-    const modelRuntimeConfig = {
-      model,
-      provider: provider!,
-      // TODO: Support dedicated compression model from chatConfig.compressionModelId
-      compressionModel: { model, provider: provider! },
-    };
-    // ===========================================
-    // Step 2: Create and Execute Agent Runtime
-    // ===========================================
-    log('[executeClientAgent] Creating agent runtime with config', modelRuntimeConfig);
-
-    const contextWindowTokens = aiModelSelectors.modelContextWindowTokens(
-      model,
-      provider!,
-    )(getAiInfraStoreState());
-
-    const agent = new GeneralChatAgent({
-      agentConfig: { maxSteps: getAgentRunLimits().maxSteps },
-      compressionConfig: {
-        enabled: agentConfigData.chatConfig?.enableContextCompression ?? true, // Default to enabled
-        maxWindowToken: contextWindowTokens ?? undefined,
-      },
-      dynamicInterventionAudits,
-      operationId: `${messageKey}/${params.parentMessageId}`,
-      modelRuntimeConfig,
-    });
-
-    const runtime = new AgentRuntime(agent, {
-      executors: createAgentExecutors({
-        agentConfig, // Pass pre-resolved config to callLLM executor
-        get: this.#get,
-        metadata: params.metadata,
-        messageKey,
+      const assistantMessage = selectAssistantOwnedByOperation({
+        messageOperationMap: store.messageOperationMap,
+        messages: currentMessages,
         operationId,
-        parentId: params.parentMessageId,
-        skipCreateFirstMessage: params.skipCreateFirstMessage,
-        toolsEngine, // Pass toolsEngine for dynamic tool injection via activateTools
-      }),
-      getOperation: (opId: string) => {
-        const op = this.#get().operations[opId];
-        if (!op) throw new Error(`Operation not found: ${opId}`);
-        return {
-          abortController: op.abortController,
-          context: op.context,
-        };
-      },
-      operationId,
-    });
+        operationsByMessage: store.operationsByMessage,
+        parentMessageId,
+      });
+      if (!assistantMessage) return;
+      if (assistantMessage.content !== LOADING_FLAT && assistantMessage.content?.trim()) return;
 
-    let state = initialAgentState;
-    let nextContext = initialAgentContext;
+      const chatError: ChatMessageError =
+        error && typeof error === 'object' && 'type' in error && 'message' in error
+          ? (error as ChatMessageError)
+          : {
+              message: error instanceof Error ? error.message : String(error),
+              type: 'UnknownChatError',
+            };
 
-    log('[executeClientAgent] Agent runtime loop start, initial phase: %s', nextContext.phase);
+      if (typeof store.optimisticUpdateMessageTerminal === 'function') {
+        await store.optimisticUpdateMessageTerminal(
+          assistantMessage.id,
+          { content: '', error: chatError },
+          { operationId },
+        );
+        return;
+      }
 
-    // Compute contextKey for message queue (per-context, not per-operation)
-    const contextKey = messageKey;
+      await store.optimisticUpdateMessageContent(assistantMessage.id, '', undefined, {
+        operationId,
+      });
+      await store.optimisticUpdateMessageError(assistantMessage.id, chatError, { operationId });
+    };
 
-    // Protocol dual-path: map engine AgentEvent → AgentRuntimeEvent (sequenced).
-    // UI side effects still use the legacy switch below; protocol events are
-    // control-plane egress only until consumers migrate fully.
-    const protocolMapper = createClientEngineEventMapper(operationId);
+    // Wrap hydration + agent init + runtime loop so pre-loop throws still settle
+    // pre-created LOADING_FLAT placeholders and fail the operation.
+    try {
+      // Decide tool / function-calling capability from real data, not a guess.
+      // The enabled-model list hydrates asynchronously (auth session → aiProvider
+      // runtime-state SWR); until it's ready `isCanUseFC` optimistically assumes
+      // tool use so we don't drop tools for a capable model. But this is the
+      // outbound path: `createAgentToolsEngine` below bakes the tool set into the
+      // payload and the `/webapi/chat/[provider]` route forwards it to the provider
+      // without rechecking capability. Wait (bounded) for the list so a fast first
+      // send after reload never attaches tools to a model that can't use them.
+      await getAiInfraStoreState().ensureAiProviderRuntimeStateReady();
 
-    // Execute the agent runtime loop
-    let stepCount = 0;
-    while (state.status !== 'done' && state.status !== 'error') {
-      // Check if operation has been cancelled
-      const currentOperation = this.#get().operations[operationId];
-      if (currentOperation?.status === 'cancelled') {
-        log('[executeClientAgent] Operation cancelled, marking state as interrupted');
+      // Prompt-time on_demand attachment text (client path only).
+      // Chat uploads skip documents/chunks; MessageModel leaves fileList.content
+      // empty. Gateway already resolves via resolveRunAttachments — mirror that
+      // here for send / regenerate / continue / tool resume / group. In-memory only.
+      // Single resolve across messages + initialState.messages (tool resume).
+      let initialState = params.initialState;
+      const initialMessages = (initialState?.messages ?? []) as UIChatMessage[];
+      const [hydratedMessages, hydratedInitialMessages] = await resolveAndMergeAttachmentContents([
+        messages,
+        initialMessages,
+      ]);
+      messages = hydratedMessages ?? messages;
+      if (initialState && hydratedInitialMessages && hydratedInitialMessages !== initialMessages) {
+        initialState = { ...initialState, messages: hydratedInitialMessages };
+      }
 
-        // Update state status to 'interrupted' so agent can handle abort
-        state = { ...state, status: 'interrupted' };
+      // ===========================================
+      // Step 1: Create Agent State (resolves config once)
+      // ===========================================
+      // agentConfig already has isSubAgent filtering applied and is passed to callLLM executor
+      const {
+        state: initialAgentState,
+        context: initialAgentContext,
+        agentConfig,
+        toolsEngine,
+      } = this.#get().internal_createAgentState({
+        messages,
+        parentMessageId: params.parentMessageId,
+        agentId,
+        disableTools,
+        topicId,
+        threadId: threadId ?? undefined,
+        initialState,
+        initialContext: params.initialContext,
+        operationId,
+        subAgentId, // Pass subAgentId for agent config retrieval (behavior depends on scope)
+        isSubAgent, // Pass isSubAgent to filter out lobe-agent tool in sub-agent context
+      });
 
-        // Let agent handle the abort (will clean up pending tools if needed)
+      // Use model/provider from resolved agentConfig
+      const { agentConfig: agentConfigData } = agentConfig;
+      const model = agentConfigData.model;
+      const provider = agentConfigData.provider;
+
+      const modelRuntimeConfig = {
+        model,
+        provider: provider!,
+        // TODO: Support dedicated compression model from chatConfig.compressionModelId
+        compressionModel: { model, provider: provider! },
+      };
+      // ===========================================
+      // Step 2: Create and Execute Agent Runtime
+      // ===========================================
+      log('[executeClientAgent] Creating agent runtime with config', modelRuntimeConfig);
+
+      const contextWindowTokens = aiModelSelectors.modelContextWindowTokens(
+        model,
+        provider!,
+      )(getAiInfraStoreState());
+
+      const agent = new GeneralChatAgent({
+        agentConfig: { maxSteps: getAgentRunLimits().maxSteps },
+        compressionConfig: {
+          enabled: agentConfigData.chatConfig?.enableContextCompression ?? true, // Default to enabled
+          maxWindowToken: contextWindowTokens ?? undefined,
+        },
+        dynamicInterventionAudits,
+        operationId: `${messageKey}/${params.parentMessageId}`,
+        modelRuntimeConfig,
+      });
+
+      const runtime = new AgentRuntime(agent, {
+        executors: createAgentExecutors({
+          agentConfig, // Pass pre-resolved config to callLLM executor
+          get: this.#get,
+          metadata: params.metadata,
+          messageKey,
+          operationId,
+          parentId: params.parentMessageId,
+          skipCreateFirstMessage: params.skipCreateFirstMessage,
+          toolsEngine, // Pass toolsEngine for dynamic tool injection via activateTools
+        }),
+        getOperation: (opId: string) => {
+          const op = this.#get().operations[opId];
+          if (!op) throw new Error(`Operation not found: ${opId}`);
+          return {
+            abortController: op.abortController,
+            context: op.context,
+          };
+        },
+        operationId,
+      });
+
+      let state = initialAgentState;
+      let nextContext = initialAgentContext;
+
+      log('[executeClientAgent] Agent runtime loop start, initial phase: %s', nextContext.phase);
+
+      // Compute contextKey for message queue (per-context, not per-operation)
+      const contextKey = messageKey;
+
+      // Protocol dual-path: map engine AgentEvent → AgentRuntimeEvent (sequenced).
+      // UI side effects still use the legacy switch below; protocol events are
+      // control-plane egress only until consumers migrate fully.
+      const protocolMapper = createClientEngineEventMapper(operationId);
+
+      // Execute the agent runtime loop
+      let stepCount = 0;
+      while (state.status !== 'done' && state.status !== 'error') {
+        // Check if operation has been cancelled
+        const currentOperation = this.#get().operations[operationId];
+        if (currentOperation?.status === 'cancelled') {
+          log('[executeClientAgent] Operation cancelled, marking state as interrupted');
+
+          // Update state status to 'interrupted' so agent can handle abort
+          state = { ...state, status: 'interrupted' };
+
+          // Let agent handle the abort (will clean up pending tools if needed)
+          const result = await runtime.step(state, nextContext);
+          state = result.newState;
+
+          log('[executeClientAgent] Operation cancelled, stopping loop');
+          break;
+        }
+
+        stepCount++;
+
+        // Compute step context from current db messages before each step
+        // Use dbMessagesMap which contains persisted state (including pluginState.todos)
+        const currentDBMessages = this.#get().dbMessagesMap[messageKey] || [];
+        // Use selectTodosFromMessages selector (shared with UI display)
+        const todos = selectTodosFromMessages(currentDBMessages);
+        // Accumulate activated tool IDs from lobe-activator messages
+        const activatedToolIds = selectActivatedToolIdsFromMessages(currentDBMessages)?.filter(
+          (id) => scope === 'page' || id !== PageAgentIdentifier,
+        );
+        // Accumulate activated skills from activateSkill messages
+        const activatedSkills = selectActivatedSkillsFromMessages(currentDBMessages);
+        const hasQueuedMessages = (this.#get().queuedMessages[contextKey]?.length ?? 0) > 0;
+        const stepContext = computeStepContext({
+          activatedSkills,
+          activatedToolIds,
+          hasQueuedMessages,
+          todos,
+        });
+
+        // If page agent is enabled, get the latest XML for stepPageEditor
+        if (scope === 'page' && nextContext.initialContext?.pageEditor) {
+          try {
+            const pageContentContext = pageAgentRuntime.getPageContentContext('xml');
+            stepContext.stepPageEditor = {
+              xml: pageContentContext.xml || '',
+            };
+          } catch (error) {
+            // Page agent runtime may not be available, ignore errors
+            log('[executeClientAgent] Failed to get page XML for step: %o', error);
+          }
+        }
+
+        // Inject stepContext into the runtime context for this step
+        nextContext = { ...nextContext, stepContext };
+
+        log(
+          '[executeClientAgent][step-%d]: phase=%s, status=%s, state.messages=%d, dbMessagesMap[%s]=%d, stepContext=%O',
+          stepCount,
+          nextContext.phase,
+          state.status,
+          state.messages.length,
+          messageKey,
+          currentDBMessages.length,
+          stepContext,
+        );
+
         const result = await runtime.step(state, nextContext);
+
+        log(
+          '[executeClientAgent] Step %d completed, events: %d, newStatus=%s, newState.messages=%d',
+          stepCount,
+          result.events.length,
+          result.newState.status,
+          result.newState.messages.length,
+        );
+
+        // After parallel tool batch completes, refresh messages to ensure all tool results are synced
+        // This fixes the race condition where each tool's replaceMessages may overwrite others
+        // REMEMBER: There is no test for it (too hard to add), if you want to change it , ask @arvinxx first
+        if (
+          result.nextContext?.phase &&
+          ['sub_agents_batch_result', 'tools_batch_result'].includes(result.nextContext?.phase)
+        ) {
+          log(
+            `[executeClientAgent] ${result.nextContext?.phase} completed, refreshing messages to sync state`,
+          );
+          await this.#get().refreshMessages(context);
+        }
+
+        // Dual-path protocol map (sequenced). Side effects remain on engine events.
+        const protocolEvents = protocolMapper.mapStepEvents(result.events);
+        if (protocolEvents.length > 0) {
+          log(
+            '[executeClientAgent] protocol events: %o (lastSequence=%d)',
+            protocolEvents.map((e) => e.type),
+            protocolMapper.lastSequence,
+          );
+        }
+
+        // Handle completion and error events
+        for (const event of result.events) {
+          switch (event.type) {
+            case 'done': {
+              log('[executeClientAgent] Received done event');
+              break;
+            }
+
+            case 'human_approve_required': {
+              await notifyDesktopHumanApprovalRequired(this.#get, context);
+              if (topicId) {
+                const statusWrite = this.#get().updateTopicStatus?.({
+                  agentId,
+                  groupId,
+                  ...(context.scope === 'group' || context.scope === 'group_agent'
+                    ? { scope: context.scope }
+                    : {}),
+                  status: 'waitingForHuman',
+                  topicId,
+                });
+                void statusWrite?.catch((error) => {
+                  console.error('[streamingExecutor] updateTopicStatus failed:', error);
+                });
+              }
+              break;
+            }
+
+            case 'error': {
+              log('[executeClientAgent] Received error event: %o', event.error);
+              // Find the assistant message to update error
+              const currentMessages = this.#get().messagesMap[messageKey] || [];
+              const assistantMessage = currentMessages.findLast((m) => m.role === 'assistant');
+              if (assistantMessage) {
+                await messageService.updateMessageError(assistantMessage.id, event.error, {
+                  agentId,
+                  groupId,
+                  topicId,
+                });
+              }
+              const finalMessages = this.#get().messagesMap[messageKey] || [];
+              this.#get().replaceMessages(finalMessages, { context });
+              break;
+            }
+          }
+        }
+
         state = result.newState;
 
-        log('[executeClientAgent] Operation cancelled, stopping loop');
-        break;
-      }
+        // Check if operation was cancelled after step completion
+        const operationAfterStep = this.#get().operations[operationId];
+        if (operationAfterStep?.status === 'cancelled') {
+          log(
+            '[executeClientAgent] Operation cancelled after step %d, marking state as interrupted',
+            stepCount,
+          );
 
-      stepCount++;
+          // Set state.status to 'interrupted' to trigger agent abort handling
+          state = { ...state, status: 'interrupted' };
 
-      // Compute step context from current db messages before each step
-      // Use dbMessagesMap which contains persisted state (including pluginState.todos)
-      const currentDBMessages = this.#get().dbMessagesMap[messageKey] || [];
-      // Use selectTodosFromMessages selector (shared with UI display)
-      const todos = selectTodosFromMessages(currentDBMessages);
-      // Accumulate activated tool IDs from lobe-activator messages
-      const activatedToolIds = selectActivatedToolIdsFromMessages(currentDBMessages)?.filter(
-        (id) => scope === 'page' || id !== PageAgentIdentifier,
-      );
-      // Accumulate activated skills from activateSkill messages
-      const activatedSkills = selectActivatedSkillsFromMessages(currentDBMessages);
-      const hasQueuedMessages = (this.#get().queuedMessages[contextKey]?.length ?? 0) > 0;
-      const stepContext = computeStepContext({
-        activatedSkills,
-        activatedToolIds,
-        hasQueuedMessages,
-        todos,
-      });
+          // Let agent handle the abort (will clean up pending tools if needed)
+          // Use result.nextContext if available (e.g., llm_result with tool calls)
+          // otherwise fallback to current nextContext
+          const contextForAbort = result.nextContext || nextContext;
+          const abortResult = await runtime.step(state, contextForAbort);
+          state = abortResult.newState;
 
-      // If page agent is enabled, get the latest XML for stepPageEditor
-      if (scope === 'page' && nextContext.initialContext?.pageEditor) {
-        try {
-          const pageContentContext = pageAgentRuntime.getPageContentContext('xml');
-          stepContext.stepPageEditor = {
-            xml: pageContentContext.xml || '',
-          };
-        } catch (error) {
-          // Page agent runtime may not be available, ignore errors
-          log('[executeClientAgent] Failed to get page XML for step: %o', error);
+          log('[executeClientAgent] Operation cancelled, stopping loop');
+          break;
         }
-      }
 
-      // Inject stepContext into the runtime context for this step
-      nextContext = { ...nextContext, stepContext };
+        // If no nextContext, stop execution
+        if (!result.nextContext) {
+          log('[executeClientAgent] No next context, stopping loop');
+          break;
+        }
+
+        // Preserve initialContext when updating nextContext
+        // initialContext is set once at the start and should persist through all steps
+        nextContext = { ...result.nextContext, initialContext: nextContext.initialContext };
+      }
 
       log(
-        '[executeClientAgent][step-%d]: phase=%s, status=%s, state.messages=%d, dbMessagesMap[%s]=%d, stepContext=%O',
-        stepCount,
-        nextContext.phase,
+        '[executeClientAgent] Agent runtime loop finished, final status: %s, total steps: %d',
         state.status,
-        state.messages.length,
-        messageKey,
-        currentDBMessages.length,
-        stepContext,
-      );
-
-      const result = await runtime.step(state, nextContext);
-
-      log(
-        '[executeClientAgent] Step %d completed, events: %d, newStatus=%s, newState.messages=%d',
         stepCount,
-        result.events.length,
-        result.newState.status,
-        result.newState.messages.length,
       );
 
-      // After parallel tool batch completes, refresh messages to ensure all tool results are synced
-      // This fixes the race condition where each tool's replaceMessages may overwrite others
-      // REMEMBER: There is no test for it (too hard to add), if you want to change it , ask @arvinxx first
-      if (
-        result.nextContext?.phase &&
-        ['sub_agents_batch_result', 'tools_batch_result'].includes(result.nextContext?.phase)
-      ) {
-        log(
-          `[executeClientAgent] ${result.nextContext?.phase} completed, refreshing messages to sync state`,
-        );
-        await this.#get().refreshMessages(context);
-      }
-
-      // Dual-path protocol map (sequenced). Side effects remain on engine events.
-      const protocolEvents = protocolMapper.mapStepEvents(result.events);
-      if (protocolEvents.length > 0) {
-        log(
-          '[executeClientAgent] protocol events: %o (lastSequence=%d)',
-          protocolEvents.map((e) => e.type),
-          protocolMapper.lastSequence,
-        );
-      }
-
-      // Handle completion and error events
-      for (const event of result.events) {
-        switch (event.type) {
-          case 'done': {
-            log('[executeClientAgent] Received done event');
-            break;
-          }
-
-          case 'human_approve_required': {
-            await notifyDesktopHumanApprovalRequired(this.#get, context);
-            if (topicId) {
-              const statusWrite = this.#get().updateTopicStatus?.({
-                agentId,
-                groupId,
-                ...(context.scope === 'group' || context.scope === 'group_agent'
-                  ? { scope: context.scope }
-                  : {}),
-                status: 'waitingForHuman',
-                topicId,
-              });
-              void statusWrite?.catch((error) => {
-                console.error('[streamingExecutor] updateTopicStatus failed:', error);
-              });
-            }
-            break;
-          }
-
-          case 'error': {
-            log('[executeClientAgent] Received error event: %o', event.error);
-            // Find the assistant message to update error
-            const currentMessages = this.#get().messagesMap[messageKey] || [];
-            const assistantMessage = currentMessages.findLast((m) => m.role === 'assistant');
-            if (assistantMessage) {
-              await messageService.updateMessageError(assistantMessage.id, event.error, {
-                agentId,
-                groupId,
-                topicId,
-              });
-            }
-            const finalMessages = this.#get().messagesMap[messageKey] || [];
-            this.#get().replaceMessages(finalMessages, { context });
-            break;
-          }
-        }
-      }
-
-      state = result.newState;
-
-      // Check if operation was cancelled after step completion
-      const operationAfterStep = this.#get().operations[operationId];
-      if (operationAfterStep?.status === 'cancelled') {
-        log(
-          '[executeClientAgent] Operation cancelled after step %d, marking state as interrupted',
-          stepCount,
-        );
-
-        // Set state.status to 'interrupted' to trigger agent abort handling
-        state = { ...state, status: 'interrupted' };
-
-        // Let agent handle the abort (will clean up pending tools if needed)
-        // Use result.nextContext if available (e.g., llm_result with tool calls)
-        // otherwise fallback to current nextContext
-        const contextForAbort = result.nextContext || nextContext;
-        const abortResult = await runtime.step(state, contextForAbort);
-        state = abortResult.newState;
-
-        log('[executeClientAgent] Operation cancelled, stopping loop');
-        break;
-      }
-
-      // If no nextContext, stop execution
-      if (!result.nextContext) {
-        log('[executeClientAgent] No next context, stopping loop');
-        break;
-      }
-
-      // Preserve initialContext when updating nextContext
-      // initialContext is set once at the start and should persist through all steps
-      nextContext = { ...result.nextContext, initialContext: nextContext.initialContext };
-    }
-
-    log(
-      '[executeClientAgent] Agent runtime loop finished, final status: %s, total steps: %d',
-      state.status,
-      stepCount,
-    );
-
-    // Run-completion side effects are assembled once and invoked at
-    // this boundary. The bodies are relocated verbatim into `buildRunLifecycle`,
-    // so the streamingExecutor characterization net stays green (behavior-preserving).
-    const runScope: RunScope = scope === 'sub_agent' ? 'sub_agent' : 'top_level';
-    const runLifecycle = buildRunLifecycle(this.#get, {
-      context,
-      parentMessageId,
-      parentMessageType,
-      runId: operationId,
-      runScope,
-      runtimeType: 'client',
-    });
-    const lifecycleEventBase = {
-      context,
-      operationId,
-      runId: operationId,
-      runScope,
-      runtimeType: 'client' as const,
-    };
-
-    // Parked (`waiting_for_human` / `waiting_for_async_tool`) is NOT terminal:
-    // route to `onRunParked`, which clears the loading UI for human approval but
-    // fires NO terminal side effects (title / queue drain / notification /
-    // complete signal). The run resumes under a new operation when the user
-    // approves / rejects / submits / skips.
-    if (isParkedStatus(state.status)) {
-      await runLifecycle.onRunParked({
-        ...lifecycleEventBase,
-        reason: state.status as RunParkedReason,
+      // Run-completion side effects are assembled once and invoked at
+      // this boundary. The bodies are relocated verbatim into `buildRunLifecycle`,
+      // so the streamingExecutor characterization net stays green (behavior-preserving).
+      const runScope: RunScope = scope === 'sub_agent' ? 'sub_agent' : 'top_level';
+      const runLifecycle = buildRunLifecycle(this.#get, {
+        context,
+        parentMessageId,
+        parentMessageType,
+        runId: operationId,
+        runScope,
+        runtimeType: 'client',
       });
-      return;
+      const lifecycleEventBase = {
+        context,
+        operationId,
+        runId: operationId,
+        runScope,
+        runtimeType: 'client' as const,
+      };
+
+      // Parked (`waiting_for_human` / `waiting_for_async_tool`) is NOT terminal:
+      // route to `onRunParked`, which clears the loading UI for human approval but
+      // fires NO terminal side effects (title / queue drain / notification /
+      // complete signal). The run resumes under a new operation when the user
+      // approves / rejects / submits / skips.
+      if (isParkedStatus(state.status)) {
+        await runLifecycle.onRunParked({
+          ...lifecycleEventBase,
+          reason: state.status as RunParkedReason,
+        });
+        return;
+      }
+
+      const completeEvent = { ...lifecycleEventBase, runtimeStatus: state.status };
+
+      const { requeued } = await runLifecycle.completeRun(completeEvent);
+      // A queued follow-up sendMessage was scheduled — skip the post-run notification.
+      if (requeued) return;
+
+      await runLifecycle.afterRunComplete(completeEvent);
+
+      // Return usage and cost data for caller to use
+      return { cost: state.cost, model, provider: provider ?? undefined, usage: state.usage };
+    } catch (error) {
+      // Never leave LOADING_FLAT + running op after an uncaught runtime.step throw.
+      const op = this.#get().operations[operationId];
+      if (op?.status === 'cancelled') {
+        await settleOrphanAssistantPlaceholder(error).catch(() => undefined);
+        return;
+      }
+
+      await settleOrphanAssistantPlaceholder(error).catch((settleError) => {
+        console.error('[executeClientAgent] settle orphan assistant failed:', settleError);
+      });
+
+      if (op && op.status !== 'failed' && op.status !== 'completed' && op.status !== 'cancelled') {
+        this.#get().failOperation(operationId, {
+          type: 'runtime_error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // Re-throw so callers (conversationLifecycle) can still log; op is settled.
+      throw error;
     }
-
-    const completeEvent = { ...lifecycleEventBase, runtimeStatus: state.status };
-
-    const { requeued } = await runLifecycle.completeRun(completeEvent);
-    // A queued follow-up sendMessage was scheduled — skip the post-run notification.
-    if (requeued) return;
-
-    await runLifecycle.afterRunComplete(completeEvent);
-
-    // Return usage and cost data for caller to use
-    return { cost: state.cost, model, provider: provider ?? undefined, usage: state.usage };
   };
 
   /**

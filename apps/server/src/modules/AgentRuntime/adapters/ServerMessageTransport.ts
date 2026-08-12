@@ -9,6 +9,8 @@ import { parse } from '@lobechat/conversation-flow';
 import type { CreateMessageParams, UIChatMessage, UpdateMessageParams } from '@lobechat/types';
 
 import { type MessageModel } from '@/database/models/message';
+import type { LobeChatDatabase } from '@/database/type';
+import { recordModelToolDingpanOutcome } from '@/server/services/delivery/recordModelToolOutcome';
 
 import {
   createConversationParentMissingError,
@@ -22,12 +24,67 @@ export class ServerMessageTransport implements MessageTransport {
   constructor(
     private readonly messageModel: MessageModel,
     private readonly options: {
+      db?: LobeChatDatabase;
       postProcessUrl?: (
         path: string | null,
         file: { fileType: string; id?: string | null },
       ) => Promise<string>;
+      userId?: string;
+      workspaceId?: string | null;
     } = {},
   ) {}
+
+  private async recordDingpanOutcome(params: {
+    content?: unknown;
+    messageId?: string;
+    metadata?: Record<string, unknown> | null;
+    plugin?: {
+      apiName?: string;
+      arguments?: string;
+      identifier?: string;
+    } | null;
+    pluginState?: Record<string, unknown> | null;
+  }): Promise<void> {
+    const { db, userId, workspaceId } = this.options;
+    if (!db || !userId) return;
+
+    // updateToolMessage often omits plugin; infer from metadata stamped by tool executor.
+    // Prefer metadata.apiName (set on approval-resume) over hardcoding uploadHtmlToDingpan.
+    const plugin =
+      params.plugin ??
+      (params.metadata?.deliveryType === 'dingpan-report' ||
+      params.metadata?.source === 'model-tool'
+        ? {
+            apiName:
+              typeof params.metadata?.apiName === 'string' && params.metadata.apiName.trim()
+                ? params.metadata.apiName
+                : 'uploadHtmlToDingpan',
+            identifier: 'lobe-dingpan',
+          }
+        : null);
+
+    try {
+      const result = await recordModelToolDingpanOutcome({
+        content: params.content,
+        db,
+        metadata: params.metadata,
+        plugin,
+        pluginArguments: params.plugin?.arguments,
+        pluginState: params.pluginState,
+        userId,
+        workspaceId,
+      });
+      // Surface attempt id so UI Retry can call redriveDelivery on failure.
+      if (result.deliveryAttemptId && params.messageId) {
+        await this.messageModel.updatePluginState(params.messageId, {
+          deliveryAttemptId: result.deliveryAttemptId,
+        });
+      }
+    } catch (error) {
+      // Non-fatal: tool message is already persisted; do not fail the transport write.
+      console.error('[ServerMessageTransport] dingpan outcome non-fatal:', error);
+    }
+  }
 
   createAssistantMessage(params: CreateMessageParams): Promise<RuntimeMessageRef> {
     return this.messageModel.create(params);
@@ -35,7 +92,16 @@ export class ServerMessageTransport implements MessageTransport {
 
   async createToolMessage(params: CreateMessageParams): Promise<RuntimeMessageRef> {
     try {
-      return await this.messageModel.create(params);
+      const ref = await this.messageModel.create(params);
+      await this.recordDingpanOutcome({
+        content: params.content,
+        messageId: ref.id,
+        metadata: params.metadata as Record<string, unknown> | null | undefined,
+        plugin: params.plugin as
+          { apiName?: string; arguments?: string; identifier?: string } | null | undefined,
+        pluginState: params.pluginState as Record<string, unknown> | null | undefined,
+      });
+      return ref;
     } catch (error) {
       if (typeof params.parentId === 'string' && isMidOperationReferenceMissingError(error)) {
         throw createConversationParentMissingError(params.parentId, error);
@@ -89,5 +155,13 @@ export class ServerMessageTransport implements MessageTransport {
 
   async updateToolMessage(id: string, params: UpdateToolMessageInput): Promise<void> {
     await this.messageModel.updateToolMessage(id, params);
+    await this.recordDingpanOutcome({
+      content: params.content,
+      messageId: id,
+      metadata: params.metadata as Record<string, unknown> | null | undefined,
+      plugin: (params as { plugin?: { apiName?: string; arguments?: string; identifier?: string } })
+        .plugin,
+      pluginState: params.pluginState as Record<string, unknown> | null | undefined,
+    });
   }
 }

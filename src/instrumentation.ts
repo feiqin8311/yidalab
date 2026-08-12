@@ -59,6 +59,13 @@ export async function register() {
       .catch((err) => {
         console.error('[Instrumentation] Failed to start task-automation V2 loop:', err);
       });
+
+    // Dingpan / delivery outbox drain — opt out: DELIVERY_DRAIN=0
+    void import('@/server/services/delivery/loop')
+      .then(({ startDeliveryDrainLoop }) => startDeliveryDrainLoop())
+      .catch((err) => {
+        console.error('[Instrumentation] Failed to start delivery drain loop:', err);
+      });
   }
 
   if (process.env.NODE_ENV !== 'production' && !process.env.ENABLE_TELEMETRY_IN_DEV) {

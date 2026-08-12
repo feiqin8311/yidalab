@@ -10,6 +10,7 @@ const prefixes = {
   agentSkills: 'skl',
   companyMarketSkills: 'cms',
   companyFeedback: 'cfb',
+  deliveryAttempts: 'dla',
   briefs: 'brf',
   businessFunctionResultRows: 'bfrr',
   businessFunctionRuns: 'bfr',

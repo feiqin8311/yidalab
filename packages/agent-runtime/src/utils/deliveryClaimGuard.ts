@@ -5,13 +5,25 @@
  * Authority is always the tool message — never the assistant prose.
  */
 
+import {
+  isTrustedDingpanPreviewUrl,
+  parseTrustedDingpanPreviewUrl,
+  type TrustedDingpanPreview,
+} from '@lobechat/types';
+
 export const DINGPAN_TOOL_IDENTIFIER = 'lobe-dingpan';
 export const DINGPAN_UPLOAD_APIS = new Set(['uploadHtmlToDingpan', 'uploadToDingpan']);
+
+/** Re-export shared strict preview parser (single source of truth in @lobechat/types). */
+export { isTrustedDingpanPreviewUrl, parseTrustedDingpanPreviewUrl };
+export type { TrustedDingpanPreview };
 
 const CLAIM_RE =
   /已上传|上传至钉盘|上传到钉盘|上传钉盘|钉盘链接|HTML\s*报告已生成并上传|已生成并上传/i;
 
 const MD_LINK_RE = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
+/** Bare https URLs that may be wrong dingpan hosts. */
+const BARE_URL_RE = /https?:\/\/[^\s)\]>"']+/g;
 
 export type DeliveryClaimMessage = {
   content?: unknown;
@@ -22,7 +34,9 @@ export type DeliveryClaimMessage = {
 export type DingpanUploadOutcome = {
   apiName: string;
   error?: string;
+  fileId?: string;
   previewUrl?: string;
+  spaceId?: string;
   success: boolean;
 };
 
@@ -66,7 +80,8 @@ export const extractDingpanUploadOutcomes = (
 
     const raw = typeof message.content === 'string' ? message.content : '';
     const payload = parseToolPayload(raw);
-    const previewUrl = String(payload?.preview_url ?? payload?.previewUrl ?? '').trim();
+    const previewRaw = String(payload?.preview_url ?? payload?.previewUrl ?? '').trim();
+    const trusted = parseTrustedDingpanPreviewUrl(previewRaw);
     const explicitSuccess = payload?.success === true;
     const explicitFailure = payload?.success === false;
     const errorText = String(
@@ -75,12 +90,13 @@ export const extractDingpanUploadOutcomes = (
         raw.slice(0, 200),
     ).trim();
 
-    if (explicitSuccess || (previewUrl.includes('qr.dingtalk.com') && !explicitFailure)) {
+    if (!explicitFailure && trusted && (explicitSuccess || Boolean(trusted.previewUrl))) {
       outcomes.push({
         apiName,
-        previewUrl: previewUrl || undefined,
-        success: Boolean(previewUrl),
-        ...(previewUrl ? {} : { error: errorText || 'missing preview_url' }),
+        fileId: trusted.fileId,
+        previewUrl: trusted.previewUrl,
+        spaceId: trusted.spaceId,
+        success: true,
       });
       continue;
     }
@@ -89,9 +105,11 @@ export const extractDingpanUploadOutcomes = (
       apiName,
       error:
         errorText ||
-        (raw.trim()
-          ? 'Dingpan tool returned a non-success payload'
-          : 'Dingpan tool returned empty result'),
+        (previewRaw && !trusted
+          ? 'Dingpan tool returned untrusted preview_url'
+          : raw.trim()
+            ? 'Dingpan tool returned a non-success payload'
+            : 'Dingpan tool returned empty result'),
       success: false,
     });
   }
@@ -118,19 +136,29 @@ export const applyDingpanDeliveryClaimGuard = (
   const latest = outcomes.at(-1)!;
 
   if (latest.success && latest.previewUrl) {
+    const authority = latest.previewUrl;
     let next = content;
 
-    // When the model claims 钉盘 delivery, rewrite wrong hosts to tool authority.
+    // Only the exact tool-authority URL may remain; any other dingpan-shaped or
+    // foreign link is rewritten to the verified tool result.
     if (claimsDingpanDelivery(content)) {
       next = content.replaceAll(MD_LINK_RE, (full, label: string, url: string) => {
-        if (url.includes('qr.dingtalk.com') || url === latest.previewUrl) return full;
-        return `[${label?.trim() || '打开钉盘预览'}](${latest.previewUrl})`;
+        if (url === authority) return full;
+        return `[${label?.trim() || '打开钉盘预览'}](${authority})`;
+      });
+      next = next.replaceAll(BARE_URL_RE, (url: string) => {
+        if (url === authority) return url;
+        // Replace other dingpan-shaped / http links that appear as delivery claims.
+        if (isTrustedDingpanPreviewUrl(url) || /dingtalk|yunpan|previewDentry/i.test(url)) {
+          return authority;
+        }
+        return url;
       });
     }
 
     // Always surface the real preview_url once upload succeeded (model often forgets).
-    if (!next.includes(latest.previewUrl)) {
-      next = `${next.trim()}\n\n[打开钉盘预览](${latest.previewUrl})`;
+    if (!next.includes(authority)) {
+      next = `${next.trim()}\n\n[打开钉盘预览](${authority})`;
     }
     return next;
   }

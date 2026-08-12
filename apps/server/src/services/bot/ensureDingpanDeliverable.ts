@@ -10,9 +10,17 @@
  *
  * Isolation: only same operationId may be reused (idempotent). Never reuse
  * topic-level historical uploads.
+ *
+ * Trusted delivery: enqueue → claim → upload → verify preview_url shape →
+ * mark succeeded on delivery_attempts + agent_operations.outcome_*.
+ * Model prose never sets outcome verified.
  */
 
-import { type DeliveryClaimMessage, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
+import {
+  type DeliveryClaimMessage,
+  extractDingpanUploadOutcomes,
+  isTrustedDingpanPreviewUrl,
+} from '@lobechat/agent-runtime';
 import { DingpanApiName, DingpanIdentifier } from '@lobechat/builtin-tool-dingpan';
 import {
   type DingpanDocumentBridge,
@@ -20,20 +28,24 @@ import {
 } from '@lobechat/builtin-tool-dingpan/executionRuntime';
 import { createNanoId } from '@lobechat/database';
 import type { ChatToolPayload } from '@lobechat/types';
+import { dingpanDeliveryDedupeKey } from '@lobechat/types';
 
+import { AgentOperationModel } from '@/database/models/agentOperation';
+import { DeliveryAttemptModel } from '@/database/models/deliveryAttempt';
 import { MessageModel } from '@/database/models/message';
 import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
+import { recordDeliveryMetric } from '@/server/services/delivery/metrics';
 import { DocumentService } from '@/server/services/document';
 import { withVaultCredEnv } from '@/server/utils/withVaultCredEnv';
 
 import { shouldEnsureDingpanForBotReply, wrapBotReplyAsHtml } from './botDingpanDeliveryHeuristic';
 import type { BotTurnContext } from './botTurnContext';
 
-/** In-process idempotency for concurrent ensure calls on the same operation. */
+/** In-process coalescing for concurrent ensure calls on the same operation. */
 const inFlightByKey = new Map<string, Promise<EnsureDingpanDeliverableResult>>();
 
-const deliveryKey = (operationId: string) => `dingpan-delivery:${operationId}:report`;
+const deliveryKey = (operationId: string) => dingpanDeliveryDedupeKey(operationId);
 
 const createDocumentBridge = (
   serverDB: LobeChatDatabase,
@@ -94,6 +106,19 @@ const latestSuccessfulPreviewForOperation = async (params: {
   userId: string;
   workspaceId?: string | null;
 }): Promise<string | undefined> => {
+  const deliveryModel = new DeliveryAttemptModel(
+    params.db,
+    params.userId,
+    params.workspaceId ?? undefined,
+  );
+  const succeeded = await deliveryModel.findSuccessfulByOperation(
+    params.operationId,
+    'dingpan-report',
+  );
+  if (succeeded?.previewUrl && isTrustedDingpanPreviewUrl(succeeded.previewUrl)) {
+    return succeeded.previewUrl;
+  }
+
   const messageModel = new MessageModel(params.db, params.userId, params.workspaceId ?? undefined);
   const rows = await messageModel.findDingpanUploadsByOperation({
     operationId: params.operationId,
@@ -112,6 +137,59 @@ const latestSuccessfulPreviewForOperation = async (params: {
   return [...outcomes].reverse().find((o) => o.success && o.previewUrl)?.previewUrl;
 };
 
+const recordOutcomeVerified = async (params: {
+  artifactId?: string;
+  db: LobeChatDatabase;
+  operationId: string;
+  previewUrl: string;
+  userId: string;
+  workspaceId?: string | null;
+}) => {
+  try {
+    const opModel = new AgentOperationModel(
+      params.db,
+      params.userId,
+      params.workspaceId ?? undefined,
+    );
+    await opModel.recordOutcome(params.operationId, {
+      outcomeArtifactId: params.artifactId ?? null,
+      outcomeErrorCode: null,
+      outcomePreviewUrl: params.previewUrl,
+      outcomeRetryable: false,
+      outcomeStatus: 'verified',
+      outcomeType: 'dingpan',
+      outcomeVerifiedAt: new Date(),
+    });
+  } catch (error) {
+    console.error('[ensureDingpanDeliverable] recordOutcome non-fatal:', error);
+  }
+};
+
+const recordOutcomeFailed = async (params: {
+  db: LobeChatDatabase;
+  errorCode?: string;
+  operationId: string;
+  retryable?: boolean;
+  userId: string;
+  workspaceId?: string | null;
+}) => {
+  try {
+    const opModel = new AgentOperationModel(
+      params.db,
+      params.userId,
+      params.workspaceId ?? undefined,
+    );
+    await opModel.recordOutcome(params.operationId, {
+      outcomeErrorCode: params.errorCode ?? 'dingpan_delivery_failed',
+      outcomeRetryable: params.retryable ?? true,
+      outcomeStatus: 'failed',
+      outcomeType: 'dingpan',
+    });
+  } catch (error) {
+    console.error('[ensureDingpanDeliverable] recordOutcome failed non-fatal:', error);
+  }
+};
+
 /**
  * Persist system fallback upload as a dual-form tool message so Web history can
  * preview HTML from arguments.html (same surface as model uploadHtmlToDingpan).
@@ -120,6 +198,7 @@ const latestSuccessfulPreviewForOperation = async (params: {
 const persistBotDingpanToolMessage = async (params: {
   assistantMessageId?: string;
   db: LobeChatDatabase;
+  deliveryAttemptId?: string;
   html: string;
   operationId: string;
   previewUrl: string;
@@ -162,10 +241,13 @@ const persistBotDingpanToolMessage = async (params: {
     },
     parentId,
     plugin: toolPayload as any,
-    pluginState: params.resultState ?? {
-      name: params.title,
-      previewUrl: params.previewUrl,
-      success: true,
+    pluginState: {
+      ...(params.resultState ?? {
+        name: params.title,
+        previewUrl: params.previewUrl,
+        success: true,
+      }),
+      ...(params.deliveryAttemptId ? { deliveryAttemptId: params.deliveryAttemptId } : {}),
     },
     role: 'tool',
     tool_call_id: toolCallId,
@@ -184,6 +266,8 @@ export type EnsureDingpanDeliverableResult = {
   /** Whether this call performed a new upload */
   uploaded: boolean;
   error?: string;
+  deliveryAttemptId?: string;
+  verificationStatus?: 'verified' | 'failed' | 'unverified' | 'pending';
 };
 
 /**
@@ -211,7 +295,45 @@ export async function ensureDingpanDeliverable(params: {
   if (existingInFlight) return existingInFlight;
 
   const work = (async (): Promise<EnsureDingpanDeliverableResult> => {
+    const deliveryModel = new DeliveryAttemptModel(db, userId, workspaceId ?? undefined);
+    /** Only the token this invocation minted — never re-read claimToken from DB. */
+    let heldClaimToken: string | undefined;
+    let heldClaimId: string | undefined;
+
     try {
+      // Durable outbox row (idempotent). Survives process restart unlike inFlightByKey.
+      const attempt = await deliveryModel.enqueue({
+        artifactHash: 'report',
+        dedupeKey: key,
+        deliveryType: 'dingpan-report',
+        metadata: {
+          source: 'ensureDingpanDeliverable',
+          topicId,
+          // Redrive payload filled after wrap; partial seed for topic scoping.
+          payload: { apiName: 'uploadHtmlToDingpan', taskType: 'Bot报告' },
+        },
+        operationId,
+        targetFolder: 'default',
+      });
+      recordDeliveryMetric('enqueue', 1, { source: 'ensure', operationId });
+
+      if (attempt.status === 'succeeded' && attempt.previewUrl) {
+        await recordOutcomeVerified({
+          artifactId: attempt.artifactId ?? undefined,
+          db,
+          operationId,
+          previewUrl: attempt.previewUrl,
+          userId,
+          workspaceId,
+        });
+        return {
+          deliveryAttemptId: attempt.id,
+          previewUrl: attempt.previewUrl,
+          uploaded: false,
+          verificationStatus: 'verified',
+        };
+      }
+
       const existing = await latestSuccessfulPreviewForOperation({
         db,
         operationId,
@@ -219,7 +341,102 @@ export async function ensureDingpanDeliverable(params: {
         userId,
         workspaceId,
       });
-      if (existing) return { previewUrl: existing, uploaded: false };
+      if (existing) {
+        // Tool path already uploaded — claim then close outbox without re-upload.
+        // CAS must succeed (or outbox already succeeded) before writing outcome.
+        const closeToken = createNanoId(16)();
+        const closeClaim = await deliveryModel.tryClaim(attempt.id, {
+          claimToken: closeToken,
+          claimedBy: 'ensureDingpanDeliverable-close',
+          leaseMs: 60_000,
+        });
+        if (!closeClaim) {
+          const latest = await deliveryModel.findByDedupeKey(key);
+          if (latest?.status === 'succeeded' && latest.previewUrl) {
+            await recordOutcomeVerified({
+              db,
+              operationId,
+              previewUrl: latest.previewUrl,
+              userId,
+              workspaceId,
+            });
+            return {
+              deliveryAttemptId: latest.id,
+              previewUrl: latest.previewUrl,
+              uploaded: false,
+              verificationStatus: 'verified',
+            };
+          }
+          // Claim held by another worker — do not write outcome without CAS.
+          return {
+            deliveryAttemptId: attempt.id,
+            error: 'delivery claim held by another worker',
+            previewUrl: existing,
+            uploaded: false,
+            verificationStatus: 'pending',
+          };
+        }
+
+        heldClaimToken = closeToken;
+        heldClaimId = closeClaim.id;
+        const closed = await deliveryModel.markSucceeded(closeClaim.id, {
+          claimToken: closeToken,
+          previewUrl: existing,
+          verificationStatus: 'verified',
+        });
+        if (!closed) {
+          return {
+            deliveryAttemptId: attempt.id,
+            error: 'delivery claim lost before success write',
+            previewUrl: existing,
+            uploaded: false,
+            verificationStatus: 'pending',
+          };
+        }
+        heldClaimToken = undefined;
+        heldClaimId = undefined;
+        await recordOutcomeVerified({
+          db,
+          operationId,
+          previewUrl: existing,
+          userId,
+          workspaceId,
+        });
+        return {
+          deliveryAttemptId: attempt.id,
+          previewUrl: existing,
+          uploaded: false,
+          verificationStatus: 'verified',
+        };
+      }
+
+      const claimToken = createNanoId(16)();
+      const claimed = await deliveryModel.tryClaim(attempt.id, {
+        claimToken,
+        claimedBy: 'ensureDingpanDeliverable',
+        leaseMs: 180_000,
+      });
+      if (!claimed) {
+        // Another worker holds the claim — re-read after brief wait is out of scope;
+        // surface pending so caller can still show non-success honestly.
+        const latest = await deliveryModel.findByDedupeKey(key);
+        if (latest?.status === 'succeeded' && latest.previewUrl) {
+          return {
+            deliveryAttemptId: latest.id,
+            previewUrl: latest.previewUrl,
+            uploaded: false,
+            verificationStatus: 'verified',
+          };
+        }
+        return {
+          deliveryAttemptId: attempt.id,
+          error: 'delivery claim held by another worker',
+          uploaded: false,
+          verificationStatus: 'pending',
+        };
+      }
+      heldClaimToken = claimToken;
+      heldClaimId = claimed.id;
 
       const userName = await resolveUserDisplayName(db, userId);
       const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
@@ -245,16 +462,61 @@ export async function ensureDingpanDeliverable(params: {
           result.error?.message ||
           'upload failed';
         console.error('[ensureDingpanDeliverable] upload failed:', err);
-        return { error: err, uploaded: false };
+        const backoffMs = Math.min(60_000, 2_000 * 2 ** Math.min(claimed.attempt, 5));
+        const failed = await deliveryModel.markFailed(claimed.id, {
+          claimToken,
+          errorCode: 'dingpan_upload_failed',
+          errorMessage: err,
+          metadata: {
+            payload: {
+              apiName: 'uploadHtmlToDingpan',
+              html,
+              taskType: 'Bot报告',
+              title,
+              userName,
+            },
+            source: 'ensureDingpanDeliverable',
+            topicId,
+          },
+          nextAttemptAt: new Date(Date.now() + backoffMs),
+          retryable: true,
+        });
+        if (!failed) {
+          return {
+            deliveryAttemptId: claimed.id,
+            error: 'delivery claim lost before failure write',
+            uploaded: false,
+            verificationStatus: 'pending',
+          };
+        }
+        heldClaimToken = undefined;
+        await recordOutcomeFailed({
+          db,
+          errorCode: 'dingpan_upload_failed',
+          operationId,
+          retryable: true,
+          userId,
+          workspaceId,
+        });
+        return {
+          deliveryAttemptId: claimed.id,
+          error: err,
+          uploaded: false,
+          verificationStatus: 'failed',
+        };
       }
 
       let previewUrl: string | undefined;
+      let fileId: string | undefined;
+      let spaceId: string | undefined;
       try {
         const payload =
           typeof result.content === 'string'
             ? (JSON.parse(result.content) as Record<string, unknown>)
             : null;
         previewUrl = String(payload?.preview_url ?? payload?.previewUrl ?? '').trim() || undefined;
+        fileId = String(payload?.file_id ?? payload?.fileId ?? '').trim() || undefined;
+        spaceId = String(payload?.space_id ?? payload?.spaceId ?? '').trim() || undefined;
       } catch {
         /* ignore */
       }
@@ -269,14 +531,56 @@ export async function ensureDingpanDeliverable(params: {
         });
       }
 
-      if (!previewUrl) {
-        return { error: 'upload succeeded but preview_url missing', uploaded: false };
+      if (!previewUrl || !isTrustedDingpanPreviewUrl(previewUrl)) {
+        const err = 'upload succeeded but preview_url missing or untrusted';
+        const failed = await deliveryModel.markFailed(claimed.id, {
+          claimToken,
+          errorCode: 'dingpan_preview_unverified',
+          errorMessage: err,
+          metadata: {
+            payload: {
+              apiName: 'uploadHtmlToDingpan',
+              html,
+              taskType: 'Bot报告',
+              title,
+              userName,
+            },
+            source: 'ensureDingpanDeliverable',
+            topicId,
+          },
+          nextAttemptAt: new Date(Date.now() + 10_000),
+          retryable: true,
+        });
+        if (!failed) {
+          return {
+            deliveryAttemptId: claimed.id,
+            error: 'delivery claim lost before failure write',
+            uploaded: false,
+            verificationStatus: 'pending',
+          };
+        }
+        heldClaimToken = undefined;
+        await recordOutcomeFailed({
+          db,
+          errorCode: 'dingpan_preview_unverified',
+          operationId,
+          retryable: true,
+          userId,
+          workspaceId,
+        });
+        return {
+          deliveryAttemptId: claimed.id,
+          error: err,
+          uploaded: false,
+          verificationStatus: 'failed',
+        };
       }
 
       try {
         await persistBotDingpanToolMessage({
           assistantMessageId: params.turn?.assistantMessageId,
           db,
+          deliveryAttemptId: claimed.id,
           html,
           operationId,
           previewUrl,
@@ -298,12 +602,86 @@ export async function ensureDingpanDeliverable(params: {
         console.error('[ensureDingpanDeliverable] persist tool message non-fatal:', error);
       }
 
-      return { previewUrl, uploaded: true };
+      const done = await deliveryModel.markSucceeded(claimed.id, {
+        claimToken,
+        fileId,
+        metadata: {
+          payload: {
+            apiName: 'uploadHtmlToDingpan',
+            html,
+            taskType: 'Bot报告',
+            title,
+            userName,
+          },
+          source: 'ensureDingpanDeliverable',
+          topicId,
+        },
+        previewUrl,
+        spaceId,
+        verificationStatus: 'verified',
+      });
+      if (!done) {
+        return {
+          deliveryAttemptId: claimed.id,
+          error: 'delivery claim lost before success write',
+          uploaded: false,
+          verificationStatus: 'pending',
+        };
+      }
+      heldClaimToken = undefined;
+      await recordOutcomeVerified({
+        db,
+        operationId,
+        previewUrl,
+        userId,
+        workspaceId,
+      });
+
+      recordDeliveryMetric('succeeded', 1, {
+        source: 'ensure',
+        operationId,
+        deliveryAttemptId: claimed.id,
+      });
+      return {
+        deliveryAttemptId: claimed.id,
+        previewUrl,
+        uploaded: true,
+        verificationStatus: 'verified',
+      };
     } catch (error) {
       console.error('[ensureDingpanDeliverable] non-fatal:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      let failedWrite = false;
+      try {
+        // Only the token this invocation minted — never re-read claimToken from DB
+        // (another worker may own the row after lease expiry).
+        if (heldClaimToken && heldClaimId) {
+          const failed = await deliveryModel.markFailed(heldClaimId, {
+            claimToken: heldClaimToken,
+            errorCode: 'dingpan_delivery_exception',
+            errorMessage: message.slice(0, 500),
+            nextAttemptAt: new Date(Date.now() + 15_000),
+            retryable: true,
+          });
+          failedWrite = Boolean(failed);
+        }
+      } catch {
+        /* ignore secondary failure */
+      }
+      if (failedWrite) {
+        await recordOutcomeFailed({
+          db,
+          errorCode: 'dingpan_delivery_exception',
+          operationId,
+          retryable: true,
+          userId,
+          workspaceId,
+        });
+      }
       return {
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         uploaded: false,
+        verificationStatus: failedWrite ? 'failed' : 'pending',
       };
     } finally {
       inFlightByKey.delete(key);

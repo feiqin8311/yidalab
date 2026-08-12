@@ -1882,6 +1882,7 @@ export class MessageModel {
   }): Promise<
     Array<{
       apiName: string | null;
+      arguments: string | null;
       content: string | null;
       identifier: string | null;
       metadata: unknown;
@@ -1893,6 +1894,7 @@ export class MessageModel {
     const rows = await this.db
       .select({
         apiName: messagePlugins.apiName,
+        arguments: messagePlugins.arguments,
         content: messages.content,
         identifier: messagePlugins.identifier,
         metadata: messages.metadata,

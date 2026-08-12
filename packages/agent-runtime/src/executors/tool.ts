@@ -299,6 +299,7 @@ const updateExistingToolMessage = async ({
         toolExecutionTimeMs: result.executionTime ?? 0,
         ...(tool?.identifier === 'lobe-dingpan'
           ? {
+              apiName: tool.apiName,
               deliveryType: 'dingpan-report',
               source: 'model-tool',
             }

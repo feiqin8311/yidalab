@@ -27,11 +27,64 @@ const du = (rel: string): string => {
   const p = path.join(root, rel);
   if (!fs.existsSync(p)) return 'missing';
   try {
-    return execSync(`du -sh ${JSON.stringify(p)}`, { encoding: 'utf8' }).trim().split('\t')[0];
+    return execSync(`du -sh ${JSON.stringify(p)}`, { encoding: 'utf8' })
+      .trim()
+      .split('\t')[0];
   } catch {
     return 'n/a';
   }
 };
+
+/** Parse `du -sh` human sizes (K/M/G) into MiB. */
+const parseDuToMiB = (raw: string): number | null => {
+  if (!raw || raw === 'missing' || raw === 'n/a') return null;
+  const m = /^([\d.]+)\s*([KMGT])?/i.exec(raw.trim());
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const unit = (m[2] || 'B').toUpperCase();
+  const mult =
+    unit === 'G'
+      ? 1024
+      : unit === 'M'
+        ? 1
+        : unit === 'K'
+          ? 1 / 1024
+          : unit === 'T'
+            ? 1024 * 1024
+            : 1 / (1024 * 1024);
+  return n * mult;
+};
+
+/**
+ * Hard budgets (MiB). Override via env:
+ *   YIDALAB_BUDGET_SPA_MIB / YIDALAB_BUDGET_STANDALONE_MIB / YIDALAB_BUDGET_STATIC_MIB
+ * Set to 0 to disable a budget.
+ */
+const budgetMiB = (envKey: string, fallback: number): number => {
+  const raw = process.env[envKey];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const BUDGETS: { key: string; path: string; maxMiB: number }[] = [
+  {
+    key: 'public/_spa',
+    maxMiB: budgetMiB('YIDALAB_BUDGET_SPA_MIB', profile === 'internal' ? 80 : 120),
+    path: 'public/_spa',
+  },
+  {
+    key: '.next/standalone',
+    maxMiB: budgetMiB('YIDALAB_BUDGET_STANDALONE_MIB', profile === 'internal' ? 900 : 1400),
+    path: '.next/standalone',
+  },
+  {
+    key: '.next/static',
+    maxMiB: budgetMiB('YIDALAB_BUDGET_STATIC_MIB', profile === 'internal' ? 120 : 200),
+    path: '.next/static',
+  },
+];
 
 const rows: [string, string][] = [
   ['profile', profile],
@@ -55,6 +108,25 @@ const fail = (msg: string) => {
   failed = true;
 };
 const ok = (msg: string) => console.log(`assert ok: ${msg}`);
+
+// Hard size budgets (skip when artifact missing — pre-build metrics run)
+for (const b of BUDGETS) {
+  if (b.maxMiB <= 0) {
+    ok(`budget disabled: ${b.key}`);
+    continue;
+  }
+  const raw = du(b.path);
+  const mib = parseDuToMiB(raw);
+  if (mib === null) {
+    ok(`budget skip (missing): ${b.key}`);
+    continue;
+  }
+  if (mib > b.maxMiB) {
+    fail(`${b.key} ${raw} (~${mib.toFixed(1)} MiB) exceeds budget ${b.maxMiB} MiB`);
+  } else {
+    ok(`budget ${b.key}: ${raw} ≤ ${b.maxMiB} MiB`);
+  }
+}
 
 const assertEntry = (e: ProfileEntry, expected: 'internal' | 'full') => {
   const body = fs.readFileSync(path.join(root, e.entry), 'utf8');
