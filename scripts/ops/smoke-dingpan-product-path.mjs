@@ -221,18 +221,23 @@ const main = async () => {
 
     // Gate 1: company credential
     const company = await client.query(
-      `SELECT user_id, encrypted FROM user_credentials WHERE key = 'dingtalk' LIMIT 5`,
+      `SELECT user_id, values_encrypted FROM user_credentials
+       WHERE key = 'dingtalk' AND values_encrypted IS NOT NULL LIMIT 5`,
     );
     assert(company.rowCount > 0, 'no company dingtalk credential');
     let appKey;
     let appSecret;
     let operatorId;
     for (const row of company.rows) {
-      const plain = await decrypt(aesKey, row.encrypted);
-      if (plain.appKey && plain.appSecret) {
-        appKey = plain.appKey;
-        appSecret = plain.appSecret;
-        operatorId = plain.operatorId || plain.unionId;
+      const plain = await decrypt(aesKey, row.values_encrypted);
+      const k = plain.appKey || plain.app_key || plain.DINGTALK_APP_KEY || plain.dingtalkAppKey;
+      const s =
+        plain.appSecret || plain.app_secret || plain.DINGTALK_APP_SECRET || plain.dingtalkAppSecret;
+      if (k && s) {
+        appKey = String(k).trim();
+        appSecret = String(s).trim();
+        operatorId =
+          plain.operatorId || plain.unionId || plain.DINGTALK_UNION_ID || plain.dingtalkUnionId;
         break;
       }
     }
@@ -242,10 +247,10 @@ const main = async () => {
 
     // Gate 2: personal folder + product upload path
     let personalQ = `
-      SELECT uc.user_id, uc.encrypted, u.username, u.first_name, u.last_name
+      SELECT uc.user_id, uc.values_encrypted, u.username, u.first_name, u.last_name
       FROM user_credentials uc
       LEFT JOIN users u ON u.id = uc.user_id
-      WHERE uc.key = 'dingtalk-dingpan'
+      WHERE uc.key = 'dingtalk-dingpan' AND uc.values_encrypted IS NOT NULL
       ORDER BY uc.updated_at DESC NULLS LAST
       LIMIT 20
     `;
@@ -254,8 +259,14 @@ const main = async () => {
 
     let chosen = null;
     for (const row of personal.rows) {
-      const plain = await decrypt(aesKey, row.encrypted);
-      const folderLink = plain.folderLink || plain.folder_link || plain.link;
+      const plain = await decrypt(aesKey, row.values_encrypted);
+      const folderLink =
+        plain.folderLink ||
+        plain.folder_link ||
+        plain.link ||
+        plain.DINGTALK_FOLDER_LINK ||
+        plain.DINGTALK_DINGPAN_FOLDER_LINK ||
+        plain.DINGPAN_FOLDER_LINK;
       if (!folderLink) continue;
       const name =
         row.username || [row.first_name, row.last_name].filter(Boolean).join('') || row.user_id;
