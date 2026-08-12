@@ -5,10 +5,13 @@ import {
   getMemoryDailyCronConfig,
   getTodayConversationWindow,
   isInDailyFireWindow,
+  isMemoryDailyCronEnabled,
   stopMemoryDailyCron,
 } from './dailyCron';
 
 describe('memory dailyCron helpers', () => {
+  const originalEnabled = process.env.MEMORY_DAILY_ANALYSIS_ENABLED;
+
   beforeEach(() => {
     vi.useFakeTimers();
     process.env.MEMORY_DAILY_ANALYSIS_TZ = 'Asia/Shanghai';
@@ -22,6 +25,16 @@ describe('memory dailyCron helpers', () => {
     delete process.env.MEMORY_DAILY_ANALYSIS_TZ;
     delete process.env.MEMORY_DAILY_ANALYSIS_HOUR;
     delete process.env.MEMORY_DAILY_ANALYSIS_MINUTE;
+    if (originalEnabled === undefined) delete process.env.MEMORY_DAILY_ANALYSIS_ENABLED;
+    else process.env.MEMORY_DAILY_ANALYSIS_ENABLED = originalEnabled;
+  });
+
+  it('is opt-in only (default off)', () => {
+    delete process.env.MEMORY_DAILY_ANALYSIS_ENABLED;
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    expect(isMemoryDailyCronEnabled()).toBe(false);
+    process.env.MEMORY_DAILY_ANALYSIS_ENABLED = '1';
+    expect(isMemoryDailyCronEnabled()).toBe(true);
   });
 
   it('reads config defaults for 18:30 Asia/Shanghai', () => {

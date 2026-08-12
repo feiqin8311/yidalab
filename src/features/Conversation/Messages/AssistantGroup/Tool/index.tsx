@@ -7,6 +7,7 @@ import isEqual from 'fast-deep-equal';
 import { memo, useEffect, useState } from 'react';
 
 import SafeBoundary from '@/components/ErrorBoundary';
+import { useBuiltinToolRegistryVersion } from '@/hooks/useBuiltinToolRegistryVersion';
 import dynamic from '@/libs/next/dynamic';
 import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/slices/operation/selectors';
@@ -34,6 +35,9 @@ export interface GroupToolProps {
 }
 
 const Tool = memo<GroupToolProps>(({ assistantMessageId, disableEditing, id }) => {
+  // Lazy tool surfaces register post-paint; re-render whole tool tree when registry bumps.
+  useBuiltinToolRegistryVersion();
+
   // Subscribe directly to this tool's data so a streaming chunk that only
   // updates a sibling tool does not push new props through this subtree.
   const tool = useConversationStore(dataSelectors.getToolInBlock(assistantMessageId, id), isEqual);

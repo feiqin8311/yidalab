@@ -71,7 +71,10 @@ export async function planDueAutomationRuns(
     if (trigger === 'schedule' && (task.overduePolicy ?? 'latest') === 'skip') {
       const next = computeNextScheduleRunAt(task, now);
       if (mode === 'shadow') {
+        // shadow = plan/metrics only — never mutate next_run_at (legacy owns it)
         log('shadow skip-advance task=%s next=%s', task.id, next?.toISOString());
+        skipped += 1;
+        continue;
       }
       await model.setTaskNextRunAt(task.id, next);
       skipped += 1;
@@ -79,6 +82,10 @@ export async function planDueAutomationRuns(
     }
 
     if (fires.length === 0) {
+      if (mode === 'shadow') {
+        skipped += 1;
+        continue;
+      }
       const next = computeFollowingNextRun(task, now);
       await model.setTaskNextRunAt(task.id, next);
       skipped += 1;
@@ -95,9 +102,8 @@ export async function planDueAutomationRuns(
           f.missedCount,
         );
       }
-      const last = fires.at(-1)!.plannedAt;
-      const next = computeFollowingNextRun(task, last);
-      if (next) await model.setTaskNextRunAt(task.id, next);
+      // Do not advance next_run_at in shadow — dual-scan with legacy must not
+      // share mutable schedule state.
       skipped += fires.length;
       continue;
     }

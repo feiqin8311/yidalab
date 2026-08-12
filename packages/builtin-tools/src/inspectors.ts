@@ -1,5 +1,7 @@
 import type { BuiltinInspector } from '@lobechat/types';
 
+import { bumpBuiltinToolRegistryVersion } from './registryVersion';
+
 /**
  * Builtin tools inspector registry
  * Organized by toolset (identifier) -> API name
@@ -16,6 +18,7 @@ export const registerBuiltinInspectors = (
     const current = builtinToolInspectors[identifier];
     builtinToolInspectors[identifier] = current ? Object.assign(current, inspectors) : inspectors;
   }
+  bumpBuiltinToolRegistryVersion();
 };
 
 export interface BuiltinInspectorRegistryEntry {

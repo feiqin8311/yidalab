@@ -80,9 +80,13 @@ function normalizePaths(paths: string[]) {
 }
 
 async function readDesktopRouterSources() {
+  // Compare the full profile sources (entries are thin re-exports from applyBuildProfile).
   return Promise.all([
-    readFile(path.join(process.cwd(), 'src/spa/router/desktopRouter.config.tsx'), 'utf8'),
-    readFile(path.join(process.cwd(), 'src/spa/router/desktopRouter.config.desktop.tsx'), 'utf8'),
+    readFile(path.join(process.cwd(), 'src/spa/router/desktopRouter.config.full.tsx'), 'utf8'),
+    readFile(
+      path.join(process.cwd(), 'src/spa/router/desktopRouter.config.desktop.full.tsx'),
+      'utf8',
+    ),
   ]);
 }
 

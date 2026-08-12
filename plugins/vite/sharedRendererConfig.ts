@@ -244,6 +244,11 @@ export function sharedRendererDefine(options: { isElectron: boolean; isMobile: b
     '__MOBILE__': JSON.stringify(options.isMobile),
     '__REACT_SCAN__': process.env.REACT_SCAN === 'true' ? 'true' : 'false',
     '__TEST__': 'false',
+    '__YIDALAB_BUILD_PROFILE__': JSON.stringify(
+      (process.env.YIDALAB_BUILD_PROFILE || 'full').toLowerCase().trim() === 'internal'
+        ? 'internal'
+        : 'full',
+    ),
     ...nextPublicDefine,
     // Keep a safe fallback so generic `process.env` access won't crash in browser runtime.
     'process.env': '{}',

@@ -5,11 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   registerBuiltinToolExecutors: vi.fn(),
+  registerLazyBuiltinToolSurfacesAfterPaint: vi.fn(),
   startConnectorInitialization: vi.fn(),
 }));
 
 vi.mock('@/store/tool/slices/builtin/executors', () => ({
   registerBuiltinToolExecutors: mocks.registerBuiltinToolExecutors,
+}));
+
+vi.mock('./toolSurfaces', () => ({
+  registerLazyBuiltinToolSurfacesAfterPaint: mocks.registerLazyBuiltinToolSurfacesAfterPaint,
 }));
 
 vi.mock('./connectors', () => ({
@@ -48,6 +53,7 @@ describe('startPostRenderInitialization', () => {
     await vi.runAllTimersAsync();
 
     expect(mocks.registerBuiltinToolExecutors).toHaveBeenCalledTimes(1);
+    expect(mocks.registerLazyBuiltinToolSurfacesAfterPaint).toHaveBeenCalledTimes(1);
     expect(mocks.startConnectorInitialization).toHaveBeenCalledTimes(1);
   });
 
@@ -59,6 +65,7 @@ describe('startPostRenderInitialization', () => {
     await vi.runAllTimersAsync();
 
     expect(mocks.registerBuiltinToolExecutors).toHaveBeenCalledTimes(1);
+    expect(mocks.registerLazyBuiltinToolSurfacesAfterPaint).toHaveBeenCalledTimes(1);
     expect(mocks.startConnectorInitialization).toHaveBeenCalledTimes(1);
   });
 });

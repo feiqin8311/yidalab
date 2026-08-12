@@ -1,5 +1,6 @@
 export * from './agentDocument';
 export * from './bot';
+export * from './buildProfile';
 export * from './composio';
 export * from './currency';
 export * from './desktop';

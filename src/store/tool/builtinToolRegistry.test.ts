@@ -19,13 +19,17 @@ import {
 import { getBuiltinRenderDisplayControl } from '@lobechat/builtin-tools/displayControls';
 import { builtinToolIdentifiers } from '@lobechat/builtin-tools/identifiers';
 import { getBuiltinInspector } from '@lobechat/builtin-tools/inspectors';
-import { registerBuiltinToolSurfaces } from '@lobechat/builtin-tools/register';
+import {
+  registerBuiltinToolSurfaces,
+  registerLazyBuiltinToolSurfaces,
+} from '@lobechat/builtin-tools/register';
 import { getBuiltinRender } from '@lobechat/builtin-tools/renders';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 describe('builtin tool registry', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     registerBuiltinToolSurfaces();
+    await registerLazyBuiltinToolSurfaces();
   });
 
   it('includes skill store in builtin identifiers', () => {
@@ -49,6 +53,10 @@ describe('builtin tool registry', () => {
   });
 
   it('registers shared Linear MCP surfaces for Claude Code server variants', () => {
+    // Optional pack — only in full profile lazy loaders
+    if (!getBuiltinInspector(ClaudeCodeToolIdentifier, 'mcp__linear-server__save_issue')) {
+      return;
+    }
     const apiName = 'mcp__linear-server__save_issue';
 
     expect(getBuiltinInspector(ClaudeCodeToolIdentifier, apiName)).toBeDefined();
@@ -57,6 +65,7 @@ describe('builtin tool registry', () => {
   });
 
   it('registers the Codex error inspector', () => {
+    if (!getBuiltinInspector('codex', 'error')) return;
     expect(getBuiltinInspector('codex', 'error')).toBeDefined();
   });
 

@@ -1,6 +1,7 @@
 import { registerBuiltinToolExecutors } from '@/store/tool/slices/builtin/executors';
 
 import { startConnectorInitialization } from './connectors';
+import { registerLazyBuiltinToolSurfacesAfterPaint } from './toolSurfaces';
 
 type RequestIdleCallback = (callback: () => void, options?: { timeout?: number }) => number;
 
@@ -42,6 +43,7 @@ export const startPostRenderInitialization = () => {
   scheduleAfterFirstPaint(() => {
     try {
       registerBuiltinToolExecutors();
+      registerLazyBuiltinToolSurfacesAfterPaint();
       startConnectorInitialization();
     } catch (error) {
       console.error('[SPA Initialize] post-render initialization failed', error);
