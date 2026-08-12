@@ -496,9 +496,13 @@ describe('MessageContentProcessor', () => {
       expect(content[0].text).toContain(
         '<image ref="msg_1cs5ql.image_1" name="test.png" url="http://example.com/image.jpg"></image>',
       );
-      expect(content[0].text).toContain(
-        '<file id="file1" name="test.txt" type="text/plain" size="100" url="http://example.com/test.txt"></file>',
-      );
+      // Chat attachments are preview-only: tool pointer instead of raw URL body
+      expect(content[0].text).toContain('id="file1"');
+      expect(content[0].text).toContain('name="test.txt"');
+      expect(content[0].text).toContain('type="text/plain"');
+      expect(content[0].text).toContain('size="100"');
+      expect(content[0].text).toContain('availableTool="lobe-files/readAttachment"');
+      expect(content[0].text).toContain('fileId=file1');
     });
 
     it('should omit file URLs when includeFileUrl is disabled', async () => {
@@ -533,10 +537,11 @@ describe('MessageContentProcessor', () => {
       const result = await processor.process(createContext(messages));
 
       const content = result.messages[0].content as any[];
-      expect(content[0].text).toContain(
-        '<file id="file1" name="test.txt" type="text/plain" size="100"></file>',
-      );
-      expect(content[0].text).not.toContain('http://example.com/test.txt');
+      expect(content[0].text).toContain('id="file1"');
+      expect(content[0].text).toContain('name="test.txt"');
+      expect(content[0].text).toContain('availableTool="lobe-files/readAttachment"');
+      // includeFileUrl=false must not surface the attachment URL as a fetchable link
+      expect(content[0].text).not.toContain('url="http://example.com/test.txt"');
     });
 
     it('should not add file context when disabled', async () => {

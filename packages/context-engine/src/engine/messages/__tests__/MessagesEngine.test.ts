@@ -437,7 +437,7 @@ describe('MessagesEngine', () => {
       expect(result).toBeDefined();
     });
 
-    it('should default to enabled with file URLs', async () => {
+    it('should default to enabled with tool-based file context', async () => {
       const params = createBasicParams({
         messages: [
           {
@@ -464,7 +464,10 @@ describe('MessagesEngine', () => {
       const userMessage = result.messages.find((message) => message.role === 'user');
       const content = userMessage?.content as any[];
 
-      expect(content[0].text).toContain('url="https://files.example.com/test.txt"');
+      // Attachments are tool-mediated (readAttachment), not raw URL dumps
+      expect(content[0].text).toContain('id="file1"');
+      expect(content[0].text).toContain('availableTool="lobe-files/readAttachment"');
+      expect(content[0].text).toContain('fileId=file1');
     });
   });
 
