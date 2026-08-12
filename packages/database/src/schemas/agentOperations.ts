@@ -1,5 +1,9 @@
-import type { VerifyCheckItem } from '@lobechat/types';
-import { verifyRunStatuses } from '@lobechat/types';
+import type {
+  OperationOutcomeStatus,
+  OperationOutcomeType,
+  VerifyCheckItem,
+} from '@lobechat/types';
+import { OPERATION_OUTCOME_STATUSES, verifyRunStatuses } from '@lobechat/types';
 import { boolean, index, integer, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { amountNumeric, timestamps, timestamptz } from './_helpers';
@@ -93,6 +97,20 @@ export const agentOperations = pgTable(
     /** @deprecated read from verify_runs.plan_confirmed_at */
     verifyPlanConfirmedAt: timestamptz('verify_plan_confirmed_at'),
 
+    /**
+     * Trusted delivery outcome (not model prose).
+     * Model "done" never implies verified — only after artifact persist + check.
+     */
+    outcomeStatus: text('outcome_status', {
+      enum: OPERATION_OUTCOME_STATUSES,
+    }).$type<OperationOutcomeStatus>(),
+    outcomeType: text('outcome_type').$type<OperationOutcomeType>(),
+    outcomePreviewUrl: text('outcome_preview_url'),
+    outcomeArtifactId: text('outcome_artifact_id'),
+    outcomeErrorCode: text('outcome_error_code'),
+    outcomeRetryable: boolean('outcome_retryable'),
+    outcomeVerifiedAt: timestamptz('outcome_verified_at'),
+
     startedAt: timestamptz('started_at'),
     completedAt: timestamptz('completed_at'),
 
@@ -165,6 +183,7 @@ export const agentOperations = pgTable(
     index('agent_operations_chat_group_id_idx').on(t.chatGroupId),
     index('agent_operations_parent_operation_id_idx').on(t.parentOperationId),
     index('agent_operations_status_idx').on(t.status),
+    index('agent_operations_outcome_status_idx').on(t.outcomeStatus),
     index('agent_operations_user_id_created_at_idx').on(t.userId, t.createdAt),
     index('agent_operations_metadata_idx').using('gin', t.metadata),
     uniqueIndex('agent_operations_idempotency_key_uidx').on(t.idempotencyKey),

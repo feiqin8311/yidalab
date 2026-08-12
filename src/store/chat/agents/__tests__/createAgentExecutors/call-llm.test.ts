@@ -1737,22 +1737,24 @@ describe('call_llm executor', () => {
         },
       );
 
-      // When
-      await executeWithMockContext({
-        executor: 'call_llm',
-        instruction,
-        state,
-        mockStore,
-        context,
-      });
+      // When — stream terminal error fails the step (no silent llm_result success)
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/prohibited content/i);
 
-      // Then
+      // Then — partial content + error settled
       expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
 
-      const contentCall = vi.mocked(mockStore.optimisticUpdateMessageContent).mock.calls.at(-1);
-      const finalContent = contentCall?.[1] as string;
-
-      expect(finalContent).toBe('Partial output');
+      const contentWrites = vi
+        .mocked(mockStore.optimisticUpdateMessageContent)
+        .mock.calls.map((c) => c[1]);
+      expect(contentWrites).toContain('Partial output');
     });
   });
 
@@ -1771,7 +1773,7 @@ describe('call_llm executor', () => {
       vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
         async (params: any) => {
           if (params.onErrorHandle) {
-            params.onErrorHandle({
+            await params.onErrorHandle({
               body: {
                 traceId: backendTraceId,
               },
@@ -1787,13 +1789,15 @@ describe('call_llm executor', () => {
       );
 
       // When
-      await executeWithMockContext({
-        executor: 'call_llm',
-        instruction,
-        state,
-        mockStore,
-        context,
-      });
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/Provider error/);
 
       // Then
       expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
@@ -1830,7 +1834,7 @@ describe('call_llm executor', () => {
       vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
         async (params: any) => {
           if (params.onErrorHandle) {
-            params.onErrorHandle({
+            await params.onErrorHandle({
               body: {
                 traceId: 'backend-trace-id',
               },
@@ -1846,19 +1850,226 @@ describe('call_llm executor', () => {
       );
 
       // When
-      await executeWithMockContext({
-        executor: 'call_llm',
-        instruction,
-        state,
-        mockStore,
-        context,
-      });
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/Provider error/);
 
       // Then - local traceId should take precedence
       expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
       const errorCall = vi.mocked(mockStore.optimisticUpdateMessageError).mock.calls[0];
       const errorArg = errorCall[1] as any;
       expect(errorArg.body.traceId).toBe(localTraceId);
+    });
+  });
+
+  describe('Terminal settle for LOADING_FLAT orphans', () => {
+    it('clears LOADING_FLAT when onErrorHandle fires without partial content and fails step', async () => {
+      const mockStore = createMockStore();
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
+        async (params: any) => {
+          if (params.onErrorHandle) {
+            await params.onErrorHandle({
+              message: '429 rate limited',
+              type: 'ProviderBizError',
+            });
+          }
+          // No onFinish — matches fetchSSE abort/error without response.ok
+        },
+      );
+
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/429 rate limited/);
+
+      expect(mockStore.optimisticUpdateMessageContent).toHaveBeenCalledWith(
+        expect.any(String),
+        '',
+        undefined,
+        expect.objectContaining({ operationId: context.operationId }),
+      );
+      expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
+    });
+
+    it('persists partial stream text + error without onFinish', async () => {
+      const mockStore = createMockStore();
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
+        async (params: any) => {
+          if (params.onMessageHandle) {
+            await params.onMessageHandle({ type: 'text', text: 'Partial output' });
+          }
+          if (params.onErrorHandle) {
+            await params.onErrorHandle({
+              message: 'stream broken',
+              type: 'ProviderBizError',
+            });
+          }
+          // No onFinish — real failure mode
+        },
+      );
+
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/stream broken/);
+
+      // Must write partial content (not leave LOADING_FLAT in DB).
+      expect(mockStore.optimisticUpdateMessageContent).toHaveBeenCalledWith(
+        expect.any(String),
+        'Partial output',
+        undefined,
+        expect.objectContaining({ operationId: context.operationId }),
+      );
+      expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
+    });
+
+    it('keeps partial stream text when onError + onFinish both fire (does not wipe)', async () => {
+      const mockStore = createMockStore();
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
+        async (params: any) => {
+          if (params.onMessageHandle) {
+            await params.onMessageHandle({ type: 'text', text: 'Partial output' });
+          }
+          if (params.onErrorHandle) {
+            await params.onErrorHandle({
+              body: { provider: 'google', context: { finishReason: 'PROHIBITED_CONTENT' } },
+              message: 'blocked',
+              type: 'ProviderBizError',
+            });
+          }
+          if (params.onFinish) {
+            await params.onFinish('Partial output', { type: 'error' });
+          }
+        },
+      );
+
+      // Stream terminal error fails the step even if onFinish was also called.
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
+      // Partial content was written on error settle.
+      const contentWrites = vi
+        .mocked(mockStore.optimisticUpdateMessageContent)
+        .mock.calls.map((c) => c[1]);
+      expect(contentWrites).toContain('Partial output');
+    });
+
+    it('throws ModelEmptyError after empty completion (no content/tools)', async () => {
+      const mockStore = createMockStore();
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
+        async (params: any) => {
+          if (params.onFinish) {
+            await params.onFinish('', {
+              type: 'done',
+              usage: { totalOutputTokens: 0 },
+            });
+          }
+        },
+      );
+
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/empty completion/i);
+
+      expect(mockStore.optimisticUpdateMessageError).toHaveBeenCalled();
+    });
+
+    it('uses optimisticUpdateMessageTerminal when available (atomic content+error)', async () => {
+      const mockStore = createMockStore();
+      const terminal = vi.fn().mockResolvedValue(undefined);
+      (mockStore as any).optimisticUpdateMessageTerminal = terminal;
+      const context = createTestContext();
+      const instruction = createCallLLMInstruction();
+      const state = createInitialState();
+
+      mockStore.dbMessagesMap[context.messageKey] = [];
+
+      vi.mocked(chatService.createAssistantMessageStream).mockImplementation(
+        async (params: any) => {
+          if (params.onMessageHandle) {
+            await params.onMessageHandle({ type: 'text', text: 'Hi' });
+          }
+          if (params.onErrorHandle) {
+            await params.onErrorHandle({
+              message: 'boom',
+              type: 'ProviderBizError',
+            });
+          }
+        },
+      );
+
+      await expect(
+        executeWithMockContext({
+          executor: 'call_llm',
+          instruction,
+          state,
+          mockStore,
+          context,
+        }),
+      ).rejects.toThrow(/boom/);
+
+      expect(terminal).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          content: 'Hi',
+          error: expect.objectContaining({ message: 'boom' }),
+        }),
+        expect.objectContaining({ operationId: context.operationId }),
+      );
     });
   });
 });

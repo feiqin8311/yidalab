@@ -717,5 +717,56 @@ describe('fetchSSE', () => {
         type: 'StreamChunkError',
       });
     });
+
+    it('first error wins: later errors do not call onErrorHandle again', async () => {
+      const mockOnErrorHandle = vi.fn().mockResolvedValue(undefined);
+      const first: ChatMessageError = {
+        message: 'first',
+        type: 'ProviderBizError',
+      };
+      const second: ChatMessageError = {
+        message: 'second',
+        type: 'StreamChunkError',
+      };
+
+      (fetchEventSource as any).mockImplementationOnce(
+        (url: string, options: FetchEventSourceInit) => {
+          options.onerror!(first);
+          options.onerror!(second);
+          options.onmessage!({
+            event: 'error',
+            data: JSON.stringify(second),
+          } as any);
+        },
+      );
+
+      await fetchSSE('/', { onErrorHandle: mockOnErrorHandle });
+
+      expect(mockOnErrorHandle).toHaveBeenCalledTimes(1);
+      expect(mockOnErrorHandle).toHaveBeenCalledWith(first);
+    });
+
+    it('awaits async onErrorHandle before returning', async () => {
+      let settled = false;
+      const mockOnErrorHandle = vi.fn(async () => {
+        await sleep(30);
+        settled = true;
+      });
+      const mockError: ChatMessageError = {
+        message: 'async settle',
+        type: 'ProviderBizError',
+      };
+
+      (fetchEventSource as any).mockImplementationOnce(
+        (url: string, options: FetchEventSourceInit) => {
+          options.onerror!(mockError);
+        },
+      );
+
+      await fetchSSE('/', { onErrorHandle: mockOnErrorHandle });
+
+      expect(settled).toBe(true);
+      expect(mockOnErrorHandle).toHaveBeenCalledWith(mockError);
+    });
   });
 });

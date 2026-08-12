@@ -103,7 +103,7 @@ export interface FetchSSERequestContext {
 export interface FetchSSEOptions {
   fetcher?: typeof fetch;
   onAbort?: (text: string) => Promise<void>;
-  onErrorHandle?: (error: ChatMessageError) => void;
+  onErrorHandle?: (error: ChatMessageError) => void | Promise<void>;
   onFinish?: OnFinishHandler;
   onMessageHandle?: (
     chunk:
@@ -251,6 +251,22 @@ export const fetchSSE = async (url: string, options: RequestInit & FetchSSEOptio
 
   let finishedType: SSEFinishType = 'done';
   let response!: Response;
+  /**
+   * Await async onErrorHandle so terminal settle completes before fetchSSE returns.
+   * First error wins — later parse/SSE errors must not overwrite the settled partial/error.
+   */
+  let errorSettled = false;
+  let pendingErrorHandle: Promise<void> | null = null;
+  const runErrorHandle = (error: ChatMessageError) => {
+    if (errorSettled) return;
+    errorSettled = true;
+    const result = options.onErrorHandle?.(error);
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      pendingErrorHandle = (result as Promise<void>).catch((err) => {
+        console.error('[fetchSSE] onErrorHandle failed:', err);
+      });
+    }
+  };
   const fetchStartTime = Date.now();
 
   const { text, speed: smoothingSpeed } = standardizeAnimationStyle(
@@ -329,19 +345,18 @@ export const fetchSSE = async (url: string, options: RequestInit & FetchSSEOptio
           networkStatus,
         };
 
-        options.onErrorHandle?.(
-          error.type
-            ? error
-            : {
-                body: {
-                  message: error.message,
-                  name: error.name,
-                  ...contextBody,
-                },
+        const chatError = error.type
+          ? error
+          : {
+              body: {
                 message: error.message,
-                type: ChatErrorType.UnknownChatFetchError,
+                name: error.name,
+                ...contextBody,
               },
-        );
+              message: error.message,
+              type: ChatErrorType.UnknownChatFetchError,
+            };
+        runErrorHandle(chatError);
         return;
       }
     },
@@ -352,7 +367,7 @@ export const fetchSSE = async (url: string, options: RequestInit & FetchSSEOptio
         data = JSON.parse(ev.data);
       } catch (e) {
         console.warn('parse error:', e);
-        options.onErrorHandle?.({
+        runErrorHandle({
           body: {
             context: {
               chunk: ev.data,
@@ -371,7 +386,7 @@ export const fetchSSE = async (url: string, options: RequestInit & FetchSSEOptio
       switch (ev.event) {
         case 'error': {
           finishedType = 'error';
-          options.onErrorHandle?.(data);
+          runErrorHandle(data);
           break;
         }
 
@@ -556,6 +571,12 @@ export const fetchSSE = async (url: string, options: RequestInit & FetchSSEOptio
         usage,
       });
     }
+  }
+
+  // Ensure terminal settle from async onErrorHandle completes before return
+  // (otherwise call_llm may race and treat the stream as success).
+  if (pendingErrorHandle) {
+    await pendingErrorHandle;
   }
 
   return response;

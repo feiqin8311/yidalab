@@ -19,12 +19,14 @@ import type {
 } from '@lobechat/agent-runtime';
 import { UsageCounter } from '@lobechat/agent-runtime';
 import { countContextTokens, type ToolsEngine } from '@lobechat/context-engine';
+import { isEmptyModelCompletion, ModelEmptyError } from '@lobechat/model-runtime';
 import {
   chainCompressContext,
   finalizeCompressionOutput,
   resolveMaxSummaryTokens,
 } from '@lobechat/prompts';
 import {
+  AgentRuntimeErrorType,
   type ChatMessageError,
   type ChatToolPayload,
   type CreateMessageParams,
@@ -130,6 +132,66 @@ const localizeError = (error: ChatMessageError): ChatMessageError => {
   }
 
   return error;
+};
+
+const isLoadingPlaceholder = (content: string | undefined | null): boolean =>
+  !content || content === LOADING_FLAT;
+
+/**
+ * Terminal failure settle: always persist content+error.
+ * - Still LOADING_FLAT / empty → content ''
+ * - Partial stream text → persist that content (in-memory chunks may never have hit DB)
+ * Prefer optimisticUpdateMessageTerminal for one atomic write.
+ */
+const settleAssistantOnStreamError = async (params: {
+  contentHint?: string;
+  error: ChatMessageError;
+  get: () => ChatStore;
+  messageId: string;
+  messageKey: string;
+  operationId: string;
+}): Promise<void> => {
+  const store = params.get();
+  const fromDb = store.dbMessagesMap[params.messageKey]?.find((m) => m.id === params.messageId);
+  const fromUi = store.messagesMap?.[params.messageKey]?.find((m) => m.id === params.messageId);
+  // Prefer stream buffer (contentHint) so partial chunks are not lost when only
+  // in-memory dispatch ran and onFinish never persisted.
+  const current = params.contentHint ?? fromDb?.content ?? fromUi?.content;
+  const nextContent = isLoadingPlaceholder(current) ? '' : String(current ?? '');
+
+  if (typeof store.optimisticUpdateMessageTerminal === 'function') {
+    await store.optimisticUpdateMessageTerminal(
+      params.messageId,
+      { content: nextContent, error: params.error },
+      { operationId: params.operationId },
+    );
+    return;
+  }
+
+  await store.optimisticUpdateMessageContent(params.messageId, nextContent, undefined, {
+    operationId: params.operationId,
+  });
+  await store.optimisticUpdateMessageError(params.messageId, params.error, {
+    operationId: params.operationId,
+  });
+};
+
+const toChatMessageError = (error: unknown): ChatMessageError => {
+  if (error && typeof error === 'object' && 'type' in error && 'message' in error) {
+    return error as ChatMessageError;
+  }
+  if (error instanceof ModelEmptyError) {
+    return {
+      body: error.diagnostics,
+      message: error.message,
+      type: AgentRuntimeErrorType.ModelEmptyCompletion,
+    };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    message,
+    type: 'UnknownChatError',
+  };
 };
 
 const formatSubAgentBatchResultContent = (
@@ -479,92 +541,130 @@ export const createAgentExecutors = (context: {
 
       const messages = llmPayload.messages.filter((message) => message.id !== assistantMessageId);
 
-      await chatService.createAssistantMessageStream({
-        abortController,
-        params: {
-          agentId: agentId || undefined,
-          groupId,
-          messages,
-          model: llmPayload.model,
-          provider: llmPayload.provider,
-          resolvedAgentConfig,
-          topicId: topicId ?? undefined,
-          ...agentConfigData.params,
-        },
-        initialContext: runtimeContext?.initialContext,
-        metadata: context.metadata,
-        stepContext: runtimeContext?.stepContext,
-        trace: {
-          traceId,
-          topicId: topicId ?? undefined,
-          traceName: TraceNameMap.Conversation,
-        },
-        onErrorHandle: async (error) => {
-          const enrichedError = {
-            ...error,
-            body: {
-              ...error.body,
-              traceId: traceId ?? error.body?.traceId,
-            },
-          };
-          const localizedError = localizeError(enrichedError);
+      /** Set when onErrorHandle settles — must not return llm_result as success. */
+      let streamTerminalError: ChatMessageError | null = null;
 
-          await context.get().optimisticUpdateMessageError(assistantMessageId, localizedError, {
+      try {
+        await chatService.createAssistantMessageStream({
+          abortController,
+          params: {
+            agentId: agentId || undefined,
+            groupId,
+            messages,
+            model: llmPayload.model,
+            provider: llmPayload.provider,
+            resolvedAgentConfig,
+            topicId: topicId ?? undefined,
+            ...agentConfigData.params,
+          },
+          initialContext: runtimeContext?.initialContext,
+          metadata: context.metadata,
+          stepContext: runtimeContext?.stepContext,
+          trace: {
+            traceId,
+            topicId: topicId ?? undefined,
+            traceName: TraceNameMap.Conversation,
+          },
+          onErrorHandle: async (error) => {
+            const enrichedError = {
+              ...error,
+              body: {
+                ...error.body,
+                traceId: traceId ?? error.body?.traceId,
+              },
+            };
+            const localizedError = localizeError(enrichedError);
+            streamTerminalError = localizedError;
+
+            // Persist partial stream buffer + error (never leave LOADING_FLAT in DB).
+            await settleAssistantOnStreamError({
+              contentHint: handler.getOutput() || undefined,
+              error: localizedError,
+              get: context.get,
+              messageId: assistantMessageId,
+              messageKey: context.messageKey,
+              operationId: context.operationId,
+            });
+          },
+          onFinish: async (
+            _content,
+            { traceId, observationId, toolCalls, reasoning, grounding, usage, speed, type },
+          ) => {
+            void _content;
+
+            // Stream already failed — do not overwrite settled error with success content.
+            if (streamTerminalError) return;
+
+            if (traceId) {
+              messageService.updateMessage(
+                assistantMessageId,
+                { traceId, observationId: observationId ?? undefined },
+                { agentId, groupId, topicId },
+              );
+            }
+
+            const result = await handler.handleFinish({
+              traceId,
+              observationId,
+              toolCalls,
+              reasoning,
+              grounding,
+              usage,
+              speed,
+              type,
+            });
+
+            finalUsage = result.usage;
+            finalToolCalls = result.toolCalls;
+
+            await optimisticUpdateMessageContent(
+              assistantMessageId,
+              result.content,
+              {
+                tools: result.tools,
+                reasoning: result.metadata.reasoning,
+                search: result.metadata.search,
+                imageList: result.metadata.imageList,
+                metadata: {
+                  ...result.metadata.usage,
+                  ...result.metadata.performance,
+                  performance: result.metadata.performance,
+                  usage: result.metadata.usage,
+                  finishType: result.metadata.finishType,
+                  ...(result.metadata.isMultimodal && { isMultimodal: true }),
+                },
+              },
+              { operationId: context.operationId },
+            );
+          },
+          onMessageHandle: async (chunk) => {
+            handler.handleChunk(chunk as StreamChunk);
+          },
+        });
+      } catch (streamError) {
+        // Stream promise rejected (network / provider throw) without onErrorHandle.
+        if (!streamTerminalError) {
+          const localizedError = localizeError(toChatMessageError(streamError));
+          streamTerminalError = localizedError;
+          await settleAssistantOnStreamError({
+            contentHint: handler.getOutput() || undefined,
+            error: localizedError,
+            get: context.get,
+            messageId: assistantMessageId,
+            messageKey: context.messageKey,
             operationId: context.operationId,
           });
-        },
-        onFinish: async (
-          _content,
-          { traceId, observationId, toolCalls, reasoning, grounding, usage, speed, type },
-        ) => {
-          void _content;
+        }
+        throw streamError;
+      }
 
-          if (traceId) {
-            messageService.updateMessage(
-              assistantMessageId,
-              { traceId, observationId: observationId ?? undefined },
-              { agentId, groupId, topicId },
-            );
-          }
-
-          const result = await handler.handleFinish({
-            traceId,
-            observationId,
-            toolCalls,
-            reasoning,
-            grounding,
-            usage,
-            speed,
-            type,
-          });
-
-          finalUsage = result.usage;
-          finalToolCalls = result.toolCalls;
-
-          await optimisticUpdateMessageContent(
-            assistantMessageId,
-            result.content,
-            {
-              tools: result.tools,
-              reasoning: result.metadata.reasoning,
-              search: result.metadata.search,
-              imageList: result.metadata.imageList,
-              metadata: {
-                ...result.metadata.usage,
-                ...result.metadata.performance,
-                performance: result.metadata.performance,
-                usage: result.metadata.usage,
-                finishType: result.metadata.finishType,
-                ...(result.metadata.isMultimodal && { isMultimodal: true }),
-              },
-            },
-            { operationId: context.operationId },
-          );
-        },
-        onMessageHandle: async (chunk) => {
-          handler.handleChunk(chunk as StreamChunk);
-        },
-      });
+      // onErrorHandle path: stream may resolve without throw — still fail the step.
+      if (streamTerminalError) {
+        throw Object.assign(new Error(streamTerminalError.message), {
+          ...streamTerminalError,
+          name: 'StreamTerminalError',
+        });
+      }
 
       const isFunctionCall = handler.getIsFunctionCall();
       const content = handler.getOutput();
@@ -572,6 +672,40 @@ export const createAgentExecutors = (context: {
       const currentStepUsage = finalUsage;
       const tool_calls = finalToolCalls;
       const finishType = handler.getFinishType();
+      const imageCount = handler.getImageCount();
+
+      // Empty completion: only after a successful-looking finish (onFinish ran).
+      // Skip when abort/error/no-finish — those paths already settled or cancelled.
+      // Image-only replies count as non-empty (handler text may be '').
+      if (
+        finishType === 'done' &&
+        isEmptyModelCompletion({
+          content,
+          imageCount,
+          outputTokens: currentStepUsage?.totalOutputTokens,
+          reasoning: handler.getThinkingContent(),
+          toolCallCount: (tools?.length ?? 0) + (tool_calls?.length ?? 0),
+        })
+      ) {
+        const emptyError = new ModelEmptyError(undefined, {
+          contentLength: content.length,
+          imageCount,
+          model: llmPayload.model,
+          outputTokens: currentStepUsage?.totalOutputTokens,
+          provider: llmPayload.provider,
+          reasoningLength: handler.getThinkingContent().length,
+          toolCallCount: (tools?.length ?? 0) + (tool_calls?.length ?? 0),
+        });
+        await settleAssistantOnStreamError({
+          contentHint: content,
+          error: localizeError(toChatMessageError(emptyError)),
+          get: context.get,
+          messageId: assistantMessageId,
+          messageKey: context.messageKey,
+          operationId: context.operationId,
+        });
+        throw emptyError;
+      }
 
       log(`[${sessionLogId}] finish model-runtime calling`);
 

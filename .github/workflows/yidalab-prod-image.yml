@@ -221,23 +221,44 @@ jobs:
             COMPRESS=(gzip -1)
           fi
 
+          # Capture previous running image id for automatic rollback on health fail
+          PREV_ID=$("${SSH[@]}" "${USER}@${HOST}" "
+            docker inspect --format '{{.Image}}' \$(docker compose -f '$DEPLOY_ROOT/docker-compose.yml' ps -q lobe 2>/dev/null | head -1) 2>/dev/null \
+              || docker inspect --format '{{.Image}}' \$(cd '$DEPLOY_ROOT' && docker compose ps -q lobe 2>/dev/null | head -1) 2>/dev/null \
+              || true
+          " || true)
+          echo "previous image id: ${PREV_ID:-none}"
+
           "${SAVE_CMD[@]}" | "${COMPRESS[@]}" | "${SSH[@]}" "${USER}@${HOST}" "
             set -euo pipefail
             gunzip | docker load
             docker tag '$REF' '$LOCAL_TAG'
             cd '$DEPLOY_ROOT'
+            PREV_ID='$PREV_ID'
             # image: only — do not re-build from compose build: context
             docker compose up -d --no-build --force-recreate lobe
             docker compose ps lobe
             docker image inspect '$LOCAL_TAG' --format 'done id={{.Id}} created={{.Created}}'
-            for i in 1 2 3 4 5 6 7 8 9 10; do
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
               code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/ || true)
               echo \"health try \$i: http \$code\"
               case \"\$code\" in 200|301|302|307|308|401|403) exit 0 ;; esac
               sleep 3
             done
-            echo 'warning: health check did not get a ready response (container may still be starting)'
-            exit 0
+            echo '::error::health check exhausted without ready response — deploy failed'
+            docker compose ps lobe || true
+            docker compose logs --tail=80 lobe || true
+            if [[ -n \"\${PREV_ID:-}\" ]]; then
+              echo '::warning::rolling back to previous image id='\"\$PREV_ID\"
+              docker tag \"\$PREV_ID\" '$LOCAL_TAG' || true
+              docker compose up -d --no-build --force-recreate lobe || true
+              sleep 5
+              code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/ || true)
+              echo \"rollback health: http \$code\"
+            else
+              echo '::warning::no previous image id — cannot auto-rollback'
+            fi
+            exit 1
           "
 
       - name: Summary

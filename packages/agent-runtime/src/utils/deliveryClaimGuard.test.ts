@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDingpanDeliveryClaimGuard,
   extractDingpanUploadOutcomes,
+  isTrustedDingpanPreviewUrl,
   normalizeEmptyToolContent,
+  parseTrustedDingpanPreviewUrl,
 } from './deliveryClaimGuard';
 
 describe('normalizeEmptyToolContent', () => {
@@ -14,6 +16,30 @@ describe('normalizeEmptyToolContent', () => {
   it('synthesizes failure JSON for empty content', () => {
     const out = JSON.parse(normalizeEmptyToolContent('', { message: 'timeout' }));
     expect(out).toMatchObject({ success: false, error: 'timeout', synthetic: true });
+  });
+});
+
+describe('parseTrustedDingpanPreviewUrl', () => {
+  const good =
+    'https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=1&fileId=2&type=file';
+
+  it('accepts canonical preview URLs', () => {
+    expect(parseTrustedDingpanPreviewUrl(good)).toMatchObject({
+      fileId: '2',
+      spaceId: '1',
+    });
+    expect(isTrustedDingpanPreviewUrl(good)).toBe(true);
+  });
+
+  it('rejects open-redirect and substring spoofs', () => {
+    expect(isTrustedDingpanPreviewUrl('https://evil.example/?next=qr.dingtalk.com')).toBe(false);
+    expect(isTrustedDingpanPreviewUrl('https://evil.example/previewDentry')).toBe(false);
+    expect(isTrustedDingpanPreviewUrl('not-a-url-previewDentry')).toBe(false);
+    expect(
+      isTrustedDingpanPreviewUrl(
+        'https://qr.dingtalk.com.evil.example/page/yunpan?route=previewDentry&spaceId=1&fileId=2&type=file',
+      ),
+    ).toBe(false);
   });
 });
 
@@ -45,6 +71,20 @@ describe('extractDingpanUploadOutcomes', () => {
     ]);
     expect(outcomes[0]).toMatchObject({ success: false });
   });
+
+  it('rejects untrusted preview hosts even with success=true', () => {
+    const outcomes = extractDingpanUploadOutcomes([
+      {
+        content: JSON.stringify({
+          preview_url: 'https://evil.example/?next=qr.dingtalk.com',
+          success: true,
+        }),
+        plugin: { apiName: 'uploadHtmlToDingpan', identifier: 'lobe-dingpan' },
+        role: 'tool',
+      },
+    ]);
+    expect(outcomes[0]).toMatchObject({ success: false });
+  });
 });
 
 describe('applyDingpanDeliveryClaimGuard', () => {
@@ -67,6 +107,22 @@ describe('applyDingpanDeliveryClaimGuard', () => {
     const guarded = applyDingpanDeliveryClaimGuard(content, messages);
     expect(guarded).toContain(preview);
     expect(guarded).toContain('以下是核心结论');
+  });
+
+  it('rewrites wrong dingpan file link to tool authority only', () => {
+    const wrong =
+      'https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=9&fileId=9&type=file';
+    const messages = [
+      {
+        content: JSON.stringify({ preview_url: preview, success: true }),
+        plugin: { apiName: 'uploadHtmlToDingpan', identifier: 'lobe-dingpan' },
+        role: 'tool' as const,
+      },
+    ];
+    const content = `已上传钉盘：[打开](${wrong})`;
+    const guarded = applyDingpanDeliveryClaimGuard(content, messages);
+    expect(guarded).toContain(preview);
+    expect(guarded).not.toContain(wrong);
   });
 
   it('rewrites fake sif link when tool succeeded', () => {

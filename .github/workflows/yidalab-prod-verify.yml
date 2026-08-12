@@ -84,7 +84,12 @@ jobs:
                 exists(
                   select 1 from information_schema.columns
                   where table_name = '"'"'files'"'"' and column_name = '"'"'processing_requested_at'"'"'
-                ) as has_processing_requested_at
+                ) as has_processing_requested_at,
+                to_regclass('"'"'public.delivery_attempts'"'"')::text as delivery_attempts,
+                exists(
+                  select 1 from information_schema.columns
+                  where table_name = '"'"'agent_operations'"'"' and column_name = '"'"'outcome_status'"'"'
+                ) as has_outcome_status
             `);
             console.log(JSON.stringify(r.rows[0]));
             const ok =
@@ -94,7 +99,9 @@ jobs:
               r.rows[0].has_generation_id &&
               r.rows[0].has_processing_policy &&
               r.rows[0].has_persist_reason &&
-              r.rows[0].has_processing_requested_at;
+              r.rows[0].has_processing_requested_at &&
+              r.rows[0].delivery_attempts &&
+              r.rows[0].has_outcome_status;
             await c.end();
             if (!ok) process.exit(3);
           })().catch((e) => {

@@ -6,16 +6,24 @@ const {
   ensureDingpanDeliverable,
   shouldEnsureDingpanForBotReply,
   scrubFakeUploadProgressNarration,
+  recordOutcome,
 } = vi.hoisted(() => ({
   findDingpanUploadsByOperation: vi.fn(),
   ensureDingpanDeliverable: vi.fn(),
   shouldEnsureDingpanForBotReply: vi.fn(),
   scrubFakeUploadProgressNarration: vi.fn((s: string) => s),
+  recordOutcome: vi.fn(),
 }));
 
 vi.mock('@/database/models/message', () => ({
   MessageModel: class {
     findDingpanUploadsByOperation = findDingpanUploadsByOperation;
+  },
+}));
+
+vi.mock('@/database/models/agentOperation', () => ({
+  AgentOperationModel: class {
+    recordOutcome = recordOutcome;
   },
 }));
 
@@ -62,8 +70,10 @@ describe('compactBotRelayText', () => {
 
 describe('prepareBotOutboundReply operation isolation', () => {
   const db = {} as any;
-  const urlA = 'https://qr.dingtalk.com/page/yunpan?fileId=opA';
-  const urlB = 'https://qr.dingtalk.com/page/yunpan?fileId=opB';
+  const urlA =
+    'https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=1&fileId=opA&type=file';
+  const urlB =
+    'https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=1&fileId=opB&type=file';
 
   beforeEach(() => {
     vi.clearAllMocks();

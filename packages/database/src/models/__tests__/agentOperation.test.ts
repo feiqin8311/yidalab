@@ -176,7 +176,71 @@ describe('AgentOperationModel', () => {
       expect(row?.status).toBe('waiting_for_human');
       expect(row?.completedAt).toBeNull();
     });
+  });
 
+  describe('recordOutcome', () => {
+    it('persists trusted delivery outcome independently of completion', async () => {
+      const model = new AgentOperationModel(serverDB, userId);
+      const operationId = 'op-outcome-1';
+      const previewUrl =
+        'https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=1&fileId=2&type=file';
+
+      await model.recordStart({ operationId });
+      await model.recordCompletion(operationId, {
+        completedAt: new Date(),
+        completionReason: 'done',
+        status: 'done',
+      });
+      await model.recordOutcome(operationId, {
+        outcomePreviewUrl: previewUrl,
+        outcomeRetryable: false,
+        outcomeStatus: 'verified',
+        outcomeType: 'dingpan',
+        outcomeVerifiedAt: new Date('2026-08-12T00:00:00.000Z'),
+      });
+
+      const row = await model.findById(operationId);
+      expect(row).toMatchObject({
+        outcomePreviewUrl: previewUrl,
+        outcomeRetryable: false,
+        outcomeStatus: 'verified',
+        outcomeType: 'dingpan',
+        status: 'done',
+      });
+      expect(row?.outcomeVerifiedAt?.toISOString()).toBe('2026-08-12T00:00:00.000Z');
+    });
+
+    it('refuses verified → failed downgrade', async () => {
+      const model = new AgentOperationModel(serverDB, userId);
+      const operationId = 'op-outcome-sticky';
+      const previewUrl =
+        'https://qr.dingtalk.com/page/yunpan?route=previewDentry&spaceId=1&fileId=2&type=file';
+
+      await model.recordStart({ operationId });
+      await model.recordOutcome(operationId, {
+        outcomePreviewUrl: previewUrl,
+        outcomeRetryable: false,
+        outcomeStatus: 'verified',
+        outcomeType: 'dingpan',
+        outcomeVerifiedAt: new Date('2026-08-12T00:00:00.000Z'),
+      });
+
+      const wrote = await model.recordOutcome(operationId, {
+        outcomeErrorCode: 'stale',
+        outcomeRetryable: true,
+        outcomeStatus: 'failed',
+        outcomeType: 'dingpan',
+      });
+      expect(wrote).toBe(false);
+
+      const row = await model.findById(operationId);
+      expect(row?.outcomeStatus).toBe('verified');
+      expect(row?.outcomePreviewUrl).toBe(previewUrl);
+      expect(row?.outcomeErrorCode).toBeNull();
+    });
+  });
+
+  describe('recordCompletion error paths', () => {
     it('writes error and interruption payloads on failure paths', async () => {
       const model = new AgentOperationModel(serverDB, userId);
       const operationId = 'op-complete-error';

@@ -30,6 +30,7 @@ export * from './knowledgeBase';
 export * from './llm';
 export * from './message';
 export * from './meta';
+export * from './operationOutcome';
 export * from './plugins';
 export * from './rag';
 export * from './redis';

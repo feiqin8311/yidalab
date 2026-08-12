@@ -13,6 +13,7 @@
 
 import { type DeliveryClaimMessage, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
 
+import { AgentOperationModel } from '@/database/models/agentOperation';
 import { MessageModel } from '@/database/models/message';
 import type { LobeChatDatabase } from '@/database/type';
 
@@ -108,6 +109,33 @@ const latestOperationPreview = async (params: {
   return [...outcomes].reverse().find((o) => o.success && o.previewUrl)?.previewUrl;
 };
 
+/** Best-effort: mark operation outcome verified when tool path already delivered. */
+const markOutcomeVerifiedIfNeeded = async (params: {
+  db: LobeChatDatabase;
+  operationId: string;
+  previewUrl: string;
+  userId: string;
+  workspaceId?: string | null;
+}) => {
+  try {
+    const opModel = new AgentOperationModel(
+      params.db,
+      params.userId,
+      params.workspaceId ?? undefined,
+    );
+    await opModel.recordOutcome(params.operationId, {
+      outcomeErrorCode: null,
+      outcomePreviewUrl: params.previewUrl,
+      outcomeRetryable: false,
+      outcomeStatus: 'verified',
+      outcomeType: 'dingpan',
+      outcomeVerifiedAt: new Date(),
+    });
+  } catch (error) {
+    console.error('[prepareBotOutboundReply] recordOutcome non-fatal:', error);
+  }
+};
+
 /**
  * Single exit for bot → IM text after agent completion.
  */
@@ -142,6 +170,13 @@ export async function prepareBotOutboundReply(params: {
         if (!reply.includes(previewUrl)) {
           reply = `${reply.trim()}\n\n钉盘报告：\n${previewUrl}`;
         }
+        await markOutcomeVerifiedIfNeeded({
+          db,
+          operationId,
+          previewUrl,
+          userId,
+          workspaceId,
+        });
         return compactBotRelayText(reply);
       }
     }
