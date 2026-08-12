@@ -16,11 +16,15 @@ export function runDockerBuild({ full = false, run }: DockerBuildOptions): numbe
   const profile = full ? 'full' : 'internal';
   let code = 1;
 
+  // Prefer tsx: Docker builder image has Node/pnpm/tsx, not bun.
+  const runTs = (script: string, env?: Record<string, string>) =>
+    run(`pnpm exec tsx ${script}`, env);
+
   const restoreFull = () =>
-    run('bun scripts/applyBuildProfile.ts', { YIDALAB_BUILD_PROFILE: 'full' });
+    runTs('scripts/applyBuildProfile.ts', { YIDALAB_BUILD_PROFILE: 'full' });
 
   try {
-    code = run('bun scripts/applyBuildProfile.ts', { YIDALAB_BUILD_PROFILE: profile });
+    code = runTs('scripts/applyBuildProfile.ts', { YIDALAB_BUILD_PROFILE: profile });
     if (code !== 0) throw new Error(`applyBuildProfile failed: ${code}`);
 
     if (!full) {
@@ -45,7 +49,7 @@ export function runDockerBuild({ full = false, run }: DockerBuildOptions): numbe
     );
     if (code !== 0) throw new Error(`next build failed: ${code}`);
 
-    code = run('bun scripts/buildMetrics.mts', { YIDALAB_BUILD_PROFILE: profile });
+    code = runTs('scripts/buildMetrics.mts', { YIDALAB_BUILD_PROFILE: profile });
     if (code !== 0) throw new Error(`buildMetrics failed: ${code}`);
   } catch {
     code = typeof code === 'number' && code !== 0 ? code : 1;
