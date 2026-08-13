@@ -1,8 +1,9 @@
 'use client';
 
-import { Center, Flexbox, Highlighter } from '@lobehub/ui';
+import { Center, Flexbox, Highlighter, Text } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import NeuralNetworkLoading from '@/components/NeuralNetworkLoading';
 import { getLanguageFromFilename } from '@/utils/fileLanguage';
@@ -24,20 +25,31 @@ interface CodeViewerProps {
 }
 
 const CodeViewer = memo<CodeViewerProps>(({ url, fileName }) => {
-  const { fileData, loading } = useTextFileLoader(url);
+  const { t } = useTranslation('file');
+  const { error, fileData, loading } = useTextFileLoader(url);
   const language = getLanguageFromFilename(fileName);
+
+  if (loading) {
+    return (
+      <Center height={'100%'}>
+        <NeuralNetworkLoading size={36} />
+      </Center>
+    );
+  }
+
+  if (error || !fileData) {
+    return (
+      <Center height={'100%'}>
+        <Text type={'secondary'}>{t('preview.loadError')}</Text>
+      </Center>
+    );
+  }
 
   return (
     <Flexbox className={styles.page}>
-      {!loading && fileData ? (
-        <Highlighter language={language} showLanguage={false} variant={'borderless'}>
-          {fileData}
-        </Highlighter>
-      ) : (
-        <Center height={'100%'}>
-          <NeuralNetworkLoading size={36} />
-        </Center>
-      )}
+      <Highlighter language={language} showLanguage={false} variant={'borderless'}>
+        {fileData}
+      </Highlighter>
     </Flexbox>
   );
 });

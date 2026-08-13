@@ -3,7 +3,11 @@ import debug from 'debug';
 
 import { BaseProcessor } from '../base/BaseProcessor';
 import type { PipelineContext, ProcessorOptions } from '../types';
-import { buildToolResultReceipt } from '../utils/toolResultShape';
+import {
+  applyRoundToolResultBudgets,
+  buildToolResultReceipt,
+  shapeToolResultForModel,
+} from '../utils/toolResultShape';
 
 declare module '../types' {
   interface PipelineContextMetadataOverrides {
@@ -19,6 +23,10 @@ export interface ToolResultPruneConfig {
   enabled?: boolean;
   /** Token budget for all historical (non-protected) tool bodies. Default 40_000. */
   maxHistoricalToolTokens?: number;
+  /** Per-result cap for the current (protected) tool chain. Model view only. */
+  maxToolResultTokens?: number;
+  /** Total cap for the current tool batch. Model view only. */
+  maxToolRoundTokens?: number;
 }
 
 const DEFAULT_MAX_HISTORICAL = 40_000;
@@ -78,6 +86,10 @@ export class ToolResultPruneProcessor extends BaseProcessor {
     if (historicalTokens <= budget) {
       cloned.metadata.toolResultPruned = 0;
       cloned.metadata.toolResultHistoricalTokens = historicalTokens;
+      shapeCurrentToolResults(messages, protectedIds, {
+        maxToolResultTokens: this.config.maxToolResultTokens,
+        maxToolRoundTokens: this.config.maxToolRoundTokens,
+      });
       return cloned;
     }
 
@@ -120,9 +132,79 @@ export class ToolResultPruneProcessor extends BaseProcessor {
       budget,
     );
 
+    shapeCurrentToolResults(messages, protectedIds, {
+      maxToolResultTokens: this.config.maxToolResultTokens,
+      maxToolRoundTokens: this.config.maxToolRoundTokens,
+    });
+
     return cloned;
   }
 }
+
+type ToolMessage = {
+  content?: string;
+  plugin?: { apiName?: string; identifier?: string };
+  role?: string;
+  tool_call_id?: string;
+  [key: string]: unknown;
+};
+
+const isProtectedTool = (msg: ToolMessage, protectedIds: Set<string>, fallbackId: string) =>
+  protectedIds.has(fallbackId) || (msg.tool_call_id ? protectedIds.has(msg.tool_call_id) : false);
+
+/** Shape the latest tool chain for the model without touching DB/UI source. */
+const shapeCurrentToolResults = (
+  messages: any[],
+  protectedIds: Set<string>,
+  budgets: { maxToolResultTokens?: number; maxToolRoundTokens?: number },
+) => {
+  if (!budgets.maxToolResultTokens && !budgets.maxToolRoundTokens) return;
+  if (protectedIds.size === 0) return;
+
+  const slots: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i] as ToolMessage;
+    if (msg.role !== 'tool') continue;
+    const id = (typeof msg.id === 'string' ? msg.id : undefined) || msg.tool_call_id || `idx-${i}`;
+    if (!isProtectedTool(msg, protectedIds, id)) continue;
+    slots.push(i);
+  }
+  if (slots.length === 0) return;
+
+  if (budgets.maxToolResultTokens && budgets.maxToolResultTokens > 0) {
+    for (const index of slots) {
+      const msg = messages[index] as ToolMessage;
+      const shaped = shapeToolResultForModel({
+        maxTokens: budgets.maxToolResultTokens,
+        raw: msg.content,
+      });
+      if (shaped.truncated && shaped.content !== msg.content) {
+        messages[index] = { ...msg, content: shaped.content };
+      }
+    }
+  }
+
+  if (budgets.maxToolRoundTokens && budgets.maxToolRoundTokens > 0) {
+    const adjusted = applyRoundToolResultBudgets(
+      slots.map((index) => {
+        const msg = messages[index] as ToolMessage;
+        return {
+          apiName: msg.plugin?.apiName,
+          content: typeof msg.content === 'string' ? msg.content : '',
+          identifier: msg.plugin?.identifier,
+          toolCallId: msg.tool_call_id,
+        };
+      }),
+      budgets.maxToolRoundTokens,
+    );
+    adjusted.forEach((item, i) => {
+      if (!item.reshaped) return;
+      const index = slots[i];
+      const msg = messages[index] as ToolMessage;
+      messages[index] = { ...msg, content: item.content };
+    });
+  }
+};
 
 /**
  * Protect only the latest assistant group (last assistant + its tool results).

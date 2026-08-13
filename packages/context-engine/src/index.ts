@@ -67,11 +67,15 @@ export {
   buildDedupHitContent,
   buildToolCacheKey,
   canonicalJson,
+  cloneToolResultCache,
   createToolResultCache,
   ensureToolResultCache,
+  isSifQueryTool,
   isToolCacheable,
   lookupToolCache,
+  mcpToolCacheFields,
   rebuildToolCacheFromMessages,
+  resolveToolCacheHint,
   writeToolCache,
 } from './utils/toolResultCache';
 export type {

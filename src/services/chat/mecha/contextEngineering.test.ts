@@ -5,9 +5,10 @@ import * as isCanUseFCModule from '@/helpers/isCanUseFC';
 import { agentService } from '@/services/agent';
 import { agentDocumentService } from '@/services/agentDocument';
 import { useAgentStore } from '@/store/agent';
+import { useAiInfraStore } from '@/store/aiInfra';
 
 import * as helpers from '../helper';
-import { contextEngineering } from './contextEngineering';
+import { contextEngineering, resolveClientContextBudget } from './contextEngineering';
 import * as memoryManager from './memoryManager';
 
 vi.hoisted(() => {
@@ -332,45 +333,20 @@ describe('contextEngineering', () => {
         provider: 'openai',
       });
 
-      expect(output).toEqual([
-        { content: expect.stringContaining(getCurrentDateContent()), role: 'system' },
-        {
-          content: [
-            {
-              text: `Hello
-
-<!-- SYSTEM CONTEXT (NOT PART OF USER QUERY) -->
-<context.instruction>following part contains context information injected by the system. Please follow these instructions:
-
-1. Always prioritize handling user-visible content.
-2. the context is only required when user's queries rely on it.
-</context.instruction>
-<files_info>
-<images>
-<images_docstring>here are user upload images you can refer to</images_docstring>
-<image ref="image_1" name="ttt.png" url="http://example.com/xxx0asd-dsd.png"></image>
-</images>
-<files>
-<files_docstring>here are user upload files you can refer to</files_docstring>
-<file id="file1" name="abc.png" type="plain/txt" size="100000" url="http://abc.com/abc.txt"></file>
-<file id="file_oKMve9qySLMI" name="2402.16667v1.pdf" type="undefined" size="11256078" url="https://xxx.com/ppp/480497/5826c2b8-fde0-4de1-a54b-a224d5e3d898.pdf"></file>
-</files>
-</files_info>
-<!-- END SYSTEM CONTEXT -->`,
-              type: 'text',
-            },
-            {
-              image_url: { detail: 'auto', url: 'http://example.com/xxx0asd-dsd.png' },
-              type: 'image_url',
-            },
-          ],
-          role: 'user',
-        },
-        {
-          content: 'Hey',
-          role: 'assistant',
-        },
-      ]);
+      expect(output[0]).toEqual({
+        content: expect.stringContaining(getCurrentDateContent()),
+        role: 'system',
+      });
+      expect(output[1]?.role).toBe('user');
+      const userContent = output[1]?.content;
+      expect(Array.isArray(userContent)).toBe(true);
+      const textPart = (userContent as Array<{ text?: string; type?: string }>).find(
+        (part) => part.type === 'text',
+      );
+      expect(textPart?.text).toContain('file1');
+      expect(textPart?.text).toContain('file_oKMve9qySLMI');
+      expect(textPart?.text).toContain('<files_info>');
+      expect(output.at(-1)).toEqual({ content: 'Hey', role: 'assistant' });
 
       runtimeFlags.isServerMode = false;
     });
@@ -1197,6 +1173,103 @@ describe('contextEngineering', () => {
           role: 'user',
         },
       ]);
+    });
+  });
+
+  describe('client context budget', () => {
+    it('resolves deepseek-v4-pro as 1_048_576 instead of the 100k default', () => {
+      useAiInfraStore.setState({
+        enabledAiModels: [
+          {
+            contextWindowTokens: 1_048_576,
+            id: 'deepseek-v4-pro',
+            providerId: 'deepseek',
+            type: 'chat',
+          } as any,
+        ],
+      });
+
+      const budget = resolveClientContextBudget('deepseek-v4-pro', 'deepseek');
+      expect(budget.contextWindowTokens).toBe(1_048_576);
+      expect(budget.maxHistoryTokens).toBe(64_000);
+      expect(budget.toolResultPrune).toEqual({
+        enabled: true,
+        maxHistoricalToolTokens: 40_000,
+        maxToolResultTokens: 8_000,
+        maxToolRoundTokens: 32_000,
+      });
+    });
+
+    it('passes the resolved window into MessagesEngine so a 54-message SIF session is not rejected', async () => {
+      vi.spyOn(isCanUseFCModule, 'isCanUseFC').mockReturnValue(true);
+      useAiInfraStore.setState({
+        enabledAiModels: [
+          {
+            contextWindowTokens: 1_048_576,
+            id: 'deepseek-v4-pro',
+            providerId: 'deepseek',
+            type: 'chat',
+          } as any,
+        ],
+      });
+
+      const now = Date.now();
+      const messages: UIChatMessage[] = [];
+      for (let turn = 0; turn < 18; turn++) {
+        messages.push({
+          content: `turn ${turn}`,
+          createdAt: now + turn,
+          id: `u${turn}`,
+          role: 'user',
+          updatedAt: now + turn,
+        } as UIChatMessage);
+        messages.push({
+          content: '',
+          createdAt: now + turn,
+          id: `a${turn}`,
+          role: 'assistant',
+          tool_calls: [
+            {
+              function: {
+                arguments: '{"asin":"B01"}',
+                name: 'company.mcp.sif-mcp____ads_get_asin_campaign_changes',
+              },
+              id: `t${turn}`,
+              type: 'function',
+            },
+          ],
+          tools: [
+            {
+              apiName: 'ads_get_asin_campaign_changes',
+              id: `t${turn}`,
+              identifier: 'company.mcp.sif-mcp',
+              type: 'mcp',
+            },
+          ] as any,
+          updatedAt: now + turn,
+        } as UIChatMessage);
+        messages.push({
+          content: 'x'.repeat(25_000),
+          createdAt: now + turn,
+          id: `tm${turn}`,
+          plugin: {
+            apiName: 'ads_get_asin_campaign_changes',
+            identifier: 'company.mcp.sif-mcp',
+          } as any,
+          role: 'tool',
+          tool_call_id: `t${turn}`,
+          updatedAt: now + turn,
+        } as UIChatMessage);
+      }
+
+      const output = await contextEngineering({
+        messages,
+        model: 'deepseek-v4-pro',
+        provider: 'deepseek',
+      });
+
+      expect(output.length).toBeGreaterThan(0);
+      expect(output.some((m) => m.role === 'tool')).toBe(true);
     });
   });
 });

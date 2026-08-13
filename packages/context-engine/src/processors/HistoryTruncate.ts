@@ -90,17 +90,27 @@ const collectAssistantGroupIds = (
   const tools = assistant.tools || [];
   for (const tool of tools) {
     const toolId = tool.id;
-    const toolMsg = messageMap.get(toolId);
+    let toolMsg = messageMap.get(toolId);
+    // UI tool rows use their own id; the call id lives on tool_call_id.
+    if (!toolMsg) {
+      for (const candidate of messageMap.values()) {
+        if (candidate.role === 'tool' && candidate.tool_call_id === toolId) {
+          toolMsg = candidate;
+          break;
+        }
+      }
+    }
     if (!toolMsg) continue;
 
     // Mark tool as collected
+    collected.add(toolMsg.id);
     collected.add(toolId);
 
     // Check if tool has agentCouncil metadata (stop here if true)
     if (toolMsg.metadata?.agentCouncil === true) continue;
 
-    // Check if tool has multiple task children (stop here if true)
-    const toolChildren = childrenMap.get(toolId) || [];
+    // Next-step assistants parent to the tool *message* id, not the call id.
+    const toolChildren = childrenMap.get(toolMsg.id) || [];
     const taskChildren = toolChildren.filter((cid) => messageMap.get(cid)?.role === 'task');
     if (taskChildren.length > 1) continue;
 

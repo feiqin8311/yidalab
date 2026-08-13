@@ -135,6 +135,18 @@ export const ExtendedHumanInterventionConfigSchema = z.union([
 
 export interface LobeChatPluginApi {
   /**
+   * MCP-style annotations. `readOnlyHint` marks a query that is safe to
+   * dedup within a single operation.
+   */
+  annotations?: {
+    readOnlyHint?: boolean;
+  };
+  /**
+   * Operation-level result cache. `operation` = reuse identical read-only
+   * calls; `none` = never cache (wins over readOnlyHint).
+   */
+  cachePolicy?: 'operation' | 'none' | string;
+  /**
    * Default execution timeout in milliseconds for this API.
    *
    * Used as the fallback when the LLM does not supply `arguments.timeout`.
@@ -164,6 +176,8 @@ export interface LobeChatPluginApi {
   humanIntervention?: ExtendedHumanInterventionConfig;
   name: string;
   parameters: Record<string, any>;
+  /** Convenience alias for annotations.readOnlyHint */
+  readOnlyHint?: boolean;
   /**
    * Control the render display behavior for tool results
    * - 'collapsed': Default collapsed, user can expand (default)
@@ -177,11 +191,14 @@ export interface LobeChatPluginApi {
 }
 
 export const LobeChatPluginApiSchema = z.object({
+  annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
+  cachePolicy: z.string().optional(),
   defaultTimeoutMs: z.number().int().positive().optional(),
   description: z.string(),
   humanIntervention: ExtendedHumanInterventionConfigSchema.optional(),
   name: z.string(),
   parameters: z.record(z.string(), z.any()),
+  readOnlyHint: z.boolean().optional(),
   renderDisplayControl: RenderDisplayControlSchema.optional(),
   url: z.string().optional(),
 });

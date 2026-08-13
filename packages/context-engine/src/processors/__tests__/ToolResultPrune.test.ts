@@ -104,6 +104,48 @@ describe('ToolResultPruneProcessor', () => {
     expect(result.metadata.toolResultPruned).toBe(0);
   });
 
+  it('shapes the current tool chain under per-result and round budgets', async () => {
+    const big = 'x'.repeat(40_000);
+    const messages = [
+      { id: 'u1', role: 'user', content: 'hi' },
+      { id: 'a1', role: 'assistant', tools: [{ id: 't1' }, { id: 't2' }], content: '' },
+      {
+        id: 'tm1',
+        role: 'tool',
+        tool_call_id: 't1',
+        plugin: { identifier: 'sif', apiName: 'q1' },
+        content: big,
+      },
+      {
+        id: 'tm2',
+        role: 'tool',
+        tool_call_id: 't2',
+        plugin: { identifier: 'sif', apiName: 'q2' },
+        content: big,
+      },
+    ];
+
+    const processor = new ToolResultPruneProcessor({
+      enabled: true,
+      maxHistoricalToolTokens: 100_000,
+      maxToolResultTokens: 2_000,
+      maxToolRoundTokens: 3_000,
+    });
+    const result = await processor.process({
+      initialContext: {},
+      messages,
+      metadata: {},
+      stepContext: {},
+    } as any);
+
+    const tm1 = result.messages.find((m: any) => m.id === 'tm1')!;
+    const tm2 = result.messages.find((m: any) => m.id === 'tm2')!;
+    expect(tm1.content.length).toBeLessThan(big.length);
+    expect(tm2.content.length).toBeLessThan(big.length);
+    expect(tm1.tool_call_id).toBe('t1');
+    expect(tm2.tool_call_id).toBe('t2');
+  });
+
   it('prunes earlier steps in same user turn multi-step trajectory', async () => {
     const big = 'x'.repeat(20_000);
     const messages = [

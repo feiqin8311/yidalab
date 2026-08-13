@@ -140,10 +140,16 @@ export const shapeStructuredJson = (
     for (const key of ['data', 'rows', 'items', 'results', 'list', 'records']) {
       if (Array.isArray(value[key])) {
         const arr = value[key] as unknown[];
-        const shaped = shapeArray(arr, Math.max(256, maxTokens - 64), maxChars - 200);
+        const shaped = shapeArray(arr, Math.max(1, maxTokens - 64), Math.max(64, maxChars - 200));
+        let parsedRows: unknown;
+        try {
+          parsedRows = JSON.parse(shaped.content);
+        } catch {
+          return shapePlainText(full, maxTokens);
+        }
         const next = {
           ...value,
-          [key]: JSON.parse(shaped.content),
+          [key]: parsedRows,
           _coverage: {
             returnedRows: shaped.coverage?.returnedRows ?? 0,
             totalRows: arr.length,
@@ -226,10 +232,28 @@ const shapeArray = (
     }
   }
 
-  const minimal = [arr[0], { _ellipsis: `… ${arr.length - 2} rows omitted …` }, arr.at(-1)];
+  // Never slice the outer JSON — a 100KB single row would become invalid JSON.
+  // Shrink against the FINAL stringify: quotes / slashes / control chars expand.
+  const wrap = (preview: string) =>
+    JSON.stringify({
+      _ellipsis: `… ${Math.max(0, arr.length - 1)} rows omitted …`,
+      preview,
+      totalRows: arr.length,
+    });
+  let preview = typeof arr[0] === 'string' ? arr[0] : JSON.stringify(arr[0] ?? null);
+  let content = wrap(preview);
+  while (
+    preview.length > 0 &&
+    (content.length > maxChars || approxTokensFromText(content) > maxTokens)
+  ) {
+    const overChars = Math.max(0, content.length - maxChars);
+    const overTokChars = Math.max(0, (approxTokensFromText(content) - maxTokens) * CHARS_PER_TOKEN);
+    preview = preview.slice(0, Math.max(0, preview.length - Math.max(16, overChars, overTokChars)));
+    content = wrap(preview);
+  }
   return {
-    content: JSON.stringify(minimal).slice(0, maxChars),
-    coverage: { returnedRows: 2, totalRows: arr.length },
+    content,
+    coverage: { returnedRows: 1, totalRows: arr.length },
     truncated: true,
   };
 };

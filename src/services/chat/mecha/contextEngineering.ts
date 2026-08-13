@@ -60,7 +60,7 @@ import { getAgentStoreState } from '@/store/agent';
 import { agentChatConfigSelectors, agentSelectors } from '@/store/agent/selectors';
 import { getChatGroupStoreState } from '@/store/agentGroup';
 import { agentGroupSelectors } from '@/store/agentGroup/selectors';
-import { getAiInfraStoreState } from '@/store/aiInfra';
+import { aiModelSelectors, getAiInfraStoreState } from '@/store/aiInfra';
 import { getChatStoreState } from '@/store/chat';
 import { chatSelectors, topicSelectors } from '@/store/chat/selectors';
 import { getToolStoreState } from '@/store/tool';
@@ -83,6 +83,38 @@ import { combineUserMemoryData, resolveTopicMemories, resolveUserPersona } from 
 import { resolveClientSkills } from './skillEngineering';
 
 const log = debug('context-engine:contextEngineering');
+
+const DEFAULT_CLIENT_MAX_HISTORY_TOKENS = 64_000;
+const DEFAULT_CLIENT_HISTORY_WINDOW_RATIO = 0.35;
+const DEFAULT_CLIENT_MAX_HISTORICAL_TOOL_TOKENS = 40_000;
+const DEFAULT_CLIENT_MAX_TOOL_RESULT_TOKENS = 8_000;
+const DEFAULT_CLIENT_MAX_TOOL_ROUND_TOKENS = 32_000;
+
+/** Resolve model window + default client history/tool budgets for MessagesEngine. */
+export const resolveClientContextBudget = (model: string, provider: string) => {
+  const infra = getAiInfraStoreState();
+  const contextWindowTokens =
+    aiModelSelectors.modelContextWindowTokens(model, provider)(infra) ??
+    aiModelSelectors.getModelCard(model, provider)(infra)?.contextWindowTokens;
+
+  const maxHistoryTokens = contextWindowTokens
+    ? Math.min(
+        DEFAULT_CLIENT_MAX_HISTORY_TOKENS,
+        Math.floor(contextWindowTokens * DEFAULT_CLIENT_HISTORY_WINDOW_RATIO),
+      )
+    : DEFAULT_CLIENT_MAX_HISTORY_TOKENS;
+
+  return {
+    contextWindowTokens,
+    maxHistoryTokens,
+    toolResultPrune: {
+      enabled: true,
+      maxHistoricalToolTokens: DEFAULT_CLIENT_MAX_HISTORICAL_TOOL_TOKENS,
+      maxToolResultTokens: DEFAULT_CLIENT_MAX_TOOL_RESULT_TOKENS,
+      maxToolRoundTokens: DEFAULT_CLIENT_MAX_TOOL_ROUND_TOKENS,
+    },
+  };
+};
 
 interface ContextEngineeringContext {
   /** Agent Builder context for injecting current agent info */
@@ -694,6 +726,14 @@ export const contextEngineering = async ({
     }
   }
 
+  const contextBudget = resolveClientContextBudget(model, provider);
+  log(
+    'context budget: window=%s maxHistoryTokens=%d toolPrune=%o',
+    contextBudget.contextWindowTokens,
+    contextBudget.maxHistoryTokens,
+    contextBudget.toolResultPrune,
+  );
+
   // Create MessagesEngine with injected dependencies
   const engine = new MessagesEngine({
     // Agent configuration
@@ -702,7 +742,12 @@ export const contextEngineering = async ({
     historyCount,
     historySummary,
     inputTemplate,
+    maxHistoryTokens: contextBudget.maxHistoryTokens,
+    toolResultPrune: contextBudget.toolResultPrune,
     systemRole,
+
+    // Hard input budget = contextWindow - outputReserve (not the 100k default)
+    contextWindowTokens: contextBudget.contextWindowTokens,
 
     // Capability injection
     capabilities: {

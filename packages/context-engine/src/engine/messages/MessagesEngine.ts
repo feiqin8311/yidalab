@@ -250,17 +250,19 @@ export class MessagesEngine {
 
     return [
       // =============================================
-      // Phase 1: History Truncation
-      // MUST run first — all subsequent processors work on truncated messages only
+      // Phase 1: Shrink tool bodies, then apply the history window
+      // Receipts first — otherwise 25KB tool results exhaust maxHistoryTokens
+      // and whole groups are dropped before they can be micro-pruned.
       // =============================================
 
-      new HistoryTruncateProcessor({ enableHistoryCount, historyCount, maxHistoryTokens }),
-
-      // Historical tool-body micro-prune (model view only; protects current tool chain)
       new ToolResultPruneProcessor({
         enabled: toolResultPrune?.enabled ?? !!toolResultPrune?.maxHistoricalToolTokens,
         maxHistoricalToolTokens: toolResultPrune?.maxHistoricalToolTokens,
+        maxToolResultTokens: toolResultPrune?.maxToolResultTokens,
+        maxToolRoundTokens: toolResultPrune?.maxToolRoundTokens,
       }),
+
+      new HistoryTruncateProcessor({ enableHistoryCount, historyCount, maxHistoryTokens }),
 
       // =============================================
       // Phase 2: System Message Assembly

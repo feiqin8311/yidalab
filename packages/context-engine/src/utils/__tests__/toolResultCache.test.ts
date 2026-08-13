@@ -5,10 +5,13 @@ import {
   buildToolCacheKey,
   canonicalJson,
   createToolResultCache,
+  isSifQueryTool,
   isToolCacheable,
   lookupToolCache,
   MAX_TOOL_RESULT_CACHE_ENTRIES,
+  mcpToolCacheFields,
   rebuildToolCacheFromMessages,
+  resolveToolCacheHint,
   writeToolCache,
 } from '../toolResultCache';
 
@@ -33,6 +36,71 @@ describe('isToolCacheable', () => {
     expect(isToolCacheable({ readOnlyHint: true })).toBe(true);
     expect(isToolCacheable({ cachePolicy: 'operation' })).toBe(true);
     expect(isToolCacheable({ cachePolicy: 'none', readOnlyHint: true })).toBe(false);
+  });
+});
+
+describe('isSifQueryTool', () => {
+  it('marks SIF query APIs only', () => {
+    expect(isSifQueryTool('company.mcp.sif-mcp', 'ads_get_asin_campaign_changes')).toBe(true);
+    expect(isSifQueryTool('sif-mcp', 'ops_get_asin_traffic_trend')).toBe(true);
+    expect(isSifQueryTool('company.mcp.sif-mcp', 'ads_update_campaign')).toBe(false);
+    expect(isSifQueryTool('lobe-web-browsing', 'search')).toBe(false);
+  });
+});
+
+describe('resolveToolCacheHint', () => {
+  it('prefers manifest annotations over the SIF heuristic', () => {
+    const hinted = resolveToolCacheHint({
+      apiName: 'ads_update_campaign',
+      identifier: 'company.mcp.sif-mcp',
+      manifest: {
+        api: [{ name: 'ads_update_campaign', readOnlyHint: true }],
+      },
+    });
+    expect(hinted.readOnlyHint).toBe(true);
+
+    const blocked = resolveToolCacheHint({
+      apiName: 'ads_get_asin_campaign_changes',
+      identifier: 'company.mcp.sif-mcp',
+      manifest: {
+        api: [{ cachePolicy: 'none', name: 'ads_get_asin_campaign_changes' }],
+      },
+    });
+    expect(isToolCacheable(blocked)).toBe(false);
+  });
+
+  it('lets explicit readOnlyHint false beat the SIF heuristic', () => {
+    const hint = resolveToolCacheHint({
+      apiName: 'ads_get_asin_campaign_changes',
+      identifier: 'company.mcp.sif-mcp',
+      manifest: {
+        api: [{ name: 'ads_get_asin_campaign_changes', readOnlyHint: false }],
+      },
+    });
+    expect(hint.readOnlyHint).toBe(false);
+    expect(isToolCacheable(hint)).toBe(false);
+  });
+
+  it('falls back to SIF query heuristic when the installed manifest has no flags', () => {
+    const hint = resolveToolCacheHint({
+      apiName: 'ads_get_asin_campaign_changes',
+      identifier: 'company.mcp.sif-mcp',
+    });
+    expect(hint).toEqual({ cachePolicy: 'operation', readOnlyHint: true });
+    expect(isToolCacheable(hint)).toBe(true);
+  });
+});
+
+describe('mcpToolCacheFields', () => {
+  it('stamps read-only fields onto SIF query APIs', () => {
+    expect(
+      mcpToolCacheFields('company.mcp.sif-mcp', { name: 'ads_get_asin_campaign_changes' }),
+    ).toEqual({
+      annotations: { readOnlyHint: true },
+      cachePolicy: 'operation',
+      readOnlyHint: true,
+    });
+    expect(mcpToolCacheFields('company.mcp.sif-mcp', { name: 'ads_update_campaign' })).toEqual({});
   });
 });
 
@@ -70,6 +138,22 @@ describe('buildDedupHitContent', () => {
     expect(s).toContain('c9');
     expect(s).toContain('tool_dedup_hit');
     expect(s).toContain(body);
+  });
+});
+
+describe('lookupToolCache frozen index', () => {
+  it('does not throw when the stored cache is frozen', () => {
+    const index = createToolResultCache();
+    writeToolCache(index, 'k', {
+      content: 'v',
+      originalCallId: 'c1',
+      success: true,
+      timestamp: 1,
+    });
+    Object.freeze(index.k);
+    Object.freeze(index);
+    expect(() => lookupToolCache(index, 'k')).not.toThrow();
+    expect(lookupToolCache(index, 'k')?.content).toBe('v');
   });
 });
 

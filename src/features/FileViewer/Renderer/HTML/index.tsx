@@ -1,8 +1,9 @@
 'use client';
 
-import { Center, Flexbox } from '@lobehub/ui';
+import { Center, Flexbox, Text } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { InlineHtmlPreview } from '@/components/HtmlPreview';
 import NeuralNetworkLoading from '@/components/NeuralNetworkLoading';
@@ -23,17 +24,28 @@ interface HTMLViewerProps {
 }
 
 const HTMLViewer = memo<HTMLViewerProps>(({ url }) => {
-  const { fileData, loading } = useTextFileLoader(url);
+  const { t } = useTranslation('file');
+  const { error, fileData, loading } = useTextFileLoader(url);
+
+  if (loading) {
+    return (
+      <Center height={'100%'}>
+        <NeuralNetworkLoading size={36} />
+      </Center>
+    );
+  }
+
+  if (error || fileData === null) {
+    return (
+      <Center height={'100%'}>
+        <Text type={'secondary'}>{t('preview.loadError')}</Text>
+      </Center>
+    );
+  }
 
   return (
     <Flexbox className={styles.page}>
-      {!loading && fileData !== null ? (
-        <InlineHtmlPreview content={fileData} />
-      ) : (
-        <Center height={'100%'}>
-          <NeuralNetworkLoading size={36} />
-        </Center>
-      )}
+      <InlineHtmlPreview content={fileData} />
     </Flexbox>
   );
 });

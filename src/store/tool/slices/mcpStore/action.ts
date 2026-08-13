@@ -1,4 +1,5 @@
 import { CURRENT_VERSION, isDesktop } from '@lobechat/const';
+import { mcpToolCacheFields } from '@lobechat/context-engine';
 import { type ToolManifest } from '@lobechat/types';
 import { type PluginItem, type PluginListResponse } from '@lobehub/market-sdk';
 import { type TRPCClientError } from '@trpc/client';
@@ -99,6 +100,7 @@ const buildCloudMcpManifest = (params: {
       description: tool.description || '',
       name: tool.name,
       parameters: tool.inputSchema || {},
+      ...mcpToolCacheFields(plugin.identifier, tool),
     }));
     log('[Cloud MCP] Converted %d MCP tools to LobeChat API format', apiArray.length);
   } else {
