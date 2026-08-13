@@ -12,7 +12,10 @@ import { useTextFileLoader } from '../../hooks/useTextFileLoader';
 
 const styles = createStaticStyles(({ css }) => ({
   page: css`
+    overflow: auto;
+
     width: 100%;
+    min-width: 0;
     height: 100%;
     padding-inline: 24px 4px;
   `,

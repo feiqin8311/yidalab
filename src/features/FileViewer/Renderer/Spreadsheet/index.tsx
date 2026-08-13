@@ -21,6 +21,7 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     flex-direction: column;
 
     width: 100%;
+    min-width: 0;
     height: 100%;
     min-height: 0;
   `,
@@ -35,14 +36,9 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     line-height: 1.4;
   `,
   td: css`
-    overflow: hidden;
-
-    max-width: 240px;
     padding-block: 6px;
     padding-inline: 10px;
     border: 1px solid ${cssVar.colorBorderSecondary};
-
-    text-overflow: ellipsis;
     white-space: nowrap;
   `,
   th: css`
@@ -50,9 +46,6 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     z-index: 1;
     inset-block-start: 0;
 
-    overflow: hidden;
-
-    max-width: 240px;
     padding-block: 6px;
     padding-inline: 10px;
     border: 1px solid ${cssVar.colorBorderSecondary};
@@ -60,7 +53,6 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     font-weight: 600;
     color: ${cssVar.colorText};
     text-align: start;
-    text-overflow: ellipsis;
     white-space: nowrap;
 
     background: ${cssVar.colorFillTertiary};
@@ -68,6 +60,9 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   viewport: css`
     overflow: auto;
     flex: 1;
+
+    width: 100%;
+    min-width: 0;
     min-height: 0;
   `,
 }));

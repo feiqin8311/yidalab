@@ -8,8 +8,12 @@ export const styles = createStaticStyles(({ css, cssVar }) => ({
     position: relative;
   `,
   documentContainer: css`
+    overflow: auto;
     flex: 1;
+
+    min-width: 0;
     padding-block: 10px;
+
     background-color: ${cssVar.colorBgLayout};
   `,
   page: css`

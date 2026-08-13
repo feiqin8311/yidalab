@@ -15,7 +15,9 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
   page: css`
     overflow: auto;
+
     width: 100%;
+    min-width: 0;
     height: 100%;
     padding: ${cssVar.paddingLG};
   `,

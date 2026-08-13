@@ -121,7 +121,7 @@ const FileEditorCanvas = memo<FileEditorProps>(({ onBack }) => {
             left: { flex: 1, minWidth: 0, overflow: 'hidden', padding: 0 },
           }}
         />
-        <Flexbox flex={1} style={{ overflow: 'hidden' }}>
+        <Flexbox flex={1} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
           <FileContent fileId={currentViewItemId} />
         </Flexbox>
       </Flexbox>
