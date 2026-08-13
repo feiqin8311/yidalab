@@ -4,7 +4,7 @@ const DeepSeek: ModelProviderCard = {
   chatModels: [],
   checkModel: 'deepseek-v4-flash',
   description:
-    'DeepSeek focuses on AI research and applications. Its latest DeepSeek V4 family ships in Flash and Pro variants with a 1M context window and hybrid thinking — competitive with leading closed frontier models on reasoning and agent benchmarks.',
+    'DeepSeek focuses on AI research and applications. The V4 family is now generally available: V4 Flash (0731) and V4 Pro (0813), both with a 1M context window, hybrid thinking, and native Responses API.',
   enabled: true,
   id: 'deepseek',
   modelList: { showModelFetcher: true },

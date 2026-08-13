@@ -13,6 +13,6 @@ export const dingtalk: PlatformDefinition = {
   id: 'dingtalk',
   name: 'DingTalk',
   schema,
-  supportsMarkdown: false,
+  supportsMarkdown: true,
   supportsMessageEdit: false,
 };

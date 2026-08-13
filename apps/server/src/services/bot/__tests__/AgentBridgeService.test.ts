@@ -192,9 +192,9 @@ describe('AgentBridgeService', () => {
       expect.objectContaining({
         contextPolicy: expect.objectContaining({
           budgets: expect.objectContaining({
-            economicInputTokens: 72_000,
-            maxToolResultTokens: 6_000,
-            maxToolRoundTokens: 16_000,
+            economicInputTokens: 96_000,
+            maxToolResultTokens: 8_000,
+            maxToolRoundTokens: 20_000,
           }),
         }),
         hooks: expect.arrayContaining([
@@ -292,6 +292,36 @@ describe('AgentBridgeService', () => {
       expect(thread.post).toHaveBeenCalledTimes(1);
       // Tracked → downstream hooks will edit this message in place.
       expect(progressMessageIdFromHooks()).toBe('progress-msg-1');
+    });
+
+    it('does not track a webhook ack when native progress creation falls back', async () => {
+      mockGetPlatform.mockReturnValue({
+        id: 'dingtalk',
+        name: 'DingTalk',
+        supportsMessageEdit: false,
+      });
+      const service = new AgentBridgeService(FAKE_DB, USER_ID);
+      const thread = createThread();
+      const message = createMessage();
+      message.author.userId = 'staff-1';
+      const client = {
+        ...createClient(),
+        createProgressMessage: vi.fn().mockResolvedValue(undefined),
+        supportsMessageEdit: true,
+      };
+
+      await service.handleMention(thread, message, {
+        agentId: 'agent-1',
+        botContext: {
+          platform: 'dingtalk',
+          platformThreadId: 'dingtalk:2:group-1',
+        } as any,
+        client,
+      });
+
+      expect(client.createProgressMessage).toHaveBeenCalledOnce();
+      expect(thread.post).not.toHaveBeenCalled();
+      expect(progressMessageIdFromHooks()).toBeUndefined();
     });
   });
 

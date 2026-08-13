@@ -45,8 +45,9 @@ describe('DingTalkAdapter', () => {
     } as any);
 
     const body = JSON.parse(fetch.mock.calls[0][1].body as string);
-    expect(body.text.content).toContain(url);
-    expect(body.text.content).not.toContain(`<${url}>`);
+    expect(body.msgtype).toBe('markdown');
+    expect(body.markdown.text).toContain(url);
+    expect(body.markdown.text).not.toContain(`<${url}>`);
   });
 
   it('routes an incoming text message and replies through its session webhook', async () => {
@@ -79,9 +80,40 @@ describe('DingTalkAdapter', () => {
     expect(fetch).toHaveBeenCalledWith(
       'https://dingtalk.example/reply',
       expect.objectContaining({
-        body: JSON.stringify({ msgtype: 'text', text: { content: 'world' } }),
+        body: JSON.stringify({ markdown: { text: 'world', title: 'world' }, msgtype: 'markdown' }),
       }),
     );
+  });
+
+  it('preserves Markdown structure in the session webhook payload', async () => {
+    const processMessage = vi.fn();
+    const adapter = new DingTalkAdapter('app-1');
+    await adapter.initialize({ processMessage } as any);
+
+    await adapter.handleWebhook(
+      new Request('https://example.com', {
+        body: JSON.stringify({
+          conversationId: 'cid-md',
+          conversationType: '1',
+          msgId: 'msg-md-structure',
+          msgtype: 'text',
+          senderId: 'user-1',
+          sessionWebhook: 'https://dingtalk.example/reply-md',
+          text: { content: 'hello' },
+        }),
+        method: 'POST',
+      }),
+    );
+
+    const fetch = vi.fn().mockResolvedValue(new Response('{}'));
+    vi.stubGlobal('fetch', fetch);
+    await adapter.postMessage('dingtalk:1:cid-md', '**结论**\n\n- 建议一\n- 建议二');
+
+    const body = JSON.parse(fetch.mock.calls[0][1].body as string);
+    expect(body.markdown).toEqual({
+      text: '**结论**\n\n- 建议一\n- 建议二',
+      title: '结论',
+    });
   });
 
   it('prefers senderStaffId (enterprise userid) over encrypted senderId for allowlist identity', async () => {

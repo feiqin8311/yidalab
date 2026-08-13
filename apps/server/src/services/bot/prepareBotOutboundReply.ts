@@ -29,6 +29,8 @@ const MISSING_REPORT_NOTE =
 
 const MAX_RELAY_CHARS = 1200;
 
+export type BotRelayMode = 'compact' | 'full';
+
 const DINGPAN_URL_RE =
   /https:\/\/qr\.dingtalk\.com\/page\/yunpan[^\s)\]>"']+|https:\/\/[^\s)\]>"']*previewDentry[^\s)\]>"']*/gi;
 
@@ -143,6 +145,7 @@ export async function prepareBotOutboundReply(params: {
   assistantMessageId?: string;
   db: LobeChatDatabase;
   operationId?: string | null;
+  relayMode?: BotRelayMode;
   reply: string;
   sourceMessageId?: string;
   topicId?: string | null;
@@ -153,6 +156,8 @@ export async function prepareBotOutboundReply(params: {
     params;
   let reply = scrubFakeUploadProgressNarration(params.reply);
   if (!reply.trim()) return reply;
+  const prepareRelayText = (text: string) =>
+    params.relayMode === 'full' ? text.trim() : compactBotRelayText(text);
 
   try {
     // 1. This operation already uploaded successfully → attach that link only.
@@ -177,7 +182,7 @@ export async function prepareBotOutboundReply(params: {
           userId,
           workspaceId,
         });
-        return compactBotRelayText(reply);
+        return prepareRelayText(reply);
       }
     }
 
@@ -202,25 +207,25 @@ export async function prepareBotOutboundReply(params: {
       });
       if (ensured.previewUrl) {
         reply = `${reply.trim()}\n\n钉盘报告：\n${ensured.previewUrl}`;
-        return compactBotRelayText(reply);
+        return prepareRelayText(reply);
       }
       if (
         reply.includes('未调用') ||
         reply.includes('uploadHtmlToDingpan') ||
         reply.includes(MISSING_REPORT_NOTE)
       ) {
-        return compactBotRelayText(reply);
+        return prepareRelayText(reply);
       }
       const failNote = ensured.error
         ? `${MISSING_REPORT_NOTE}\n原因：${ensured.error.slice(0, 160)}`
         : MISSING_REPORT_NOTE;
-      return compactBotRelayText(`${reply.trim()}\n\n${failNote}`);
+      return prepareRelayText(`${reply.trim()}\n\n${failNote}`);
     }
 
     // 4. Non-report / missing operationId: send as-is without any dingpan links.
-    return compactBotRelayText(reply);
+    return prepareRelayText(reply);
   } catch (error) {
     console.error('[prepareBotOutboundReply] non-fatal:', error);
-    return compactBotRelayText(scrubUntrustedDingpanUrls(reply));
+    return prepareRelayText(scrubUntrustedDingpanUrls(reply));
   }
 }

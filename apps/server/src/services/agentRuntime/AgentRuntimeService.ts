@@ -955,10 +955,10 @@ export class AgentRuntimeService {
 
           const reason = this.determineCompletionReason(agentState);
 
-          await this.completionLifecycle.emitSignalEvents(operationId, agentState, reason);
-
           // Dispatch completion hooks so consumers (e.g., bot local-mode promise) can finalize
           await this.completionLifecycle.dispatchHooks(operationId, agentState, reason);
+
+          await this.completionLifecycle.emitSignalEvents(operationId, agentState, reason);
 
           return {
             nextStepScheduled: false,
@@ -1129,12 +1129,12 @@ export class AgentRuntimeService {
             case 'halted': {
               await this.coordinator.saveAgentState(operationId, interventionResult.newState);
               const reason = this.determineCompletionReason(interventionResult.newState);
-              await this.completionLifecycle.emitSignalEvents(
+              await this.completionLifecycle.dispatchHooks(
                 operationId,
                 interventionResult.newState,
                 reason,
               );
-              await this.completionLifecycle.dispatchHooks(
+              await this.completionLifecycle.emitSignalEvents(
                 operationId,
                 interventionResult.newState,
                 reason,
@@ -1477,14 +1477,18 @@ export class AgentRuntimeService {
             buildInvokeAgentResultAttributes({ completionReason: reason }),
           );
 
+          // Persist the terminal row and dispatch completion hooks before
+          // slower completion side effects. A bot deadline may fire while
+          // Agent Signal processing is still running; making the terminal CAS
+          // visible first prevents that watchdog from misclassifying a run
+          // that has already completed successfully.
+          await this.completionLifecycle.dispatchHooks(operationId, stepResult.newState, reason);
+
           const completionSignalEvents = await this.completionLifecycle.emitSignalEvents(
             operationId,
             stepResult.newState,
             reason,
           );
-
-          // Dispatch completion hooks
-          await this.completionLifecycle.dispatchHooks(operationId, stepResult.newState, reason);
 
           // Park-time self-check: sub-agents are dispatched mid-step, so a
           // fast child can complete BEFORE this op's parked state/row were
@@ -1605,10 +1609,10 @@ export class AgentRuntimeService {
         log('[%s] Failed to save error state (infra may be down): %O', operationId, saveError);
       }
 
-      await this.completionLifecycle.emitSignalEvents(operationId, finalStateWithError, 'error');
-
       // Dispatch onComplete + onError hooks
       await this.completionLifecycle.dispatchHooks(operationId, finalStateWithError, 'error');
+
+      await this.completionLifecycle.emitSignalEvents(operationId, finalStateWithError, 'error');
 
       // Finalize the partial snapshot into the canonical S3 path so the
       // failed op is observable in the same place as a successful run.
@@ -3165,8 +3169,8 @@ export class AgentRuntimeService {
       // If stopped due to executeSync's maxSteps limit, need to manually dispatch onComplete hooks
       // Note: If stopped due to state.maxSteps being reached, onComplete has already been called in executeStep
       if (state.status !== 'done' && state.status !== 'error') {
-        await this.completionLifecycle.emitSignalEvents(operationId, state, 'max_steps');
         await this.completionLifecycle.dispatchHooks(operationId, state, 'max_steps');
+        await this.completionLifecycle.emitSignalEvents(operationId, state, 'max_steps');
       }
     }
 

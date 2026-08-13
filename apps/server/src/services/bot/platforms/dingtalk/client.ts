@@ -8,7 +8,6 @@ import {
   updateBotRuntimeStatus,
 } from '@/server/services/gateway/runtimeStatus';
 
-import { stripMarkdown } from '../stripMarkdown';
 import {
   type BotPlatformRuntimeContext,
   type BotProviderConfig,
@@ -26,6 +25,11 @@ import {
   type DingTalkRobotMessage,
 } from './adapter';
 import {
+  createDingTalkAICard,
+  resolveDingTalkAICardTemplateId,
+  updateDingTalkAICard,
+} from './aiCard';
+import {
   DINGTALK_MAX_ROBOT_FILE_BYTES,
   dingTalkMessageEmotion,
   downloadDingTalkRobotFile,
@@ -37,14 +41,44 @@ const log = debug('bot-platform:dingtalk');
 export class DingTalkClient implements PlatformClient {
   readonly applicationId: string;
   readonly id = 'dingtalk';
+  readonly supportsMessageEdit: boolean;
   private connection?: DingTalkStreamConnection;
+  private readonly aiCardTemplateId?: string;
 
   constructor(
     private readonly config: BotProviderConfig,
     private readonly context: BotPlatformRuntimeContext,
   ) {
     this.applicationId = config.applicationId;
+    this.aiCardTemplateId = resolveDingTalkAICardTemplateId(config.settings);
+    this.supportsMessageEdit = !!this.aiCardTemplateId;
   }
+
+  createProgressMessage = async (params: {
+    content: string;
+    platformThreadId: string;
+    platformUserId?: string;
+  }): Promise<{ id: string } | undefined> => {
+    const clientSecret = this.config.credentials.clientSecret;
+    const userId = params.platformUserId?.trim();
+    const conversationType = params.platformThreadId.split(':')[1];
+    // The current AI Card delivery contract targets the invoking user's robot
+    // DM space. Never pull a group conversation into a surprising private DM.
+    if (conversationType === '2' || !this.aiCardTemplateId || !clientSecret || !userId) {
+      return undefined;
+    }
+
+    const id = await createDingTalkAICard({
+      config: {
+        clientId: this.applicationId,
+        clientSecret,
+        templateId: this.aiCardTemplateId,
+      },
+      content: params.content,
+      userId,
+    });
+    return { id };
+  };
 
   private decodeConversationId(platformThreadId: string): string {
     // threadId: dingtalk:<conversationType>:<conversationId>
@@ -115,6 +149,7 @@ export class DingTalkClient implements PlatformClient {
 
   getMessenger(platformThreadId: string): PlatformMessenger {
     const adapter = new DingTalkAdapter(this.applicationId, this.context.redisClient);
+    const clientSecret = this.config.credentials.clientSecret;
     const toText = (content: unknown) => {
       if (typeof content === 'string') return content;
       if (content && typeof content === 'object' && 'content' in content) {
@@ -125,11 +160,40 @@ export class DingTalkClient implements PlatformClient {
     };
 
     return {
+      completeMessage: async (messageId, content) => {
+        if (!this.aiCardTemplateId || !clientSecret || !messageId.startsWith('yidalab_')) {
+          await adapter.postMessage(platformThreadId, toText(content));
+          return;
+        }
+        await updateDingTalkAICard({
+          cardInstanceId: messageId,
+          config: {
+            clientId: this.applicationId,
+            clientSecret,
+            templateId: this.aiCardTemplateId,
+          },
+          content: toText(content),
+          finished: true,
+        });
+      },
       createMessage: async (content) => {
         await adapter.postMessage(platformThreadId, toText(content));
       },
-      editMessage: async (_messageId, content) => {
-        await adapter.postMessage(platformThreadId, toText(content));
+      editMessage: async (messageId, content) => {
+        if (!this.aiCardTemplateId || !clientSecret || !messageId.startsWith('yidalab_')) {
+          await adapter.postMessage(platformThreadId, toText(content));
+          return;
+        }
+        await updateDingTalkAICard({
+          cardInstanceId: messageId,
+          config: {
+            clientId: this.applicationId,
+            clientSecret,
+            templateId: this.aiCardTemplateId,
+          },
+          content: toText(content),
+          finished: false,
+        });
       },
       addReaction: async (messageId) => {
         await this.emotion(platformThreadId, String(messageId), { recall: false });
@@ -151,7 +215,7 @@ export class DingTalkClient implements PlatformClient {
     return compositeId;
   }
   formatMarkdown(markdown: string): string {
-    return stripMarkdown(markdown);
+    return markdown;
   }
   formatReply(body: string, stats?: UsageStats): string {
     return stats && this.config.settings.showUsageStats

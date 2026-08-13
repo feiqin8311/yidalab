@@ -280,8 +280,8 @@ export class ServerCallLlmAttempt {
     this.streamSink.clearBuffers();
     await this.streamSink.waitForImageUploads();
 
-    await this.assertNonEmptyCompletion();
     this.salvageAnswerFromReasoning();
+    await this.assertNonEmptyCompletion();
     this.logResult();
   }
 

@@ -10,6 +10,7 @@ import type {
 } from 'chat';
 import { Message, parseMarkdown, stringifyMarkdown } from 'chat';
 
+import { stripMarkdown } from '../stripMarkdown';
 import type { BotPlatformRedisClient } from '../types';
 
 /** Inbound robot payload fields we care about (text + media). */
@@ -363,9 +364,14 @@ export class DingTalkAdapter {
       content.length > MAX
         ? `${content.slice(0, MAX - 40)}\n\n…(内容过长，完整版请在 Web 查看)`
         : content;
+    const title =
+      toDingTalkPlainText(stripMarkdown(text.split('\n').find((line) => line.trim()) ?? '')).slice(
+        0,
+        60,
+      ) || 'YidaLab';
 
     const response = await fetch(webhook, {
-      body: JSON.stringify({ msgtype: 'text', text: { content: text } }),
+      body: JSON.stringify({ markdown: { text, title }, msgtype: 'markdown' }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     });
@@ -374,7 +380,7 @@ export class DingTalkAdapter {
       throw new Error(`DingTalk reply failed: HTTP ${response.status} ${detail}`.trim());
     }
 
-    return { id: crypto.randomUUID(), raw: await response.json() };
+    return { id: crypto.randomUUID(), raw: await response.json(), threadId };
   }
 
   editMessage(threadId: string, _messageId: string, message: AdapterPostableMessage) {
@@ -397,7 +403,12 @@ export class DingTalkAdapter {
     return { messages: [] };
   }
   async fetchThread(threadId: string): Promise<ThreadInfo> {
-    return { createdAt: new Date(), id: threadId, title: undefined };
+    return {
+      channelId: this.channelIdFromThreadId(threadId),
+      id: threadId,
+      isDM: this.isDM(threadId),
+      metadata: {},
+    };
   }
   channelIdFromThreadId(threadId: string): string {
     return threadId;
@@ -413,17 +424,15 @@ export class DingTalkAdapter {
     return { conversationId: parts.join(':'), conversationType };
   }
   renderFormatted(content: FormattedContent): string {
-    return toDingTalkPlainText(stringifyMarkdown(content.ast));
+    return toDingTalkPlainText(stringifyMarkdown(content));
   }
 
   private renderPostable(message: AdapterPostableMessage): string {
-    if (typeof message === 'string') return toDingTalkPlainText(message);
-    if ('raw' in message) return toDingTalkPlainText(message.raw);
-    if ('markdown' in message) {
-      return toDingTalkPlainText(stringifyMarkdown(parseMarkdown(message.markdown)));
-    }
-    if ('ast' in message) return toDingTalkPlainText(stringifyMarkdown(message.ast));
-    return 'fallbackText' in message ? toDingTalkPlainText(message.fallbackText ?? '') : '';
+    if (typeof message === 'string') return message;
+    if ('raw' in message) return message.raw;
+    if ('markdown' in message) return message.markdown;
+    if ('ast' in message) return stringifyMarkdown(message.ast);
+    return 'fallbackText' in message ? (message.fallbackText ?? '') : '';
   }
 
   private key(threadId: string) {

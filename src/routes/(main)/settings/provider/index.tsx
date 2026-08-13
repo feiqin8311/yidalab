@@ -8,6 +8,7 @@ import { isCustomBranding } from '@/const/version';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 
 import DesktopLayoutContainer from './_layout/Desktop/Container';
+import { styles } from './_layout/Desktop/style';
 import Footer from './(list)/Footer';
 import ProviderDetailPageComponent from './detail';
 import ProviderMenu from './ProviderMenu';
@@ -21,13 +22,7 @@ export const ProviderLayout = memo(() => {
   };
 
   return (
-    <Flexbox
-      horizontal
-      width={'100%'}
-      style={{
-        maxHeight: '100%',
-      }}
-    >
+    <Flexbox horizontal className={styles.mainContainer} height={'100%'} width={'100%'}>
       <ProviderMenu mobile={false} onProviderSelect={handleProviderSelect} />
       <DesktopLayoutContainer>
         <Outlet />

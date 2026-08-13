@@ -559,8 +559,8 @@ describe('BotCallbackService', () => {
 
       await service.handleCallback(body);
 
-      expect(mockCreateMessage).toHaveBeenCalledWith('Execution stopped.');
-      expect(mockEditMessage).not.toHaveBeenCalled();
+      expect(mockEditMessage).toHaveBeenCalledWith('progress-msg-1', 'Execution stopped.');
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
     it('should render custom stopped message when interrupted has errorMessage', async () => {
@@ -573,8 +573,8 @@ describe('BotCallbackService', () => {
 
       await service.handleCallback(body);
 
-      expect(mockCreateMessage).toHaveBeenCalledWith('Execution stopped by user.');
-      expect(mockEditMessage).not.toHaveBeenCalled();
+      expect(mockEditMessage).toHaveBeenCalledWith('progress-msg-1', 'Execution stopped by user.');
+      expect(mockCreateMessage).not.toHaveBeenCalled();
     });
 
     it('should skip when no lastAssistantContent on successful completion', async () => {

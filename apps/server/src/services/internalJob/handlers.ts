@@ -103,6 +103,27 @@ export async function handleBotCompletionJob(payload: unknown): Promise<void> {
   }
 }
 
+export async function handleBotDeadlineJob(payload: unknown): Promise<void> {
+  const { operationId } = payload as { operationId?: string };
+  if (!operationId) throw new Error('bot.deadline requires operationId');
+
+  const { getServerDB } = await import('@/database/core/db-adaptor');
+  const { finalizeInactiveBotOperation } =
+    await import('@/server/services/agentRuntime/stuckOperationWatchdog');
+  const db = await getServerDB();
+  const result = await finalizeInactiveBotOperation(db, operationId);
+
+  if (result.status === 'active' && result.retryAfterMs) {
+    const { enqueueInternalJob } = await import('./enqueue');
+    await enqueueInternalJob({
+      delayMs: result.retryAfterMs,
+      maxAttempts: 1,
+      name: JOB_NAMES.botDeadline,
+      payload,
+    });
+  }
+}
+
 let handlersRegistered = false;
 
 /**
@@ -258,14 +279,7 @@ export function ensureInternalJobWorkersStarted(): void {
   // AGENT_RUNTIME_MODE=queue delivers onComplete via internal fetch/qstash path.
   queue.register(JOB_NAMES.botCompletion, handleBotCompletionJob);
 
-  queue.register(JOB_NAMES.botDeadline, async (payload) => {
-    const { operationId } = payload as { operationId?: string };
-    if (!operationId) throw new Error('bot.deadline requires operationId');
-    const { getServerDB } = await import('@/database/core/db-adaptor');
-    const { AbandonOperationService } = await import('@/server/services/agentRuntime');
-    const db = await getServerDB();
-    await new AbandonOperationService(db).finalizeAbandoned(operationId, 'bot_deadline_12m');
-  });
+  queue.register(JOB_NAMES.botDeadline, handleBotDeadlineJob);
 
   queue.register(JOB_NAMES.opsFunctionComplete, async (payload) => {
     const body = payload as {

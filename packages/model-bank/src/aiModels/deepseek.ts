@@ -1,6 +1,7 @@
 import type { AIChatModelCard } from '../types/aiModel';
 
 // https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+// https://api-docs.deepseek.com/updates
 const deepseekChatModels: AIChatModelCard[] = [
   {
     abilities: {
@@ -10,7 +11,7 @@ const deepseekChatModels: AIChatModelCard[] = [
     },
     contextWindowTokens: 1_048_576,
     description:
-      'DeepSeek V4 Flash is the fast, cost-efficient member of the V4 family with a 1M context window and hybrid thinking — one of the cheapest capable models available.',
+      'DeepSeek-V4-Flash-0731 is the official V4 Flash checkpoint: same 284B/13B MoE architecture as the preview, re-post-trained for stronger agent work. 1M context, hybrid thinking, native Responses API. Default for high-throughput and cost-sensitive use.',
     displayName: 'DeepSeek V4 Flash',
     enabled: true,
     family: 'deepseek',
@@ -19,14 +20,16 @@ const deepseekChatModels: AIChatModelCard[] = [
     maxOutput: 393_216,
     pricing: {
       currency: 'CNY',
-      // Official cache-hit input price is permanently reduced to 1/10 of the launch price.
+      // ponytail: current official list prices. Peak/off-peak billing starts
+      // 2026-08-16 16:00 UTC (off-peak = half of peak) — then switch these
+      // units to the peak table on https://api-docs.deepseek.com/quick_start/pricing
       units: [
         { name: 'textInput_cacheRead', rate: 0.02, strategy: 'fixed', unit: 'millionTokens' },
         { name: 'textInput', rate: 1, strategy: 'fixed', unit: 'millionTokens' },
         { name: 'textOutput', rate: 2, strategy: 'fixed', unit: 'millionTokens' },
       ],
     },
-    releasedAt: '2026-04-24',
+    releasedAt: '2026-07-31',
     settings: {
       extendParams: ['deepseekV4ReasoningEffort'],
     },
@@ -40,7 +43,7 @@ const deepseekChatModels: AIChatModelCard[] = [
     },
     contextWindowTokens: 1_048_576,
     description:
-      'DeepSeek V4 Pro is the flagship of the V4 family, built for high-intensity reasoning and agentic workflows with a 1M context window — excellent Chinese writing and outstanding value for money.',
+      'DeepSeek-V4-Pro-0813 is the V4 Pro GA release. Major agent upgrades over the April preview, with low/high/max reasoning effort, 1M context, and native OpenAI Responses API (Codex-ready). Flagship for production agent workflows.',
     displayName: 'DeepSeek V4 Pro',
     enabled: true,
     family: 'deepseek',
@@ -49,15 +52,13 @@ const deepseekChatModels: AIChatModelCard[] = [
     maxOutput: 393_216,
     pricing: {
       currency: 'CNY',
-      // Official cache-hit input price is permanently reduced to 1/10 of the launch price.
-      // DeepSeek V4 Pro limited-time 75% off discount is valid until 2026-05-05 23:59 Beijing time.
       units: [
         { name: 'textInput_cacheRead', rate: 0.025, strategy: 'fixed', unit: 'millionTokens' },
         { name: 'textInput', rate: 3, strategy: 'fixed', unit: 'millionTokens' },
         { name: 'textOutput', rate: 6, strategy: 'fixed', unit: 'millionTokens' },
       ],
     },
-    releasedAt: '2026-04-24',
+    releasedAt: '2026-08-13',
     settings: {
       extendParams: ['deepseekV4ReasoningEffort'],
     },

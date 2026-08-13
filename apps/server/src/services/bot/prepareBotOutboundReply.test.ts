@@ -204,4 +204,20 @@ describe('prepareBotOutboundReply operation isolation', () => {
     expect(out).not.toContain(urlA);
     expect(out).toMatch(/第二轮结论/);
   });
+
+  it('preserves a full-length Markdown reply for channels that support it', async () => {
+    const reply = `# 分析结论\n\n${'完整上下文和详细建议。'.repeat(180)}`;
+
+    const out = await prepareBotOutboundReply({
+      db,
+      operationId: 'op_full',
+      relayMode: 'full',
+      reply,
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(out).toBe(reply);
+    expect(out.length).toBeGreaterThan(1200);
+  });
 });

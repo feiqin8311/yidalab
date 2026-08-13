@@ -16,8 +16,9 @@ export interface ModelEmptyCompletionDiagnostics {
 }
 
 /**
- * Thrown when the model returns an empty completion — no text content, no
- * reasoning, no tool calls, no images, and ~0 output tokens. This is the "empty
+ * Thrown when the model returns an empty completion — no user-visible text,
+ * tool calls, or images. Hidden reasoning and token usage alone are not a
+ * deliverable. This is the "empty
  * completion" failure mode: after a stalled tool loop the model effectively
  * gives up and emits a blank turn, which the harness used to silently finalize
  * to `done` while persisting an empty assistant message (empty bubble,
@@ -37,7 +38,7 @@ export class ModelEmptyError extends Error {
   readonly diagnostics?: ModelEmptyCompletionDiagnostics;
 
   constructor(
-    message = 'Model returned an empty completion (no content, no tool calls, no output tokens).',
+    message = 'Model returned an empty completion (no user-visible content or tool calls).',
     diagnostics?: ModelEmptyCompletionDiagnostics,
   ) {
     super(message);
@@ -47,39 +48,28 @@ export class ModelEmptyError extends Error {
 }
 
 /**
- * Output-token count at or below this — combined with no content, reasoning,
- * tool calls, or images — marks a turn as an empty completion.
- * The observed failure case reported `out=1 token`.
- */
-const EMPTY_COMPLETION_MAX_OUTPUT_TOKENS = 1;
-
-/**
  * Detect the "empty completion" failure mode: the model returns a turn with no
- * text, no reasoning, no tool calls, no images, and ~0 output tokens —
- * typically after a stalled tool loop where it effectively gives up. Callers
- * throw {@link ModelEmptyError} on a hit so the LLM retry loop re-attempts
- * instead of silently finalizing to `done` with a blank assistant message.
+ * user-visible text, tool calls, or images — typically after a stalled tool
+ * loop where it effectively gives up. Reasoning and output-token counters are
+ * diagnostic only: providers can emit hidden reasoning without producing a
+ * reply, so neither is proof of a deliverable. Callers throw
+ * {@link ModelEmptyError} on a hit so the LLM retry loop re-attempts instead of
+ * silently finalizing to `done` with a blank assistant message.
  */
 export const isEmptyModelCompletion = (params: {
   content: string;
   imageCount: number;
+  /** Diagnostic only; token usage is not proof of user-visible output. */
   outputTokens: number | undefined;
+  /** Diagnostic only; hidden reasoning is not user-visible output. */
   reasoning: string;
   toolCallCount: number;
 }): boolean => {
-  const { content, reasoning, toolCallCount, imageCount, outputTokens } = params;
+  const { content, toolCallCount, imageCount } = params;
 
   if (content.trim().length > 0) return false;
-  if (reasoning.trim().length > 0) return false;
   if (toolCallCount > 0) return false;
   if (imageCount > 0) return false;
-
-  // When the provider reports output tokens, only treat as empty if it's ~0.
-  // Guards against rare cases where structured output we don't accumulate into
-  // `content`/`reasoning` here (e.g. grounding) still consumed real tokens.
-  if (typeof outputTokens === 'number' && outputTokens > EMPTY_COMPLETION_MAX_OUTPUT_TOKENS) {
-    return false;
-  }
 
   return true;
 };

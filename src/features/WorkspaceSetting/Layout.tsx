@@ -1,5 +1,6 @@
 'use client';
 
+import { Flexbox } from '@lobehub/ui';
 import { type FC, memo } from 'react';
 import { Outlet } from 'react-router';
 
@@ -14,7 +15,9 @@ const WorkspaceSettingsLayout: FC = memo(() => {
   return (
     <>
       <SideBar />
-      <Outlet />
+      <Flexbox height={'100%'} style={{ overflow: 'hidden' }} width={'100%'}>
+        <Outlet />
+      </Flexbox>
     </>
   );
 });

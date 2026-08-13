@@ -1,22 +1,12 @@
-import type { AgentContextPolicy } from '@lobechat/agent-runtime';
+import { defaultInheritContextPolicy } from '@lobechat/agent-runtime';
 
-/** Wall-clock deadline for a DingTalk / IM bot operation. */
+/** Inactivity window before a DingTalk / IM bot operation is considered stuck. */
 export const BOT_DEADLINE_MS = 12 * 60 * 1000;
 
 /**
- * Bot/IM context budget. Forced on every execAgent from AgentBridgeService so
- * a 12-tool SIF round cannot grow to 80k+ tokens before the next LLM call.
- * Raw tool payloads stay in Agent Document VFS via archiveToolResultIfNeeded.
+ * Bot/IM runs use the same inherited tools, skills, history, and context
+ * budgets as the Web agent runtime. Channel adapters are transport layers;
+ * they must not silently lower answer quality by giving the model a smaller
+ * conversation or tool-result window.
  */
-export const botContextPolicy: AgentContextPolicy = {
-  budgets: {
-    compressionRatio: 0.55,
-    economicInputTokens: 72_000,
-    maxHistoricalToolTokens: 24_000,
-    maxHistoryTokens: 48_000,
-    maxToolResultTokens: 6_000,
-    maxToolRoundTokens: 16_000,
-  },
-  skillScope: { mode: 'inherit' },
-  toolScope: { discovery: true, mode: 'inherit' },
-};
+export const botContextPolicy = defaultInheritContextPolicy();
