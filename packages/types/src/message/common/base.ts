@@ -57,7 +57,7 @@ export const ChatMessageErrorSchema = z.object({
   numericId: z.number().optional(),
   retryable: z.boolean().optional(),
   severity: z.enum(['info', 'warning', 'error', 'critical']).optional(),
-  type: z.union([z.string(), z.number()]),
+  type: z.union([z.string(), z.number()]).catch('UnknownChatError'),
 });
 
 export interface ChatCitationItem {

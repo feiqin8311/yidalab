@@ -200,8 +200,11 @@ const settleAssistantOnStreamError = async (params: {
 };
 
 const toChatMessageError = (error: unknown): ChatMessageError => {
-  if (error && typeof error === 'object' && 'type' in error && 'message' in error) {
-    return error as ChatMessageError;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const type = (error as { type?: unknown }).type;
+    if (typeof type === 'string' || typeof type === 'number') {
+      return error as ChatMessageError;
+    }
   }
   if (error instanceof ModelEmptyError) {
     return {

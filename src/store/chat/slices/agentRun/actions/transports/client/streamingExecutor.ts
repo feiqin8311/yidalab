@@ -548,8 +548,14 @@ export class StreamingExecutorActionImpl {
       if (!assistantMessage) return;
       if (assistantMessage.content !== LOADING_FLAT && assistantMessage.content?.trim()) return;
 
+      const typed =
+        error && typeof error === 'object'
+          ? (error as { message?: unknown; type?: unknown })
+          : null;
       const chatError: ChatMessageError =
-        error && typeof error === 'object' && 'type' in error && 'message' in error
+        typed &&
+        (typeof typed.type === 'string' || typeof typed.type === 'number') &&
+        typeof typed.message === 'string'
           ? (error as ChatMessageError)
           : {
               message: error instanceof Error ? error.message : String(error),
