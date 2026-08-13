@@ -27,12 +27,14 @@ const Layout = memo(({ children, mobile }: ProviderMenuProps) => {
   const width = mobile ? undefined : 280;
   return (
     <Flexbox
+      height={mobile ? undefined : '100%'}
       width={width}
       style={{
         background: cssVar.colorBgContainer,
         borderRight: `1px solid ${cssVar.colorBorderSecondary}`,
+        minHeight: mobile ? undefined : 0,
         minWidth: width,
-        overflow: mobile ? undefined : 'scroll',
+        overflow: mobile ? undefined : 'auto',
       }}
     >
       <Flexbox

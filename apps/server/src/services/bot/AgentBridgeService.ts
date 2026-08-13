@@ -764,13 +764,15 @@ export class AgentBridgeService {
           }
         : undefined;
     // Whether we can edit a previously-posted message in place. When false
-    // (QQ/WeChat today), the chat-adapter falls editMessage back to postMessage,
+    // (QQ/WeChat and DingTalk without a native AI Card today), the chat-adapter
+    // falls editMessage back to postMessage,
     // so each step/completion edit surfaces as a NEW message — leaving the
     // placeholder stranded and the final reply duplicated. We still post an ack
     // so the user gets immediate feedback, but skip tracking it as
     // `progressMessage` so downstream hooks post the final reply fresh instead
     // of editing the placeholder.
-    const supportsMessageEdit = platformDef?.supportsMessageEdit !== false;
+    const supportsMessageEdit =
+      opts.client?.supportsMessageEdit ?? platformDef?.supportsMessageEdit !== false;
 
     const {
       agentId,
@@ -818,7 +820,25 @@ export class AgentBridgeService {
     const useGatewayTyping = gwClient.isEnabled && platformSupportsTyping;
 
     let progressMessage: SentMessage | undefined;
+    let nativeProgressMessageId: string | undefined;
     let gatewayConnectionId: string | undefined;
+    if (queueMode && client?.createProgressMessage && botContext?.platformThreadId) {
+      try {
+        const nativeProgress = await client.createProgressMessage({
+          content: renderStart(userMessage.text, { lng: replyLocale, timezone }),
+          platformThreadId: botContext.platformThreadId,
+          platformUserId: userMessage.author?.userId,
+        });
+        nativeProgressMessageId = nativeProgress?.id;
+      } catch (error) {
+        log('executeWithWebhooks: native progress message failed, falling back: %O', error);
+      }
+    }
+    // A provider may advertise edit support only through its native progress
+    // surface. If creation was skipped or failed, do not track a plain webhook
+    // ack as editable: DingTalk's adapter edit fallback posts a new message.
+    const supportsTrackedProgress =
+      supportsMessageEdit && (!client?.createProgressMessage || !!nativeProgressMessageId);
     if (useGatewayTyping) {
       log('executeWithWebhooks: using gateway typing, skipping ack message');
 
@@ -867,11 +887,13 @@ export class AgentBridgeService {
           log('executeWithWebhooks: gateway provider lookup failed: %O', err);
         }
       }
-    } else if (!supportsMessageEdit) {
-      // Edit-incapable platform (QQ / DingTalk): every "edit" surfaces as a NEW
-      // message, so don't track progressMessage. QQ still wants a text ack;
-      // DingTalk uses native emotion reactions instead — a text ack would stick
-      // forever as a second bubble ("Insomnia mode." etc.).
+    } else if (nativeProgressMessageId) {
+      log('executeWithWebhooks: native progress message=%s', nativeProgressMessageId);
+    } else if (!supportsTrackedProgress) {
+      // Edit-incapable platform (QQ / DingTalk fallback): every "edit" surfaces
+      // as a NEW message, so don't track progressMessage. QQ still gets a text
+      // ack; DingTalk uses native emotion reactions instead because a text ack
+      // would stick forever as a second bubble ("Insomnia mode." etc.).
       await safeSideEffect(() => thread.startTyping(), 'startTyping (executeWithWebhooks)');
       if (botContext?.platform !== 'dingtalk') {
         await safeSideEffect(
@@ -908,7 +930,7 @@ export class AgentBridgeService {
       // to read from.
       messengerInstallationKey: botContext?.messengerInstallationKey,
       platformThreadId: botContext?.platformThreadId,
-      progressMessageId: progressMessage?.id,
+      progressMessageId: nativeProgressMessageId ?? progressMessage?.id,
       // Pass thread name only if it's user-set.
       // Bot-generated threads use "Thread <locale date>" (e.g. "Thread 4/9/2026, 6:00:00 PM"),
       // which always starts with "Thread " followed by a digit.
@@ -1392,6 +1414,7 @@ export class AgentBridgeService {
                         assistantMessageId: event.assistantMessageId as string | undefined,
                         db: this.db,
                         operationId: event.operationId as string | undefined,
+                        relayMode: botContext?.platform === 'dingtalk' ? 'full' : 'compact',
                         reply: lastAssistantContent!,
                         topicId: resolvedTopicId || (event.topicId as string | undefined),
                         userId: this.userId,

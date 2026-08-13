@@ -1,7 +1,7 @@
 import debug from 'debug';
-import { and, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
 
-import { agentOperations } from '@/database/schemas';
+import { agentOperations, agentRuntimeJournal } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
 import { BOT_DEADLINE_MS } from '@/server/services/bot/botContextPolicy';
 
@@ -39,6 +39,66 @@ export interface StuckBotOpSweepResult {
   failed: string[];
 }
 
+export interface BotDeadlineResult {
+  abandoned: boolean;
+  retryAfterMs?: number;
+  status: 'abandoned' | 'active' | 'missing_or_terminal';
+}
+
+/**
+ * Finalize a bot operation only after it has produced no durable runtime
+ * activity for the full deadline window. The operation's start time remains
+ * the fallback for older runs without protocol journal rows.
+ */
+export async function finalizeInactiveBotOperation(
+  db: LobeChatDatabase,
+  operationId: string,
+  now: Date = new Date(),
+): Promise<BotDeadlineResult> {
+  const [operation] = await db
+    .select({
+      createdAt: agentOperations.createdAt,
+      id: agentOperations.id,
+      startedAt: agentOperations.startedAt,
+      status: agentOperations.status,
+      trigger: agentOperations.trigger,
+    })
+    .from(agentOperations)
+    .where(eq(agentOperations.id, operationId))
+    .limit(1);
+
+  if (
+    !operation ||
+    operation.trigger !== 'bot' ||
+    !STUCK_STATUSES.includes(operation.status as (typeof STUCK_STATUSES)[number])
+  ) {
+    return { abandoned: false, status: 'missing_or_terminal' };
+  }
+
+  const [latestJournalRow] = await db
+    .select({ eventTimestamp: agentRuntimeJournal.eventTimestamp })
+    .from(agentRuntimeJournal)
+    .where(eq(agentRuntimeJournal.operationId, operationId))
+    .orderBy(desc(agentRuntimeJournal.sequence))
+    .limit(1);
+
+  const lastActivityAt =
+    latestJournalRow?.eventTimestamp ?? operation.startedAt ?? operation.createdAt;
+  const inactiveForMs = Math.max(0, now.getTime() - lastActivityAt.getTime());
+  const inactiveAfterMs = resolveBotStuckAfterMs();
+
+  if (inactiveForMs < inactiveAfterMs) {
+    return {
+      abandoned: false,
+      retryAfterMs: Math.max(1000, inactiveAfterMs - inactiveForMs),
+      status: 'active',
+    };
+  }
+
+  await new AbandonOperationService(db).finalizeAbandoned(operationId, 'bot_deadline_12m');
+  return { abandoned: true, status: 'abandoned' };
+}
+
 export async function runStuckBotOperationSweep(
   db: LobeChatDatabase,
   now: Date = new Date(),
@@ -64,13 +124,10 @@ export async function runStuckBotOperationSweep(
   const result: StuckBotOpSweepResult = { abandoned: 0, checked: rows.length, failed: [] };
   if (rows.length === 0) return result;
 
-  const abandon = new AbandonOperationService(db);
-  const reason = 'bot_deadline_12m';
-
   for (const row of rows) {
     try {
-      await abandon.finalizeAbandoned(row.id, reason);
-      result.abandoned++;
+      const deadline = await finalizeInactiveBotOperation(db, row.id, now);
+      if (deadline.abandoned) result.abandoned++;
     } catch (error) {
       log('[%s] abandon failed: %O', row.id, error);
       result.failed.push(row.id);

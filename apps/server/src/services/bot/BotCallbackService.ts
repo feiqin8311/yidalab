@@ -162,7 +162,7 @@ export class BotCallbackService {
       });
 
     const entry = platformRegistry.getPlatform(platform);
-    const canEdit = entry?.supportsMessageEdit !== false;
+    const canEdit = client.supportsMessageEdit ?? entry?.supportsMessageEdit !== false;
     const replyLocale = getBotReplyLocale(platform);
 
     if (type === 'step') {
@@ -471,7 +471,7 @@ export class BotCallbackService {
     if (reason === 'interrupted') {
       const stoppedText = renderStopped(errorMessage, replyLocale);
       try {
-        await messenger.createMessage(stoppedText);
+        await this.deliverFirstChunk(messenger, progressMessageId, stoppedText, canEdit);
       } catch (error) {
         log('handleCompletion: failed to send interrupted message: %O', error);
       }
@@ -530,6 +530,7 @@ export class BotCallbackService {
         replyText = await prepareBotOutboundReply({
           db: this.db,
           operationId: body.operationId,
+          relayMode: body.platformThreadId.startsWith('dingtalk:') ? 'full' : 'compact',
           reply: replyText!,
           topicId: body.topicId,
           userId: body.userId,
@@ -597,7 +598,11 @@ export class BotCallbackService {
 
     if (canEdit && progressMessageId) {
       try {
-        await messenger.editMessage(progressMessageId, payload);
+        if (messenger.completeMessage) {
+          await messenger.completeMessage(progressMessageId, payload);
+        } else {
+          await messenger.editMessage(progressMessageId, payload);
+        }
         // Positive delivery record (console, not debug): "we sent it and the
         // platform accepted it" must be provable from production logs alone —
         // LOBE-11632 burned days on inferring delivery from the absence of

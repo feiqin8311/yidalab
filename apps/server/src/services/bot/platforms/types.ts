@@ -133,6 +133,8 @@ export interface PlatformMessenger {
    * can omit this). Callers must no-op on platforms that don't implement it.
    */
   addReaction?: (messageId: string, emoji: string) => Promise<void>;
+  /** Finalize an editable/streaming message when the platform distinguishes it from an edit. */
+  completeMessage?: (messageId: string, content: MessengerContent) => Promise<void>;
   createMessage: (content: MessengerContent) => Promise<void>;
   editMessage: (messageId: string, content: MessengerContent) => Promise<void>;
   removeReaction: (messageId: string, emoji: string) => Promise<void>;
@@ -189,9 +191,18 @@ export interface PlatformClient {
    * Useful for adapter quirks that should stay encapsulated within the platform client.
    */
   applyChatPatches?: (chatBot: Chat<any>) => void;
-
   /** Create a Chat SDK adapter config for inbound message handling. */
   createAdapter: () => Record<string, any>;
+
+  /**
+   * Create a platform-native progress surface before the agent starts.
+   * Returns undefined when the capability is not configured or unavailable.
+   */
+  createProgressMessage?: (params: {
+    content: string;
+    platformThreadId: string;
+    platformUserId?: string;
+  }) => Promise<{ id: string } | undefined>;
 
   /**
    * Ensure the triggering user is a member of the platform thread the bot
@@ -274,10 +285,10 @@ export interface PlatformClient {
    */
   formatReply?: (body: string, stats?: UsageStats) => string;
 
-  // --- Runtime Operations ---
-
   /** Get a messenger for a specific thread (outbound messaging). */
   getMessenger: (platformThreadId: string) => PlatformMessenger;
+
+  // --- Runtime Operations ---
 
   readonly id: string;
 
@@ -351,6 +362,9 @@ export interface PlatformClient {
   start: (options?: any) => Promise<void>;
 
   stop: () => Promise<void>;
+
+  /** Runtime capability override for providers whose edit support is configuration-dependent. */
+  supportsMessageEdit?: boolean;
 }
 
 // --------------- Provider Config ---------------

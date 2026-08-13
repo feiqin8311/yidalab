@@ -8,17 +8,13 @@ import SettingContainer from '@/features/Setting/SettingContainer';
 
 const Container: FC<PropsWithChildren> = ({ children }) => {
   return (
-    <Flexbox height={'100%'} width={'100%'}>
+    <Flexbox flex={1} height={'100%'} style={{ minWidth: 0, overflow: 'hidden' }}>
       <NavHeader />
-      <SettingContainer
-        maxWidth={1024}
-        padding={24}
-        style={{
-          minHeight: '100%',
-        }}
-      >
-        {children}
-      </SettingContainer>
+      <Flexbox flex={1} style={{ minHeight: 0, overflow: 'hidden' }}>
+        <SettingContainer maxWidth={1024} padding={24}>
+          {children}
+        </SettingContainer>
+      </Flexbox>
     </Flexbox>
   );
 };

@@ -46,6 +46,7 @@ export const anthropicParams = createAnthropicCompatibleParams({
     chatCompletion: () => process.env.DEBUG_DEEPSEEK_CHAT_COMPLETION === '1',
   },
   generateObject: createDeepSeekAnthropicGenerateObject,
+  models: fetchDeepSeekModels,
   provider: ModelProvider.DeepSeek,
 });
 

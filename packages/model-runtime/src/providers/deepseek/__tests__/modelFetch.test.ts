@@ -9,6 +9,7 @@ import { params } from '../index';
 describe('DeepSeek models', () => {
   const fetchModels = params.models as (params: { client: unknown }) => Promise<ChatModelCard[]>;
   const mockClient = {
+    chat: {},
     models: {
       list: vi.fn(),
     },
@@ -94,5 +95,53 @@ describe('DeepSeek models', () => {
 
     expect(models).toHaveLength(4);
     expect(models.every((m) => typeof m.id === 'string')).toBe(true);
+  });
+
+  it('should list via OpenAI /models when the routed client is Anthropic', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({ data: [{ id: 'deepseek-v4-flash' }, { id: 'deepseek-v4-pro' }] }),
+      ok: true,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const anthropicClient = {
+      apiKey: 'sk-test',
+      messages: { create: vi.fn() },
+      models: { list: vi.fn() },
+    };
+
+    const models = await fetchModels({
+      client: anthropicClient,
+      options: { apiKey: 'sk-test' },
+    });
+
+    expect(anthropicClient.models.list).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith('https://api.deepseek.com/v1/models', {
+      headers: { Authorization: 'Bearer sk-test' },
+    });
+    expect(models.map((model) => model.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('should accept Anthropic factory args (apiKey/baseURL at the top level)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({ data: [{ id: 'deepseek-v4-pro' }] }),
+      ok: true,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const models = await fetchModels({
+      apiKey: 'sk-test',
+      baseURL: 'https://api.deepseek.com/anthropic',
+      client: { messages: {} },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.deepseek.com/v1/models', {
+      headers: { Authorization: 'Bearer sk-test' },
+    });
+    expect(models.map((model) => model.id)).toEqual(['deepseek-v4-pro']);
+
+    vi.unstubAllGlobals();
   });
 });

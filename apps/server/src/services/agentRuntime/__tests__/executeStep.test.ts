@@ -147,6 +147,34 @@ describe('AgentRuntimeService.executeStep - early exit on terminal state', () =>
     dispatchSpy.mockRestore();
   });
 
+  it('persists terminal completion before emitting slower Agent Signal events', async () => {
+    const service = createService();
+    const coordinator = (service as any).coordinator;
+    const lifecycle = (service as any).completionLifecycle;
+    const order: string[] = [];
+
+    coordinator.loadAgentState = vi.fn().mockResolvedValue({
+      lastModified: new Date().toISOString(),
+      status: 'done',
+      stepCount: 5,
+    });
+    vi.spyOn(lifecycle, 'dispatchHooks').mockImplementation(async () => {
+      order.push('terminal-persisted');
+    });
+    vi.spyOn(lifecycle, 'emitSignalEvents').mockImplementation(async () => {
+      order.push('signals-emitted');
+      return [];
+    });
+
+    await service.executeStep({
+      context: { phase: 'user_input' } as any,
+      operationId: 'op-completion-order',
+      stepIndex: 6,
+    });
+
+    expect(order).toEqual(['terminal-persisted', 'signals-emitted']);
+  });
+
   it('should unregister hooks after onComplete is dispatched on early exit', async () => {
     const service = createService();
 

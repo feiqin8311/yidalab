@@ -1,6 +1,7 @@
 import type { AgentEvent, BlobStore } from '@lobechat/agent-runtime';
 import { ToolNameResolver } from '@lobechat/context-engine';
 import type { ChatMethodOptions, ModelRuntime } from '@lobechat/model-runtime';
+import { ModelEmptyError } from '@lobechat/model-runtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RuntimeExecutorContext } from '../context';
@@ -146,7 +147,7 @@ describe('ServerCallLlmAttempt', () => {
         source: 'builtin',
       }),
     ]);
-    expect(onFirstChunk).toHaveBeenCalledTimes(2);
+    expect(onFirstChunk).toHaveBeenCalledTimes(5);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ chunk: { text: 'Visible answer', type: 'text' } }),
@@ -208,8 +209,9 @@ describe('ServerCallLlmAttempt', () => {
 
   it('gives consumeStreamUntilDone only the leftover first-byte budget', async () => {
     vi.useFakeTimers();
-    const { attempt } = createAttempt(async () => {
+    const { attempt } = createAttempt(async ({ callback }) => {
       await new Promise((resolve) => setTimeout(resolve, 60_000));
+      await callback?.onText?.('Visible answer');
     });
 
     const pending = attempt.execute();
@@ -245,6 +247,24 @@ describe('ServerCallLlmAttempt', () => {
         answerSalvagedFromReasoning: true,
         content: 'Final answer from reasoning',
         thinkingContent: '',
+      }),
+    );
+  });
+
+  it('rejects hidden reasoning when the model produces no user-visible reply', async () => {
+    const { attempt } = createAttempt(async ({ callback }) => {
+      await callback?.onThinking?.('Internal reasoning without a final answer');
+      await callback?.onCompletion?.({
+        text: '',
+        usage: { totalOutputTokens: 38 },
+      });
+    });
+
+    await expect(attempt.execute()).rejects.toBeInstanceOf(ModelEmptyError);
+    expect(attempt.snapshot()).toEqual(
+      expect.objectContaining({
+        content: '',
+        thinkingContent: 'Internal reasoning without a final answer',
       }),
     );
   });

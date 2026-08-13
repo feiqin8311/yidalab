@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DingTalkClient } from './client';
 
-const downloadDingTalkRobotFile = vi.hoisted(() => vi.fn());
+const { createDingTalkAICard, downloadDingTalkRobotFile, updateDingTalkAICard } = vi.hoisted(
+  () => ({
+    createDingTalkAICard: vi.fn(),
+    downloadDingTalkRobotFile: vi.fn(),
+    updateDingTalkAICard: vi.fn(),
+  }),
+);
 
 vi.mock('./api', async (importOriginal) => {
   const actual: any = await importOriginal();
@@ -13,12 +19,21 @@ vi.mock('./api', async (importOriginal) => {
   };
 });
 
-const makeClient = () =>
+vi.mock('./aiCard', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    createDingTalkAICard,
+    updateDingTalkAICard,
+  };
+});
+
+const makeClient = (settings: Record<string, unknown> = {}) =>
   new DingTalkClient(
     {
       applicationId: 'robot-app',
       credentials: { clientSecret: 'secret' },
-      settings: {},
+      settings,
     } as any,
     {} as any,
   );
@@ -134,5 +149,89 @@ describe('DingTalkClient.extractFiles', () => {
     const adapters = client.createAdapter();
     expect(adapters.dingtalk).toBeDefined();
     expect(adapters.dingtalk.name).toBe('dingtalk');
+  });
+});
+
+describe('DingTalkClient outbound capabilities', () => {
+  beforeEach(() => {
+    createDingTalkAICard.mockReset();
+    updateDingTalkAICard.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('preserves Markdown instead of reducing replies to plain text', () => {
+    expect(makeClient().formatMarkdown('**结论**\n\n- 建议')).toBe('**结论**\n\n- 建议');
+  });
+
+  it('enables editable progress only when an AI Card template is configured', () => {
+    expect(makeClient().supportsMessageEdit).toBe(false);
+    expect(makeClient({ aiCardTemplateId: 'tpl-1' }).supportsMessageEdit).toBe(true);
+  });
+
+  it('creates a native progress card for a direct conversation', async () => {
+    createDingTalkAICard.mockResolvedValue('yidalab_card-1');
+    const client = makeClient({ aiCardTemplateId: 'tpl-1' });
+
+    await expect(
+      client.createProgressMessage({
+        content: '正在思考…',
+        platformThreadId: 'dingtalk:1:cid-1',
+        platformUserId: 'staff-1',
+      }),
+    ).resolves.toEqual({ id: 'yidalab_card-1' });
+    expect(createDingTalkAICard).toHaveBeenCalledWith({
+      config: {
+        clientId: 'robot-app',
+        clientSecret: 'secret',
+        templateId: 'tpl-1',
+      },
+      content: '正在思考…',
+      userId: 'staff-1',
+    });
+  });
+
+  it('does not redirect a group response into a private AI Card', async () => {
+    const client = makeClient({ aiCardTemplateId: 'tpl-1' });
+
+    await expect(
+      client.createProgressMessage({
+        content: '正在思考…',
+        platformThreadId: 'dingtalk:2:group-1',
+        platformUserId: 'staff-1',
+      }),
+    ).resolves.toBeUndefined();
+    expect(createDingTalkAICard).not.toHaveBeenCalled();
+  });
+
+  it('streams step updates and finalizes the same AI Card', async () => {
+    const client = makeClient({ aiCardTemplateId: 'tpl-1' });
+    const messenger = client.getMessenger('dingtalk:1:cid-1');
+
+    await messenger.editMessage('yidalab_card-1', '调用工具中…');
+    await messenger.completeMessage?.('yidalab_card-1', '最终答案');
+
+    expect(updateDingTalkAICard).toHaveBeenNthCalledWith(1, {
+      cardInstanceId: 'yidalab_card-1',
+      config: {
+        clientId: 'robot-app',
+        clientSecret: 'secret',
+        templateId: 'tpl-1',
+      },
+      content: '调用工具中…',
+      finished: false,
+    });
+    expect(updateDingTalkAICard).toHaveBeenNthCalledWith(2, {
+      cardInstanceId: 'yidalab_card-1',
+      config: {
+        clientId: 'robot-app',
+        clientSecret: 'secret',
+        templateId: 'tpl-1',
+      },
+      content: '最终答案',
+      finished: true,
+    });
   });
 });
