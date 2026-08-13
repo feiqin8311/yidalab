@@ -172,6 +172,8 @@ export interface ChatTopicMetadata {
    */
   runningOperation?: {
     assistantMessageId: string;
+    /** ISO timestamp when a bot IM run should be abandoned. */
+    deadlineAt?: string;
     /**
      * Serialized lifecycle hooks (onComplete / onError) registered for this run.
      *
