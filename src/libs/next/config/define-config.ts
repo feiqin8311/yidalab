@@ -41,12 +41,14 @@ export function defineConfig(config: CustomNextConfig) {
 
     outputFileTracingIncludes: {
       '*': [
-        // public/** is already traced when referenced; only pin _spa for Docker
-        // so standalone serves Vite assets without shipping dist/* sources.
+        // Vite SPA references these as URL strings (`/avatars/yida-ai.png`),
+        // which NFT cannot see. Pin them so standalone/Docker can serve them.
         ...(buildWithDocker
           ? [
               'public/_spa/**',
               'public/_spa-auth/**',
+              'public/avatars/**',
+              'public/icons/**',
               'packages/database/migrations/**',
 
               // Ensure native bindings are included in standalone output.
