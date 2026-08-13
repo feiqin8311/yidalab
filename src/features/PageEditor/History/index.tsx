@@ -24,6 +24,7 @@ import { documentService } from '@/services/document';
 import { useDocumentStore } from '@/store/document';
 import { editorSelectors } from '@/store/document/slices/editor';
 
+import { PAGE_COPILOT_ENABLED } from '../pageCopilotEnabled';
 import { usePageAgentPanelControl } from '../RightPanel/OverrideContext';
 import { selectors, usePageEditorStore } from '../store';
 import { openDocumentCompareModal } from './CompareModal';
@@ -231,15 +232,17 @@ const HistoryPanel = memo(() => {
         }
         right={
           <>
-            <Button
-              className={styles.headerButton}
-              icon={ArrowLeftIcon}
-              size={'small'}
-              type={'text'}
-              onClick={() => setRightPanelMode('copilot')}
-            >
-              {t('pageEditor.history.backToCopilot', { ns: 'file' })}
-            </Button>
+            {PAGE_COPILOT_ENABLED && (
+              <Button
+                className={styles.headerButton}
+                icon={ArrowLeftIcon}
+                size={'small'}
+                type={'text'}
+                onClick={() => setRightPanelMode('copilot')}
+              >
+                {t('pageEditor.history.backToCopilot', { ns: 'file' })}
+              </Button>
+            )}
             <ToggleRightPanelButton
               expand={showPageAgentPanel}
               showActive={false}

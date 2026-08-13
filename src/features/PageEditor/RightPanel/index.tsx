@@ -20,6 +20,7 @@ import {
 
 import Conversation from '../Copilot/Conversation';
 import HistoryPanel from '../History';
+import { PAGE_COPILOT_ENABLED } from '../pageCopilotEnabled';
 import { selectors, usePageEditorStore } from '../store';
 import { usePageAgentPanelControl } from './OverrideContext';
 
@@ -75,7 +76,12 @@ const PageEditorRightPanelContent = memo(() => {
   const activeContent = useMemo(
     () => ({
       key: rightPanelMode,
-      node: rightPanelMode === 'history' ? <HistoryPanel /> : <Conversation />,
+      node:
+        rightPanelMode === 'history' ? (
+          <HistoryPanel />
+        ) : PAGE_COPILOT_ENABLED ? (
+          <Conversation />
+        ) : null,
     }),
     [rightPanelMode],
   );
@@ -118,7 +124,9 @@ const PageEditorRightPanel = memo(() => {
   // than clobbering their edits, so there's no reason to hide it on a locked /
   // read-only page. We only hide it from members without edit permission (a
   // document-editing agent is useless to them); History stays available.
-  const effectiveExpand = expand && (rightPanelMode === 'history' || hasEditPermission);
+  // PAGE_COPILOT_ENABLED is a temporary product kill switch — history is unchanged.
+  const effectiveExpand =
+    expand && (rightPanelMode === 'history' || (PAGE_COPILOT_ENABLED && hasEditPermission));
 
   return (
     <RightPanel

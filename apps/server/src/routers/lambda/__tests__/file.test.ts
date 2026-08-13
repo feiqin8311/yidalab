@@ -401,7 +401,7 @@ describe('fileRouter', () => {
       expect(mockRequestProcessing).not.toHaveBeenCalled();
     });
 
-    it('should request processing for persistent resource_library uploads', async () => {
+    it('should keep resource_library uploads persistent without auto-ingestion', async () => {
       mockFileModelCheckHash.mockResolvedValue({ isExist: false });
       mockFileModelCreate.mockResolvedValue({ id: 'xlsx-lib' });
       mockRequestProcessing.mockClear();
@@ -425,7 +425,7 @@ describe('fileRouter', () => {
         true,
         routerMocks.transactionClient,
       );
-      expect(mockRequestProcessing).toHaveBeenCalledWith('xlsx-lib', 'resource_upload');
+      expect(mockRequestProcessing).not.toHaveBeenCalled();
     });
 
     it('should ignore forged persistent policy on message_attachment', async () => {
@@ -478,7 +478,7 @@ describe('fileRouter', () => {
       expect(mockRequestProcessing).toHaveBeenCalledWith('doc-import', 'document_import');
     });
 
-    it('should treat knowledgeBaseId as persistent and request processing', async () => {
+    it('should treat knowledgeBaseId as persistent without auto-ingestion', async () => {
       mockFileModelCheckHash.mockResolvedValue({ isExist: false });
       mockFileModelCreate.mockResolvedValue({ id: 'kb-file' });
       mockRequestProcessing.mockClear();
@@ -501,7 +501,7 @@ describe('fileRouter', () => {
         true,
         routerMocks.transactionClient,
       );
-      expect(mockRequestProcessing).toHaveBeenCalledWith('kb-file', 'knowledge_base');
+      expect(mockRequestProcessing).not.toHaveBeenCalled();
     });
 
     it('should refresh global file metadata when an existing hash points to a missing object', async () => {

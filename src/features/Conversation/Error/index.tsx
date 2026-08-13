@@ -23,6 +23,7 @@ import { getRuntimeErrorMessage } from '@/utils/locale/runtimeErrorMessage';
 
 import ChatInvalidAPIKey from './ChatInvalidApiKey';
 import { isHeterogeneousAgentStatusGuideError } from './heterogeneous';
+import { parseQuotaResetAt } from './parseQuotaResetAt';
 import { useHeterogeneousAutoRetry } from './useHeterogeneousAutoRetry';
 
 // Re-export so existing barrel consumers (ContentBlock, message action bar) can
@@ -217,9 +218,12 @@ export const useErrorContent = (error: any) => {
 
     // Use business error type if provided, otherwise use original
     const finalErrorType = businessErrorType ?? messageError.type;
+    const resetAt = parseQuotaResetAt(rawErrorMessage);
     const translatedMessage = hideMessage
       ? undefined
-      : getRuntimeErrorMessage(t, finalErrorType, { provider: providerName });
+      : resetAt && String(finalErrorType) === AgentRuntimeErrorType.InsufficientQuota
+        ? t('modelRuntime:InsufficientQuotaWithReset', { resetAt })
+        : getRuntimeErrorMessage(t, finalErrorType, { provider: providerName });
 
     return {
       message: translatedMessage || rawErrorMessage,
@@ -252,6 +256,9 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
     const { allowed: canCreate } = usePermission('create_content');
     const sessionErrorBody = error?.body;
     const rawErrorMessage = getRawErrorMessage(error) || alertError?.message;
+    const showLocalizedTitle = Boolean(
+      alertError?.message && error?.type && hasLocalizedErrorMessage(error.type),
+    );
 
     const delAndRegenerateMessage = useConversationStore((s) => s.delAndRegenerateMessage);
     const resetHeteroOverloadRetry = useConversationStore((s) => s.resetHeteroOverloadRetry);
@@ -374,7 +381,7 @@ const ErrorMessageExtra = memo<ErrorExtraProps>(
         id={data.id}
         error={{
           ...alertError,
-          ...(rawErrorMessage ? { message: rawErrorMessage } : {}),
+          ...(!showLocalizedTitle && rawErrorMessage ? { message: rawErrorMessage } : {}),
           extra: data.error?.body ? (
             <Highlighter
               actionIconSize={'small'}

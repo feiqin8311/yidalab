@@ -1,14 +1,10 @@
 import * as xlsx from 'xlsx';
 
-/** Preview caps so a huge 词库 does not freeze the tab. */
-export const SPREADSHEET_PREVIEW_MAX_ROWS = 500;
-export const SPREADSHEET_PREVIEW_MAX_COLS = 40;
-
 export interface SpreadsheetSheetPreview {
   /** First row, used as sticky header when present. */
   headers: string[];
   name: string;
-  /** Data rows after the header, already sliced to preview caps. */
+  /** All data rows after the header. Rendering is virtualized by the viewer. */
   rows: string[][];
   totalCols: number;
   /** Total data rows excluding the header row. */
@@ -35,14 +31,13 @@ export const parseSpreadsheetBuffer = (
       (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
       0,
     );
-    const colCount = Math.min(totalCols, SPREADSHEET_PREVIEW_MAX_COLS);
     const padded = grid.map((row) => {
       const cells = Array.isArray(row) ? row : [];
-      return Array.from({ length: colCount }, (_, index) => cellText(cells[index]));
+      return Array.from({ length: totalCols }, (_, index) => cellText(cells[index]));
     });
 
     const headers = padded[0] ?? [];
-    const body = padded.slice(1, 1 + SPREADSHEET_PREVIEW_MAX_ROWS);
+    const body = padded.slice(1);
 
     return {
       headers,

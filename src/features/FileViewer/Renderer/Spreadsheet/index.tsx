@@ -5,11 +5,11 @@ import { Tabs } from '@lobehub/ui/base-ui';
 import { createStaticStyles } from 'antd-style';
 import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TableVirtuoso } from 'react-virtuoso';
 
 import NeuralNetworkLoading from '@/components/NeuralNetworkLoading';
 
 import { useSpreadsheetLoader } from '../../hooks/useSpreadsheetLoader';
-import { SPREADSHEET_PREVIEW_MAX_COLS, SPREADSHEET_PREVIEW_MAX_ROWS } from './parseSpreadsheet';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   empty: css`
@@ -24,16 +24,6 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     min-width: 0;
     height: 100%;
     min-height: 0;
-  `,
-  table: css`
-    border-collapse: collapse;
-
-    width: max-content;
-    min-width: 100%;
-
-    font-family: ${cssVar.fontFamilyCode};
-    font-size: 12px;
-    line-height: 1.4;
   `,
   td: css`
     padding-block: 6px;
@@ -64,6 +54,17 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     width: 100%;
     min-width: 0;
     min-height: 0;
+
+    table {
+      border-collapse: collapse;
+
+      width: max-content;
+      min-width: 100%;
+
+      font-family: ${cssVar.fontFamilyCode};
+      font-size: 12px;
+      line-height: 1.4;
+    }
   `,
 }));
 
@@ -102,8 +103,6 @@ const SpreadsheetViewer = memo<SpreadsheetViewerProps>(({ url }) => {
   const safeIndex = Math.min(activeSheet, sheets.length - 1);
   const sheet = sheets[safeIndex];
   const isEmpty = sheet.headers.every((cell) => !cell) && sheet.rows.length === 0;
-  const truncated =
-    sheet.totalRows > sheet.rows.length || sheet.totalCols > SPREADSHEET_PREVIEW_MAX_COLS;
 
   return (
     <Flexbox className={styles.page} gap={8}>
@@ -123,39 +122,36 @@ const SpreadsheetViewer = memo<SpreadsheetViewerProps>(({ url }) => {
           <Text className={styles.empty}>{t('preview.spreadsheet.empty')}</Text>
         </Center>
       ) : (
-        <div className={styles.viewport}>
-          <table className={styles.table}>
-            {sheet.headers.length > 0 && (
-              <thead>
-                <tr>
-                  {sheet.headers.map((cell, index) => (
-                    <th className={styles.th} key={index} title={cell}>
-                      {cell || '\u00A0'}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            )}
-            <tbody>
-              {sheet.rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td className={styles.td} key={cellIndex} title={cell}>
-                      {cell || '\u00A0'}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TableVirtuoso
+          className={styles.viewport}
+          data={sheet.rows}
+          defaultItemHeight={31}
+          increaseViewportBy={200}
+          key={safeIndex}
+          fixedHeaderContent={() =>
+            sheet.headers.length > 0 ? (
+              <tr>
+                {sheet.headers.map((cell, index) => (
+                  <th className={styles.th} key={index} title={cell}>
+                    {cell || '\u00A0'}
+                  </th>
+                ))}
+              </tr>
+            ) : null
+          }
+          itemContent={(_, row) =>
+            row.map((cell, cellIndex) => (
+              <td className={styles.td} key={cellIndex} title={cell}>
+                {cell || '\u00A0'}
+              </td>
+            ))
+          }
+        />
       )}
 
-      {truncated && (
+      {!isEmpty && (
         <Text className={styles.empty} fontSize={12}>
-          {t('preview.spreadsheet.truncated', {
-            shownCols: Math.min(sheet.totalCols, SPREADSHEET_PREVIEW_MAX_COLS),
-            shownRows: Math.min(sheet.totalRows, SPREADSHEET_PREVIEW_MAX_ROWS),
+          {t('preview.spreadsheet.summary', {
             totalCols: sheet.totalCols,
             totalRows: sheet.totalRows,
           })}

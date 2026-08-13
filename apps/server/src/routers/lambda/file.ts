@@ -311,10 +311,11 @@ export const fileRouter = router({
         );
       });
 
-      // Persistent resources (resource page / KB / document import): start ingestion.
+      // Resource page / KB uploads stay persistent (listed in the library) but
+      // do not auto-chunk or embed — the UI starts that via batch / per-file.
+      // Document imports still ingest so the imported page has a body.
       // Chat on_demand attachments skip this — prompt-time uses ContextResourceResolver.
-      // Upload still succeeds if enqueue fails, but parseStatus is marked failed so UI can show it.
-      if (processingPolicy === 'persistent') {
+      if (processingPolicy === 'persistent' && persistReason === 'document_import') {
         try {
           const { ResourceIngestionService } = await import('@/server/services/resourceIngestion');
           const ingestion = new ResourceIngestionService(
@@ -322,11 +323,7 @@ export const fileRouter = router({
             ctx.userId,
             ctx.workspaceId ?? undefined,
           );
-          await ingestion.requestProcessing(
-            id,
-            (persistReason as 'resource_upload' | 'knowledge_base' | 'document_import') ??
-              'resource_upload',
-          );
+          await ingestion.requestProcessing(id, 'document_import');
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           console.error('[createFile] resource ingestion enqueue failed:', e);

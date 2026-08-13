@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as xlsx from 'xlsx';
 
-import {
-  parseSpreadsheetBuffer,
-  SPREADSHEET_PREVIEW_MAX_COLS,
-  SPREADSHEET_PREVIEW_MAX_ROWS,
-} from './parseSpreadsheet';
+import { parseSpreadsheetBuffer } from './parseSpreadsheet';
 
 const toBytes = (workbook: xlsx.WorkBook) =>
   new Uint8Array(xlsx.write(workbook, { bookType: 'xlsx', type: 'buffer' }) as Buffer);
@@ -38,19 +34,20 @@ describe('parseSpreadsheetBuffer', () => {
     });
   });
 
-  it('caps oversized sheets so preview stays usable', () => {
-    const header = Array.from({ length: SPREADSHEET_PREVIEW_MAX_COLS + 5 }, (_, i) => `c${i}`);
-    const rows = Array.from({ length: SPREADSHEET_PREVIEW_MAX_ROWS + 8 }, (_, r) =>
-      header.map((_, c) => `${r}-${c}`),
+  it('keeps rows and columns beyond the previous preview limits', () => {
+    const header = Array.from({ length: 45 }, (_, index) => `c${index}`);
+    const rows = Array.from({ length: 508 }, (_, rowIndex) =>
+      header.map((_, columnIndex) => `${rowIndex}-${columnIndex}`),
     );
     const workbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([header, ...rows]), 'Big');
 
     const [sheet] = parseSpreadsheetBuffer(toBytes(workbook));
 
-    expect(sheet.headers).toHaveLength(SPREADSHEET_PREVIEW_MAX_COLS);
-    expect(sheet.rows).toHaveLength(SPREADSHEET_PREVIEW_MAX_ROWS);
-    expect(sheet.totalRows).toBe(SPREADSHEET_PREVIEW_MAX_ROWS + 8);
-    expect(sheet.totalCols).toBe(SPREADSHEET_PREVIEW_MAX_COLS + 5);
+    expect(sheet.headers).toHaveLength(45);
+    expect(sheet.rows).toHaveLength(508);
+    expect(sheet.rows.at(-1)?.at(-1)).toBe('507-44');
+    expect(sheet.totalRows).toBe(508);
+    expect(sheet.totalCols).toBe(45);
   });
 });

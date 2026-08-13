@@ -210,7 +210,7 @@
   "preview.office.slide": "第 {{number}} 页",
   "preview.spreadsheet.empty": "此工作表为空。",
   "preview.spreadsheet.loadError": "表格预览失败。",
-  "preview.spreadsheet.truncated": "仅显示 {{shownRows}} / {{totalRows}} 行，{{shownCols}} / {{totalCols}} 列。",
+  "preview.spreadsheet.summary": "共 {{totalRows}} 行，{{totalCols}} 列。",
   "preview.unsupportedFileAndContact": "此文件格式暂不支持在线预览，如有预览诉求，欢迎<1>反馈给我们</1>",
   "resource": "资源",
   "resourceList.batchCopyDescription": "您可以拷贝到有权限创建资源的个人账户或工作区。",
