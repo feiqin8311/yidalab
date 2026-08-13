@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { AgentDocumentWithRules } from '@/database/models/agentDocuments';
 import {
+  filterAgentContextDocumentsBySelection,
   normalizeAgentDocumentPosition,
   toAgentContextDocument,
   toAgentContextDocuments,
@@ -211,6 +212,26 @@ describe('toAgentContextDocuments', () => {
     const result = toAgentContextDocuments(rows);
 
     expect(result.map((d) => d.id)).toEqual(['skill-index']);
+  });
+});
+
+describe('filterAgentContextDocumentsBySelection', () => {
+  const docs = toAgentContextDocuments([
+    buildDoc({ id: 'selected-doc', sourceType: AGENT_DOCUMENT_SOURCE_TYPE }),
+    buildDoc({ id: 'unselected-doc', sourceType: AGENT_DOCUMENT_SOURCE_TYPE }),
+    buildDoc({ id: 'template-doc', templateId: 'system-template' }),
+  ]);
+
+  it('excludes user resources when no document is attached', () => {
+    expect(filterAgentContextDocumentsBySelection(docs, undefined).map((doc) => doc.id)).toEqual([
+      'template-doc',
+    ]);
+  });
+
+  it('keeps only explicitly attached user resources plus system templates', () => {
+    expect(
+      filterAgentContextDocumentsBySelection(docs, ['selected-doc']).map((doc) => doc.id),
+    ).toEqual(['selected-doc', 'template-doc']);
   });
 });
 

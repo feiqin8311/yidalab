@@ -1630,7 +1630,9 @@ describe('ChatService', () => {
         await chatService.createAssistantMessage({
           agentId: 'agent-1',
           messages: [{ content: 'Hello', role: 'user' }] as UIChatMessage[],
-          resolvedAgentConfig: createMockResolvedConfig(),
+          resolvedAgentConfig: createMockResolvedConfig({
+            chatConfig: { enabledAgentDocumentIds: ['doc-1'] },
+          }),
         });
 
         expect(agentDocumentService.getContextDocuments).toHaveBeenCalledWith({
@@ -1646,6 +1648,36 @@ describe('ChatService', () => {
               }),
             ],
           }),
+        );
+      });
+
+      it('should omit user documents that are not attached', async () => {
+        const contextEngineeringSpy = vi
+          .spyOn(mechaModule, 'contextEngineering')
+          .mockResolvedValue([]);
+        vi.spyOn(chatService, 'getChatCompletion').mockResolvedValue(new Response(''));
+        vi.spyOn(agentDocumentService, 'getContextDocuments').mockResolvedValue([
+          {
+            content: 'Private setup steps',
+            filename: 'private.md',
+            id: 'doc-1',
+            loadRules: [],
+            policy: null,
+            policyLoadFormat: null,
+            policyLoadPosition: null,
+            templateId: null,
+            title: 'Private',
+          },
+        ] as any);
+
+        await chatService.createAssistantMessage({
+          agentId: 'agent-1',
+          messages: [{ content: 'Hello', role: 'user' }] as UIChatMessage[],
+          resolvedAgentConfig: createMockResolvedConfig(),
+        });
+
+        expect(contextEngineeringSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ agentDocuments: [] }),
         );
       });
 
@@ -1674,6 +1706,7 @@ describe('ChatService', () => {
           agentId: 'builder-agent',
           messages: [{ content: 'Hello', role: 'user' }] as UIChatMessage[],
           resolvedAgentConfig: createMockResolvedConfig({
+            chatConfig: { enabledAgentDocumentIds: ['doc-1'] },
             enabledToolIds: [AgentBuilderIdentifier],
           }),
         });

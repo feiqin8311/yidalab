@@ -427,6 +427,7 @@
   "knowledgeBase.allFiles": "All Files",
   "knowledgeBase.allLibraries": "All Libraries",
   "knowledgeBase.disabled": "Library chat isn’t available in this deployment. Switch to a server-side database, or use {{cloud}}.",
+  "knowledgeBase.documentsLoadError": "Couldn’t load resource documents. Retry",
   "knowledgeBase.files": "Files",
   "knowledgeBase.libraries": "Libraries",
   "knowledgeBase.library.action.add": "Add",

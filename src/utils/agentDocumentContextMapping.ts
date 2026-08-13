@@ -88,3 +88,16 @@ export const toAgentContextDocuments = (
       return folderTitle ? { ...mapped, folderTitle } : mapped;
     });
 };
+
+/**
+ * Keep system/template documents available while requiring an explicit chat-attachment
+ * selection for user-created resources. `policyId` is the mapped template id.
+ */
+export const filterAgentContextDocumentsBySelection = (
+  docs: AgentContextDocument[],
+  enabledAgentDocumentIds: string[] | undefined,
+): AgentContextDocument[] => {
+  const enabledIds = new Set(enabledAgentDocumentIds ?? []);
+
+  return docs.filter((doc) => !!doc.policyId || (!!doc.id && enabledIds.has(doc.id)));
+};

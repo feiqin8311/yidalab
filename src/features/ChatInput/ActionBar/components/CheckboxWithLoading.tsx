@@ -56,8 +56,11 @@ const CheckboxItem = memo<CheckboxItemProps>(
       if (disabled) return;
 
       setLoading(true);
-      await onUpdate(id, !checked);
-      setLoading(false);
+      try {
+        await onUpdate(id, !checked);
+      } finally {
+        setLoading(false);
+      }
     };
 
     return (

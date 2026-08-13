@@ -73,6 +73,11 @@ export interface LobeAgentChatConfig extends AgentMemoryChatConfig, AgentSelfIte
    * When enabled, old messages will be compressed into summaries when token threshold is reached
    */
   enableContextCompression?: boolean;
+  /**
+   * Agent-document association ids explicitly enabled from the chat attachment picker.
+   * Unlisted user-created documents stay in Resources but are not exposed to the model.
+   */
+  enabledAgentDocumentIds?: string[];
   enableFollowUpChips?: boolean;
   /**
    * Whether to route this agent through a graph-style orchestration runtime.
@@ -271,6 +276,7 @@ export const AgentChatConfigSchema = z
     enableReasoning: z.boolean().optional(),
     enableReasoningEffort: z.boolean().optional(),
     enableStreaming: z.boolean().optional(),
+    enabledAgentDocumentIds: z.array(z.string()).optional(),
     gpt5ReasoningEffort: z.enum(['minimal', 'low', 'medium', 'high']).optional(),
     gpt5_1ReasoningEffort: z.enum(['none', 'low', 'medium', 'high']).optional(),
     gpt5_2ProReasoningEffort: z.enum(['medium', 'high', 'xhigh']).optional(),

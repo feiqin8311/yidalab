@@ -186,6 +186,8 @@ export interface ToolExecutionContext {
    * bound to the builder builtin; only AgentBuilder tool methods read this.
    */
   editingAgentId?: string;
+  /** Agent-document association ids explicitly enabled in the chat attachment picker. */
+  enabledAgentDocumentIds?: string[];
   /**
    * Legacy agent invocation callback forwarded from RuntimeExecutorContext.
    * Kept for tool runtimes that still dispatch through exec_sub_agent style

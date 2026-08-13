@@ -427,6 +427,7 @@
   "knowledgeBase.allFiles": "全部文件",
   "knowledgeBase.allLibraries": "全部资源库",
   "knowledgeBase.disabled": "当前部署模式不支持资源库对话。可切换到服务端数据库部署，或使用 {{cloud}} 服务",
+  "knowledgeBase.documentsLoadError": "资源文档加载失败，点击重试",
   "knowledgeBase.files": "文件",
   "knowledgeBase.libraries": "资源库",
   "knowledgeBase.library.action.add": "添加",
