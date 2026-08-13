@@ -11,6 +11,12 @@ const FONT =
 
 const contentWidth = PAGE_WIDTH - MARGIN * 2;
 
+export const getTokenPlainText = (token: { raw?: string; text?: string }): string => {
+  const text = token.text?.trim();
+  if (text) return text;
+  return token.raw?.trim() ?? '';
+};
+
 const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
   const lines: string[] = [];
   for (const paragraph of text.split('\n')) {
@@ -168,14 +174,10 @@ export const generateConversationPdf = async (
         break;
       }
       default: {
-        if ('text' in token && token.text) {
+        const text = getTokenPlainText(token);
+        if (text) {
           ctx.font = `12px ${FONT}`;
-          await drawLines(
-            wrapText(ctx, String(token.text), contentWidth),
-            `12px ${FONT}`,
-            18,
-            '#333',
-          );
+          await drawLines(wrapText(ctx, text, contentWidth), `12px ${FONT}`, 18, '#333');
         }
       }
     }

@@ -93,4 +93,21 @@ describe('generateMarkdown', () => {
 
     expect(result).toContain('Intro\n\n<think>\n\nReasoning\n\n</think>\n\nOutro');
   });
+
+  it('should flatten assistantGroup children into exported text', () => {
+    const result = generateMarkdown({
+      messages: [
+        {
+          children: [{ content: 'first step' }, { content: 'final answer' }],
+          content: '',
+          createdAt: Date.now(),
+          id: 'group-1',
+          role: 'assistantGroup',
+        },
+      ] as UIChatMessage[],
+    });
+
+    expect(result).toContain('first step');
+    expect(result).toContain('final answer');
+  });
 });
