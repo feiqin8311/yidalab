@@ -18,16 +18,16 @@ const SWEEP_LIMIT = 20;
 
 const STUCK_STATUSES = ['running', 'waiting_for_async_tool'] as const;
 
-export const resolveBotStuckAfterMs = (env: NodeJS.ProcessEnv = process.env): number => {
+type WatchdogEnv = Record<string, string | undefined>;
+
+export const resolveBotStuckAfterMs = (env: WatchdogEnv = process.env): number => {
   const raw = env.AGENT_BOT_STUCK_MS;
   if (!raw) return DEFAULT_BOT_STUCK_MS;
   const n = Number.parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_BOT_STUCK_MS;
 };
 
-export const isStuckBotOperationWatchdogEnabled = (
-  env: NodeJS.ProcessEnv = process.env,
-): boolean => {
+export const isStuckBotOperationWatchdogEnabled = (env: WatchdogEnv = process.env): boolean => {
   if (env.AGENT_BOT_STUCK_CRON === '0') return false;
   if (env.AGENT_BOT_STUCK_CRON === '1') return true;
   return Boolean(env.DATABASE_URL) && !env.VERCEL_ENV;

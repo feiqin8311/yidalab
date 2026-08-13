@@ -16,6 +16,7 @@ import type { LobeChatDatabase } from '@/database/type';
 import { AgentRuntimeCoordinator } from '@/server/modules/AgentRuntime/AgentRuntimeCoordinator';
 
 import { CompletionLifecycle } from './CompletionLifecycle';
+import type { SerializedHook } from './hooks';
 import { OperationTraceRecorder } from './OperationTraceRecorder';
 import { createDefaultSnapshotStore } from './snapshotStore';
 
@@ -347,7 +348,7 @@ export class AbandonOperationService {
 
   private resolveSerializedHooks(op: typeof agentOperations.$inferSelect) {
     const fromOp = (op.metadata as { hooks?: unknown } | null)?.hooks;
-    return Array.isArray(fromOp) ? (fromOp as never) : undefined;
+    return Array.isArray(fromOp) ? (fromOp as SerializedHook[]) : undefined;
   }
 
   private async findOperationRow(operationId: string) {
@@ -364,20 +365,14 @@ export class AbandonOperationService {
   private async resolveAssistantMessageIdForOperation(
     op: typeof agentOperations.$inferSelect,
     operationId: string,
-  ): Promise<{ assistantMessageId?: string; hooks?: unknown[] }> {
+  ): Promise<{ assistantMessageId?: string; hooks?: SerializedHook[] }> {
     let topicModel: TopicModel | undefined;
 
     if (op.topicId) {
       try {
         topicModel = new TopicModel(this.db, op.userId, op.workspaceId ?? undefined);
         const topic = await topicModel.findById(op.topicId);
-        const running = topic?.metadata?.runningOperation as
-          | {
-              assistantMessageId?: string;
-              hooks?: unknown[];
-              operationId?: string;
-            }
-          | undefined;
+        const running = topic?.metadata?.runningOperation;
 
         if (running?.operationId && running.operationId !== operationId) {
           return {};
@@ -387,7 +382,7 @@ export class AbandonOperationService {
           await topicModel.updateMetadata(op.topicId, { runningOperation: null }).catch(() => {});
           return {
             assistantMessageId: running.assistantMessageId,
-            hooks: Array.isArray(running.hooks) ? running.hooks : undefined,
+            hooks: Array.isArray(running.hooks) ? (running.hooks as SerializedHook[]) : undefined,
           };
         }
       } catch (e) {
