@@ -1,6 +1,8 @@
 import type { ExtendedHumanInterventionConfig } from '@/types/index';
 
 export interface LobeChatPluginApi {
+  annotations?: { readOnlyHint?: boolean };
+  cachePolicy?: 'operation' | 'none' | string;
   /**
    * Default execution timeout in milliseconds for this API.
    * Falls back to the global default (120_000 ms) when omitted.
@@ -23,6 +25,7 @@ export interface LobeChatPluginApi {
   humanIntervention?: ExtendedHumanInterventionConfig;
   name: string;
   parameters: Record<string, any>;
+  readOnlyHint?: boolean;
   url?: string;
 }
 

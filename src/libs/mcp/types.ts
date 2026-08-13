@@ -6,9 +6,12 @@ interface InputSchema {
 }
 
 export interface McpTool {
+  annotations?: { readOnlyHint?: boolean };
+  cachePolicy?: string;
   description: string;
   inputSchema: InputSchema;
   name: string;
+  readOnlyHint?: boolean;
 }
 
 export interface McpResource {
@@ -82,11 +85,7 @@ export interface ResourceLinkContent {
 }
 
 export type ToolCallContent =
-  | TextContent
-  | ImageContent
-  | AudioContent
-  | ResourceContent
-  | ResourceLinkContent;
+  TextContent | ImageContent | AudioContent | ResourceContent | ResourceLinkContent;
 
 export interface ToolCallResult {
   content: ToolCallContent[];

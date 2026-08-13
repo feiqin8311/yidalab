@@ -18,7 +18,18 @@ import type {
   SubAgentTask,
 } from '@lobechat/agent-runtime';
 import { UsageCounter } from '@lobechat/agent-runtime';
-import { countContextTokens, type ToolsEngine } from '@lobechat/context-engine';
+import type { ToolResultCacheIndex, ToolsEngine } from '@lobechat/context-engine';
+import {
+  buildDedupHitContent,
+  buildToolCacheKey,
+  cloneToolResultCache,
+  countContextTokens,
+  ensureToolResultCache,
+  isToolCacheable,
+  lookupToolCache,
+  resolveToolCacheHint,
+  writeToolCache,
+} from '@lobechat/context-engine';
 import { isEmptyModelCompletion, ModelEmptyError } from '@lobechat/model-runtime';
 import {
   chainCompressContext,
@@ -54,6 +65,18 @@ import { StreamingHandler } from './StreamingHandler';
 import { type StreamChunk } from './types/streaming';
 
 const log = debug('lobe-store:agent-executors');
+
+/** Per-operation in-flight read-only tool calls. Survives new executor closures. */
+const readOnlyToolInflight = new Map<string, Map<string, Promise<unknown>>>();
+
+const getReadOnlyToolInflight = (operationId: string) => {
+  let inflight = readOnlyToolInflight.get(operationId);
+  if (!inflight) {
+    inflight = new Map();
+    readOnlyToolInflight.set(operationId, inflight);
+  }
+  return inflight;
+};
 
 // Tool pricing configuration (USD per call)
 const TOOL_PRICING: Record<string, number> = {
@@ -187,12 +210,40 @@ const toChatMessageError = (error: unknown): ChatMessageError => {
       type: AgentRuntimeErrorType.ModelEmptyCompletion,
     };
   }
+  if (
+    error instanceof Error &&
+    (error as Error & { code?: string }).code === 'CONTEXT_BUDGET_EXCEEDED'
+  ) {
+    return {
+      message: error.message,
+      type: AgentRuntimeErrorType.ExceededContextWindow,
+    };
+  }
   const message = error instanceof Error ? error.message : String(error);
   return {
     message,
     type: 'UnknownChatError',
   };
 };
+
+const resolveClientToolCacheHint = (
+  payload: ChatToolPayload,
+  manifests: Array<{
+    api?: Array<{
+      annotations?: { readOnlyHint?: boolean };
+      cachePolicy?: string;
+      name?: string;
+      readOnlyHint?: boolean;
+    }>;
+    cachePolicy?: string;
+    identifier: string;
+  }> = [],
+) =>
+  resolveToolCacheHint({
+    apiName: payload.apiName,
+    identifier: payload.identifier,
+    manifest: manifests.find((item) => item.identifier === payload.identifier),
+  });
 
 const formatSubAgentBatchResultContent = (
   tasks: SubAgentTask[],
@@ -1050,13 +1101,116 @@ export const createAgentExecutors = (context: {
           toolName,
           !!runtimeContext?.stepContext?.todos,
         );
-        const result: any = await context
-          .get()
-          .internal_invokeDifferentTypePlugin(
-            toolMessageId,
-            chatToolPayload,
-            runtimeContext?.stepContext,
+
+        const toolCacheHint = resolveClientToolCacheHint(
+          chatToolPayload,
+          context.agentConfig.enabledManifests,
+        );
+        const loadMutableCache = (): ToolResultCacheIndex =>
+          cloneToolResultCache(
+            ensureToolResultCache(
+              context.get().operations[context.operationId]?.metadata?.toolResultCache,
+            ),
           );
+        const persistCache = (cache: ToolResultCacheIndex) => {
+          context.get().updateOperationMetadata(context.operationId, { toolResultCache: cache });
+        };
+
+        let result: any;
+        const cacheKey = isToolCacheable(toolCacheHint)
+          ? buildToolCacheKey(
+              chatToolPayload.identifier,
+              chatToolPayload.apiName,
+              chatToolPayload.arguments ?? {},
+            )
+          : undefined;
+        const toolResultCache = loadMutableCache();
+        const cacheHit = cacheKey ? lookupToolCache(toolResultCache, cacheKey) : undefined;
+        if (cacheKey && cacheHit) persistCache(toolResultCache);
+
+        if (cacheHit?.success) {
+          const dedupContent = buildDedupHitContent(cacheHit);
+          log(
+            '[%s][call_tool] read-only dedup hit %s → %s',
+            sessionLogId,
+            toolName,
+            cacheHit.originalCallId,
+          );
+          await context
+            .get()
+            .optimisticUpdateMessageContent(toolMessageId, dedupContent, undefined, {
+              operationId: executeToolOpId,
+            });
+          result = { content: dedupContent, success: true };
+        } else if (cacheKey) {
+          const inflight = getReadOnlyToolInflight(context.operationId);
+          const pending = inflight.get(cacheKey);
+          const isLeader = !pending;
+          const shared =
+            pending ??
+            context
+              .get()
+              .internal_invokeDifferentTypePlugin(
+                toolMessageId,
+                chatToolPayload,
+                runtimeContext?.stepContext,
+              )
+              .finally(() => {
+                inflight.delete(cacheKey);
+                if (inflight.size === 0) readOnlyToolInflight.delete(context.operationId);
+              });
+          if (isLeader) inflight.set(cacheKey, shared);
+
+          result = await shared;
+
+          if (isLeader && result && !result.error) {
+            const updated = (context.get().dbMessagesMap[context.messageKey] || []).find(
+              (m) => m.id === toolMessageId,
+            );
+            const cachedContent =
+              (typeof result.content === 'string' && result.content) ||
+              (typeof updated?.content === 'string' && updated.content) ||
+              '';
+            if (cachedContent) {
+              const nextCache = loadMutableCache();
+              writeToolCache(nextCache, cacheKey, {
+                content: cachedContent,
+                originalCallId: chatToolPayload.id,
+                success: true,
+                timestamp: Date.now(),
+              });
+              persistCache(nextCache);
+            }
+          } else if (!isLeader && result && !result.error) {
+            const nextCache = loadMutableCache();
+            const hit = lookupToolCache(nextCache, cacheKey);
+            const dedupContent = hit
+              ? buildDedupHitContent(hit)
+              : buildDedupHitContent({
+                  content:
+                    typeof result.content === 'string'
+                      ? result.content
+                      : String(result.content ?? ''),
+                  originalCallId: chatToolPayload.id,
+                  success: true,
+                  timestamp: Date.now(),
+                });
+            await context
+              .get()
+              .optimisticUpdateMessageContent(toolMessageId, dedupContent, undefined, {
+                operationId: executeToolOpId,
+              });
+            result = { content: dedupContent, success: true };
+          }
+        } else {
+          result = await context
+            .get()
+            .internal_invokeDifferentTypePlugin(
+              toolMessageId,
+              chatToolPayload,
+              runtimeContext?.stepContext,
+            );
+        }
 
         // Check if operation was cancelled during tool execution
         const executeToolOperation = context.get().operations[executeToolOpId];

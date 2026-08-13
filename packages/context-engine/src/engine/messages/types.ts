@@ -240,11 +240,15 @@ export interface MessagesEngineParams {
   enableHistoryCount?: boolean;
   /**
    * Micro-prune historical tool result bodies for the model view.
-   * When maxHistoricalToolTokens is set, ToolResultPruneProcessor runs after HistoryTruncate.
+   * When maxHistoricalToolTokens is set, ToolResultPruneProcessor runs before HistoryTruncate.
    */
   toolResultPrune?: {
     enabled?: boolean;
     maxHistoricalToolTokens?: number;
+    /** Per-result cap for the current (protected) tool chain. */
+    maxToolResultTokens?: number;
+    /** Total cap for the current tool batch. */
+    maxToolRoundTokens?: number;
   };
   /** Optional token budget for retained history groups (from tail). */
   maxHistoryTokens?: number;

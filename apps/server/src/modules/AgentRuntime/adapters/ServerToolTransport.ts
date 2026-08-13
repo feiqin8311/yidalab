@@ -3,9 +3,11 @@ import { executeToolWithRetry } from '@lobechat/agent-runtime';
 import {
   buildDedupHitContent,
   buildToolCacheKey,
+  cloneToolResultCache,
   ensureToolResultCache,
   isToolCacheable,
   lookupToolCache,
+  resolveToolCacheHint,
   type ToolResultCacheIndex,
   writeToolCache,
 } from '@lobechat/context-engine';
@@ -44,6 +46,9 @@ import { resolveToolTimeoutMs } from '../resolveToolTimeout';
 
 export class ServerToolTransport implements ToolTransport {
   maxRetries = TOOL_MAX_RETRIES;
+
+  /** Coalesces concurrent identical read-only calls in the same Promise.all batch. */
+  private readonly readOnlyInflight = new Map<string, Promise<ToolRunExecution>>();
 
   constructor(private readonly ctx: RuntimeExecutorContext) {}
 
@@ -99,6 +104,10 @@ export class ServerToolTransport implements ToolTransport {
       }),
     });
 
+    let inflightLead:
+      | { key: string; reject: (e: unknown) => void; resolve: (v: ToolRunExecution) => void }
+      | undefined;
+
     try {
       const hookResult = await this.dispatchBeforeToolCall(chatToolPayload, context);
       let toolCallMocked = false;
@@ -144,6 +153,20 @@ export class ServerToolTransport implements ToolTransport {
             result: dedupHit,
           };
         }
+
+        // Register before any await so Promise.all siblings join instead of all missing.
+        const inflight = this.beginReadOnlyInflight(chatToolPayload, context);
+        if (inflight.kind === 'follow') {
+          const shared = await inflight.promise;
+          const hit = this.tryReadOnlyDedup(chatToolPayload, context);
+          const result = hit ?? shared.result;
+          executeToolSpan.setAttributes(
+            buildExecuteToolResultAttributes({ attempts: 0, success: result.success }),
+          );
+          await this.dispatchAfterToolCall(chatToolPayload, context, result, false);
+          return { attempts: 0, mocked: false, result };
+        }
+        if (inflight.kind === 'lead') inflightLead = inflight;
       }
 
       if (!execution) {
@@ -251,6 +274,8 @@ export class ServerToolTransport implements ToolTransport {
       }
 
       if (execution.result.deferred) {
+        // Client-wait results are per tool_call_id — don't share the slot.
+        if (inflightLead) this.readOnlyInflight.delete(inflightLead.key);
         executeToolSpan.setAttributes(
           buildExecuteToolResultAttributes({ attempts: execution.attempts, success: true }),
         );
@@ -286,12 +311,15 @@ export class ServerToolTransport implements ToolTransport {
         }),
       );
 
-      return {
+      const completed: ToolRunExecution = {
         ...execution,
         mocked: toolCallMocked || execution.mocked,
         result: executionResult,
       };
+      inflightLead?.resolve(completed);
+      return completed;
     } catch (error) {
+      inflightLead?.reject(error);
       executeToolSpan.recordException(error as Error);
       executeToolSpan.setStatus({
         code: SpanStatusCode.ERROR,
@@ -300,6 +328,7 @@ export class ServerToolTransport implements ToolTransport {
       executeToolSpan.setAttributes(buildExecuteToolResultAttributes({ success: false }));
       throw error;
     } finally {
+      if (inflightLead) this.readOnlyInflight.delete(inflightLead.key);
       executeToolSpan.end();
     }
   }
@@ -385,31 +414,58 @@ export class ServerToolTransport implements ToolTransport {
   }
 
   private resolveCacheHint(chatToolPayload: ChatToolPayload, context: ToolRunContext) {
-    const manifest = context.effectiveManifestMap?.[chatToolPayload.identifier] as
-      | {
-          api?: Array<{
-            annotations?: { readOnlyHint?: boolean };
-            cachePolicy?: string;
-            name?: string;
-            readOnlyHint?: boolean;
-          }>;
-          cachePolicy?: string;
-        }
-      | undefined;
-    const api = manifest?.api?.find((a) => a.name === chatToolPayload.apiName);
-    return {
-      cachePolicy: api?.cachePolicy ?? manifest?.cachePolicy,
-      readOnlyHint:
-        api?.readOnlyHint === true || api?.annotations?.readOnlyHint === true || undefined,
-    };
+    return resolveToolCacheHint({
+      apiName: chatToolPayload.apiName,
+      identifier: chatToolPayload.identifier,
+      manifest: context.effectiveManifestMap?.[chatToolPayload.identifier],
+    });
   }
 
   private getToolResultCache(context: ToolRunContext): ToolResultCacheIndex {
     if (!context.state.metadata) context.state.metadata = {};
-    // Always normalize to a plain JSON-serializable Record (Map → {} on persist).
-    const cache = ensureToolResultCache(context.state.metadata.toolResultCache);
+    // Clone so write/lookup never mutate an Immer-frozen persist snapshot.
+    const cache = cloneToolResultCache(
+      ensureToolResultCache(context.state.metadata.toolResultCache),
+    );
     context.state.metadata.toolResultCache = cache;
     return cache;
+  }
+
+  private beginReadOnlyInflight(
+    chatToolPayload: ChatToolPayload,
+    context: ToolRunContext,
+  ):
+    | { kind: 'follow'; promise: Promise<ToolRunExecution> }
+    | {
+        kind: 'lead';
+        key: string;
+        reject: (e: unknown) => void;
+        resolve: (v: ToolRunExecution) => void;
+      }
+    | { kind: 'skip' } {
+    // Client dispatch can return deferred per tool_call_id — don't coalesce those.
+    if (chatToolPayload.executor === 'client') return { kind: 'skip' };
+    const hint = this.resolveCacheHint(chatToolPayload, context);
+    if (!isToolCacheable(hint)) return { kind: 'skip' };
+
+    const key = buildToolCacheKey(
+      chatToolPayload.identifier,
+      chatToolPayload.apiName,
+      chatToolPayload.arguments ?? context.parsedArgs ?? {},
+    );
+    const pending = this.readOnlyInflight.get(key);
+    if (pending) return { kind: 'follow', promise: pending };
+
+    let resolve!: (v: ToolRunExecution) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<ToolRunExecution>((res, rej) => {
+      reject = rej;
+      resolve = res;
+    });
+    // Leader always rejects this on throw. Without a follower, that is otherwise unhandled.
+    void promise.catch(() => {});
+    this.readOnlyInflight.set(key, promise);
+    return { kind: 'lead', key, reject, resolve };
   }
 
   private tryReadOnlyDedup(

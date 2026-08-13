@@ -1898,8 +1898,7 @@ describe('call_tool executor', () => {
 
       // Track cancel handler registration
       let executeToolCancelHandler:
-        | ((context: OperationCancelContext) => void | Promise<void>)
-        | undefined;
+        ((context: OperationCancelContext) => void | Promise<void>) | undefined;
       const originalOnOperationCancel = mockStore.onOperationCancel;
       mockStore.onOperationCancel = vi.fn(
         (opId: string, handler: (context: OperationCancelContext) => void | Promise<void>) => {
@@ -2434,6 +2433,152 @@ describe('call_tool executor', () => {
           operationId: expect.any(String),
         }),
       );
+    });
+  });
+
+  describe('read-only tool dedup', () => {
+    const sifQuery = (): ChatToolPayload => ({
+      apiName: 'ads_get_asin_campaign_changes',
+      arguments: JSON.stringify({ asin: 'B01', marketplace: 'US' }),
+      id: `call_${Math.random().toString(16).slice(2)}`,
+      identifier: 'company.mcp.sif-mcp',
+      type: 'mcp',
+    });
+
+    it('executes a SIF query once and returns receipts for the remaining identical calls', async () => {
+      const mockStore = createMockStore({
+        internal_invokeDifferentTypePlugin: vi.fn().mockResolvedValue({
+          content: 'full-campaign-result',
+          error: null,
+          success: true,
+        }),
+      });
+      const context = createTestContext({ operationId: 'op_sif_dedup' });
+      mockStore.dbMessagesMap[context.messageKey] = [createAssistantMessage()];
+      const state = createInitialState({ operationId: context.operationId });
+
+      for (let i = 0; i < 11; i++) {
+        await executeWithMockContext({
+          context,
+          executor: 'call_tool',
+          instruction: createCallToolInstruction(sifQuery()),
+          mockStore,
+          state,
+        });
+      }
+
+      expect(mockStore.internal_invokeDifferentTypePlugin).toHaveBeenCalledTimes(1);
+      expect(mockStore.optimisticUpdateMessageContent).toHaveBeenCalled();
+      const receiptWrites = (mockStore.optimisticUpdateMessageContent as Mock).mock.calls.filter(
+        (call) => String(call[1]).includes('tool_dedup_hit'),
+      );
+      expect(receiptWrites.length).toBe(10);
+    });
+
+    it('does not dedup write-style SIF APIs', async () => {
+      const mockStore = createMockStore();
+      const context = createTestContext({ operationId: 'op_sif_write' });
+      mockStore.dbMessagesMap[context.messageKey] = [createAssistantMessage()];
+      const state = createInitialState({ operationId: context.operationId });
+      const writeCall = {
+        apiName: 'ads_update_campaign',
+        arguments: JSON.stringify({ asin: 'B01' }),
+        id: 'write_1',
+        identifier: 'company.mcp.sif-mcp',
+        type: 'mcp' as const,
+      };
+
+      await executeWithMockContext({
+        context,
+        executor: 'call_tool',
+        instruction: createCallToolInstruction(writeCall),
+        mockStore,
+        state,
+      });
+      await executeWithMockContext({
+        context,
+        executor: 'call_tool',
+        instruction: createCallToolInstruction({ ...writeCall, id: 'write_2' }),
+        mockStore,
+        state,
+      });
+
+      expect(mockStore.internal_invokeDifferentTypePlugin).toHaveBeenCalledTimes(2);
+    });
+
+    it('dedups a concurrent batch of identical SIF queries', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const mockStore = createMockStore({
+        internal_invokeDifferentTypePlugin: vi.fn().mockImplementation(async () => {
+          await gate;
+          return { content: 'full-campaign-result', error: null, success: true };
+        }),
+      });
+      const context = createTestContext({ operationId: 'op_sif_parallel' });
+      mockStore.dbMessagesMap[context.messageKey] = [createAssistantMessage()];
+      const state = createInitialState({ operationId: context.operationId });
+
+      const pending = Array.from({ length: 11 }, () =>
+        executeWithMockContext({
+          context,
+          executor: 'call_tool',
+          instruction: createCallToolInstruction(sifQuery()),
+          mockStore,
+          state,
+        }),
+      );
+
+      await vi.waitFor(() => {
+        expect(mockStore.internal_invokeDifferentTypePlugin).toHaveBeenCalled();
+      });
+      release();
+      await Promise.all(pending);
+
+      expect(mockStore.internal_invokeDifferentTypePlugin).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not mutate an Immer-frozen tool result cache', async () => {
+      const mockStore = createMockStore({
+        internal_invokeDifferentTypePlugin: vi.fn().mockResolvedValue({
+          content: 'full-campaign-result',
+          error: null,
+          success: true,
+        }),
+      });
+      const originalUpdate = mockStore.updateOperationMetadata;
+      mockStore.updateOperationMetadata = vi.fn((operationId: string, metadata: any) => {
+        originalUpdate(operationId, metadata);
+        const cache = mockStore.operations[operationId]?.metadata?.toolResultCache;
+        if (cache && typeof cache === 'object') {
+          for (const key of Object.keys(cache)) Object.freeze(cache[key]);
+          Object.freeze(cache);
+        }
+      });
+
+      const context = createTestContext({ operationId: 'op_sif_frozen' });
+      mockStore.dbMessagesMap[context.messageKey] = [createAssistantMessage()];
+      const state = createInitialState({ operationId: context.operationId });
+
+      await executeWithMockContext({
+        context,
+        executor: 'call_tool',
+        instruction: createCallToolInstruction(sifQuery()),
+        mockStore,
+        state,
+      });
+      await expect(
+        executeWithMockContext({
+          context,
+          executor: 'call_tool',
+          instruction: createCallToolInstruction(sifQuery()),
+          mockStore,
+          state,
+        }),
+      ).resolves.toBeTruthy();
+      expect(mockStore.internal_invokeDifferentTypePlugin).toHaveBeenCalledTimes(1);
     });
   });
 });

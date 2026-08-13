@@ -256,6 +256,57 @@ describe('HistoryTruncateProcessor', () => {
         expect(result.map((m: any) => m.id)).toEqual(['2', '3', '4']);
       });
 
+      it('keeps a multi-step same-user-turn chain when tool row id ≠ call id', () => {
+        // UI tool rows have their own id; tools[].id / tool_call_id is the call id.
+        // Next assistant parents to the tool *message* id.
+        const messages = [
+          { id: 'u1', content: 'one question', role: 'user' },
+          {
+            agentId: 'agent-1',
+            content: 'first call',
+            id: 'a1',
+            parentId: 'u1',
+            role: 'assistant',
+            tools: [{ id: 'call_1' }],
+          },
+          {
+            id: 'tm1',
+            content: 'tool 1',
+            parentId: 'a1',
+            role: 'tool',
+            tool_call_id: 'call_1',
+          },
+          {
+            agentId: 'agent-1',
+            content: 'second call',
+            id: 'a2',
+            parentId: 'tm1',
+            role: 'assistant',
+            tools: [{ id: 'call_2' }],
+          },
+          {
+            id: 'tm2',
+            content: 'tool 2',
+            parentId: 'a2',
+            role: 'tool',
+            tool_call_id: 'call_2',
+          },
+        ];
+
+        const byCount = getSlicedMessages(messages, {
+          enableHistoryCount: true,
+          historyCount: 1,
+        });
+        expect(byCount.map((m: any) => m.id)).toEqual(['a1', 'tm1', 'a2', 'tm2']);
+
+        const byTokens = getSlicedMessages(messages, { maxHistoryTokens: 20 });
+        expect(byTokens.map((m: any) => m.id)).toEqual(
+          expect.arrayContaining(['a1', 'tm1', 'a2', 'tm2']),
+        );
+        // Broken childrenMap.get(callId) dropped a1/tm1 and left only a2,tm2.
+        expect(byTokens.map((m: any) => m.id)).not.toEqual(['a2', 'tm2']);
+      });
+
       it('token budget keeps continuous tail, no holes', () => {
         // u1 a1 (small) u2 a2 (huge) u3 (small) — must not drop a2 and keep u1
         const huge = 'x'.repeat(40_000);

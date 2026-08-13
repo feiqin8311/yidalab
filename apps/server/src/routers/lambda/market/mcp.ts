@@ -1,3 +1,4 @@
+import { mcpToolCacheFields } from '@lobechat/context-engine';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -180,6 +181,7 @@ const toManifest = (row: MarketMcpRow, options?: { includeSecrets?: boolean }) =
       description: t.description || '',
       name: t.name,
       parameters: t.inputSchema || { type: 'object', properties: {} },
+      ...mcpToolCacheFields(row.identifier, t),
     })),
     author: { name: 'Company' },
     capabilities: {

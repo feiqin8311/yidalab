@@ -1,3 +1,4 @@
+import { mcpToolCacheFields } from '@lobechat/context-engine';
 import { type ToolManifest } from '@lobechat/types';
 
 import { ConnectorToolPermission } from '@/database/schemas';
@@ -47,6 +48,7 @@ export const buildClientConnectorManifests = (connectors: ConnectorWithTools[]):
             : undefined,
         name: t.toolName,
         parameters,
+        ...mcpToolCacheFields(connector.identifier, { name: t.toolName }),
       };
     });
 

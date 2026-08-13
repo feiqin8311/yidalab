@@ -1,3 +1,4 @@
+import { approxTokensFromText } from '@lobechat/types';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -62,6 +63,44 @@ describe('shapeStructuredJson', () => {
     expect(r.truncated).toBe(true);
     expect(r.coverage?.totalRows).toBe(500);
     expect(() => JSON.parse(r.content)).not.toThrow();
+  });
+
+  it('does not crash on a single 100KB row', () => {
+    const r = shapeStructuredJson(['x'.repeat(100_000)], 200);
+    expect(r.truncated).toBe(true);
+    expect(() => JSON.parse(r.content)).not.toThrow();
+    expect(approxTokensFromText(r.content)).toBeLessThanOrEqual(200);
+  });
+
+  it('shrinks a control-char row against final stringify tokens', () => {
+    // NUL expands to "\\u0000" under JSON.stringify — char-slice then wrap
+    // used to stay parseable while landing ~5× over the token budget.
+    const r = shapeStructuredJson(['\0'.repeat(50_000)], 200);
+    expect(r.truncated).toBe(true);
+    expect(() => JSON.parse(r.content)).not.toThrow();
+    expect(approxTokensFromText(r.content)).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('shapeToolResultForModel huge row', () => {
+  it('keeps valid JSON when a table cell is a 100KB line', () => {
+    const r = shapeToolResultForModel({
+      maxTokens: 200,
+      raw: { data: ['x'.repeat(100_000)], success: true },
+    });
+    expect(r.truncated).toBe(true);
+    expect(() => JSON.parse(r.content)).not.toThrow();
+    expect(approxTokensFromText(r.content)).toBeLessThanOrEqual(200);
+  });
+
+  it('keeps a control-char table cell under the token budget', () => {
+    const r = shapeToolResultForModel({
+      maxTokens: 200,
+      raw: { data: ['\0'.repeat(50_000)], success: true },
+    });
+    expect(r.truncated).toBe(true);
+    expect(() => JSON.parse(r.content)).not.toThrow();
+    expect(approxTokensFromText(r.content)).toBeLessThanOrEqual(200);
   });
 });
 

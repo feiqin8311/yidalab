@@ -1,3 +1,4 @@
+import { mcpToolCacheFields } from '@lobechat/context-engine';
 import {
   type CheckMcpInstallResult,
   type CustomPluginMetadata,
@@ -134,6 +135,7 @@ export class MCPService {
             description: item.description,
             name: item.name,
             parameters: item.inputSchema as ToolManifestSettings,
+            ...mcpToolCacheFields(params.name, item),
           }));
         } catch (error) {
           // Only retry for NoValidSessionId errors
@@ -458,7 +460,7 @@ export class MCPService {
     const identifier = params.name;
 
     return {
-      api: manifest.tools ? this.transformMCPToolToLobeAPI(manifest.tools) : [],
+      api: manifest.tools ? this.transformMCPToolToLobeAPI(manifest.tools, identifier) : [],
       identifier,
       meta: {
         avatar: metadata?.avatar || 'MCP_AVATAR',
@@ -537,12 +539,13 @@ export class MCPService {
     }
   }
 
-  private transformMCPToolToLobeAPI = (data: McpTool[]) => {
+  private transformMCPToolToLobeAPI = (data: McpTool[], identifier = '') => {
     return data.map<LobeChatPluginApi>((item) => ({
       // Assuming identifier is the unique name/id
       description: item.description,
       name: item.name,
       parameters: item.inputSchema as ToolManifestSettings,
+      ...mcpToolCacheFields(identifier, item),
     }));
   };
 }

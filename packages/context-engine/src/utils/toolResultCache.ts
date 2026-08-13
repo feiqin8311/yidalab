@@ -99,6 +99,25 @@ export interface CacheableToolHint {
   readOnlyHint?: boolean;
 }
 
+export interface ToolCacheManifestLike {
+  api?: Array<{
+    annotations?: { readOnlyHint?: boolean };
+    cachePolicy?: string;
+    name?: string;
+    readOnlyHint?: boolean;
+  }>;
+  cachePolicy?: string;
+}
+
+/** Query-shaped SIF APIs. Never treat write/update/upload as cacheable. */
+const SIF_QUERY_API = /^(?:ads_get_|ops_get_|market_get_|get_|query_|search_|list_|lookup_)/i;
+
+export const isSifQueryTool = (identifier: string, apiName: string): boolean => {
+  const id = identifier.toLowerCase();
+  if (!id.includes('sif-mcp') && id !== 'sif' && !id.endsWith('.sif')) return false;
+  return SIF_QUERY_API.test(apiName);
+};
+
 /**
  * Only cache when explicitly marked read-only / operation-cacheable.
  * Side-effect tools never cache.
@@ -111,15 +130,97 @@ export const isToolCacheable = (hint?: CacheableToolHint | null): boolean => {
   return false;
 };
 
+/**
+ * Resolve cache policy from the tool manifest, then fall back to known
+ * read-only SIF query APIs so already-installed manifests still dedup.
+ */
+export const resolveToolCacheHint = (params: {
+  apiName: string;
+  identifier: string;
+  manifest?: ToolCacheManifestLike | null;
+}): CacheableToolHint => {
+  const api = params.manifest?.api?.find((item) => item.name === params.apiName);
+  const explicitReadOnly = api?.readOnlyHint ?? api?.annotations?.readOnlyHint;
+  const hint: CacheableToolHint = {
+    cachePolicy: api?.cachePolicy ?? params.manifest?.cachePolicy,
+    readOnlyHint: explicitReadOnly,
+  };
+  if (hint.cachePolicy === 'none') return hint;
+  // Explicit false must beat the SIF name heuristic (side-effect tools).
+  if (explicitReadOnly === false) return hint;
+  if (isToolCacheable(hint)) return hint;
+  if (isSifQueryTool(params.identifier, params.apiName)) {
+    return { cachePolicy: 'operation', readOnlyHint: true };
+  }
+  return hint;
+};
+
+/** Fields to persist on a converted MCP → LobeChat API entry. */
+export const mcpToolCacheFields = (
+  identifier: string,
+  tool: {
+    annotations?: { readOnlyHint?: boolean };
+    cachePolicy?: string;
+    name: string;
+    readOnlyHint?: boolean;
+  },
+): {
+  annotations?: { readOnlyHint: true };
+  cachePolicy?: string;
+  readOnlyHint?: true;
+} => {
+  const hint = resolveToolCacheHint({
+    apiName: tool.name,
+    identifier,
+    manifest: {
+      api: [
+        {
+          annotations: tool.annotations,
+          cachePolicy: tool.cachePolicy,
+          name: tool.name,
+          readOnlyHint: tool.readOnlyHint,
+        },
+      ],
+    },
+  });
+  if (!isToolCacheable(hint)) return {};
+  return {
+    annotations: { readOnlyHint: true },
+    cachePolicy: hint.cachePolicy ?? 'operation',
+    readOnlyHint: true,
+  };
+};
+
+/** Shallow-clone index + entries so Immer-frozen metadata can be updated. */
+export const cloneToolResultCache = (index: ToolResultCacheIndex): ToolResultCacheIndex => {
+  const out: ToolResultCacheIndex = {};
+  for (const key of Object.keys(index)) {
+    const entry = index[key];
+    if (entry) out[key] = { ...entry };
+  }
+  return out;
+};
+
 export const lookupToolCache = (
   index: ToolResultCacheIndex | undefined,
   key: string,
 ): ToolResultCacheEntry | undefined => {
   const entry = index?.[key];
   if (!entry || !index) return entry;
-  // Touch for true LRU: monotonic so same-ms batch cannot re-evict a hot key
-  entry.timestamp = nextCacheTimestamp(maxTimestampIn(index));
-  return entry;
+  // Touch for true LRU: monotonic so same-ms batch cannot re-evict a hot key.
+  // Never mutate a frozen Immer draft leftover — replace the slot instead.
+  const touched: ToolResultCacheEntry = {
+    ...entry,
+    timestamp: nextCacheTimestamp(maxTimestampIn(index)),
+  };
+  if (Object.isExtensible(index) && Object.isExtensible(entry)) {
+    entry.timestamp = touched.timestamp;
+    return entry;
+  }
+  if (Object.isExtensible(index)) {
+    index[key] = touched;
+  }
+  return touched;
 };
 
 export const writeToolCache = (
@@ -127,6 +228,8 @@ export const writeToolCache = (
   key: string,
   entry: ToolResultCacheEntry,
 ): void => {
+  if (!Object.isExtensible(index)) return;
+
   // Skip oversized model views — better re-execute than bloat Redis state.
   if (entry.content.length > MAX_TOOL_RESULT_CACHE_ENTRY_CHARS) return;
 

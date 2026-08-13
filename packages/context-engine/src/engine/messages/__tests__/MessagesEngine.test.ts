@@ -1144,4 +1144,110 @@ Document content here.
       expect(result.messages).toEqual([{ content: 'Question', role: 'user' }]);
     });
   });
+
+  describe('deepseek-v4-pro context budget (54-message SIF session)', () => {
+    const TOOL_BODY = 'x'.repeat(25_000);
+
+    const createSifSession = (): UIChatMessage[] => {
+      const messages: UIChatMessage[] = [];
+      const now = Date.now();
+      for (let turn = 0; turn < 18; turn++) {
+        messages.push({
+          content: turn === 0 ? '分析这个 ASIN 的广告变化' : `继续第 ${turn} 轮`,
+          createdAt: now + turn * 3,
+          id: `u${turn}`,
+          role: 'user',
+          updatedAt: now + turn * 3,
+        } as UIChatMessage);
+        messages.push({
+          content: '',
+          createdAt: now + turn * 3 + 1,
+          id: `a${turn}`,
+          role: 'assistant',
+          tool_calls: [
+            {
+              function: {
+                arguments: '{"asin":"B01"}',
+                name: 'company.mcp.sif-mcp____ads_get_asin_campaign_changes',
+              },
+              id: `t${turn}`,
+              type: 'function',
+            },
+          ],
+          tools: [
+            {
+              apiName: 'ads_get_asin_campaign_changes',
+              id: `t${turn}`,
+              identifier: 'company.mcp.sif-mcp',
+              type: 'mcp',
+            },
+          ] as any,
+          updatedAt: now + turn * 3 + 1,
+        } as UIChatMessage);
+        messages.push({
+          content: TOOL_BODY,
+          createdAt: now + turn * 3 + 2,
+          id: `tm${turn}`,
+          plugin: {
+            apiName: 'ads_get_asin_campaign_changes',
+            identifier: 'company.mcp.sif-mcp',
+          } as any,
+          role: 'tool',
+          tool_call_id: `t${turn}`,
+          updatedAt: now + turn * 3 + 2,
+        } as UIChatMessage);
+      }
+      return messages;
+    };
+
+    it('rejects the session against the 100k default window', async () => {
+      const engine = new MessagesEngine(
+        createBasicParams({
+          enableSystemDate: false,
+          messages: createSifSession(),
+        }),
+      );
+      await expect(engine.process()).rejects.toMatchObject({ code: 'CONTEXT_BUDGET_EXCEEDED' });
+    });
+
+    it('keeps the 1M window, receipts historical tools, and still enters the model', async () => {
+      const source = createSifSession();
+      expect(source).toHaveLength(54);
+
+      const engine = new MessagesEngine(
+        createBasicParams({
+          contextWindowTokens: 1_048_576,
+          enableSystemDate: false,
+          maxHistoryTokens: Math.min(64_000, Math.floor(1_048_576 * 0.35)),
+          messages: source,
+          model: 'deepseek-v4-pro',
+          provider: 'deepseek',
+          toolResultPrune: {
+            enabled: true,
+            maxHistoricalToolTokens: 40_000,
+            maxToolResultTokens: 8_000,
+            maxToolRoundTokens: 32_000,
+          },
+        }),
+      );
+
+      const result = await engine.process();
+      expect(result.messages.length).toBeGreaterThan(0);
+      // Source / UI messages stay full; only the model view is pruned.
+      expect(source.filter((m) => m.role === 'tool').every((m) => m.content === TOOL_BODY)).toBe(
+        true,
+      );
+
+      const toolMessages = result.messages.filter((m) => m.role === 'tool');
+      expect(toolMessages.length).toBeGreaterThan(0);
+      const historical = toolMessages.slice(0, -1);
+      const receipts = historical.filter((m) => String(m.content).includes('tool_receipt'));
+      expect(receipts.length).toBeGreaterThan(0);
+      expect(receipts.every((m) => String(m.content).length < TOOL_BODY.length)).toBe(true);
+
+      const current = toolMessages.at(-1);
+      expect(current).toBeDefined();
+      expect(String(current?.content).length).toBeLessThanOrEqual(TOOL_BODY.length);
+    });
+  });
 });
