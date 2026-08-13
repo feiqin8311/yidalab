@@ -2641,7 +2641,7 @@ describe('BotMessageRouter', () => {
       return lastCall[0] as (thread: any, message: any, ctx?: any) => Promise<void>;
     }
 
-    it('refuses unlinked members before handleMention / Signal', async () => {
+    it('falls back to channel owner when the sender is unlinked', async () => {
       mockResolveDingTalkActor.mockResolvedValueOnce({ kind: 'unlinked' });
       const handler = await loadDingTalkMentionHandler();
       const thread = {
@@ -2651,6 +2651,7 @@ describe('BotMessageRouter', () => {
       };
       const message = {
         author: { isBot: false, userId: 'staff-unlinked', userName: 'u' },
+        id: 'msg-unlinked',
         isMention: true,
         text: 'hello',
       };
@@ -2658,10 +2659,13 @@ describe('BotMessageRouter', () => {
       await handler(thread, message);
 
       expect(mockResolveDingTalkActor).toHaveBeenCalled();
-      expect(mockHandleMention).not.toHaveBeenCalled();
-      expect(mockEmitAgentSignalSourceEvent).not.toHaveBeenCalled();
-      expect(thread.post).toHaveBeenCalled();
-      expect(String(thread.post.mock.calls[0][0])).toMatch(/身份识别|workbench|link/i);
+      expect(mockHandleMention).toHaveBeenCalledTimes(1);
+      expect(mockAgentBridgeServiceCtor).toHaveBeenCalledWith(
+        expect.anything(),
+        'channel-owner',
+        'ws-1',
+      );
+      expect(thread.post).not.toHaveBeenCalled();
     });
 
     it('rejects group chat before handleMention', async () => {

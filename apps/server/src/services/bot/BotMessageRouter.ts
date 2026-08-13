@@ -1016,9 +1016,10 @@ export class BotMessageRouter {
     };
 
     /**
-     * DingTalk: resolve senderStaffId → workspace member. Unlinked / inactive
-     * members get a short reply and never create Topic/Message/memory.
-     * Group chats are refused this period (DM-only).
+     * DingTalk: prefer senderStaffId → workspace member so sessions/memory
+     * land on the real staff. If the sender is not linked (typical when
+     * DMing a colleague's bot), fall back to the channel owner — same as
+     * other platforms. Group chats stay refused this period (DM-only).
      */
     const resolveActorBridge = async (
       thread: { id: string; isDM?: boolean; post: (t: string) => Promise<unknown> },
@@ -1065,22 +1066,13 @@ export class BotMessageRouter {
 
       if (resolved.kind !== 'ok') {
         log(
-          '%s: dingtalk identity %s staff=%s workspace=%s',
+          '%s: dingtalk identity %s staff=%s workspace=%s — fallback to channel owner',
           caller,
           resolved.kind,
           staffId,
           workspaceId,
         );
-        try {
-          await thread.post(
-            replyLocale === 'zh-CN'
-              ? '请先从钉钉工作台打开一次 YidaLab 完成身份识别，再回来对话。'
-              : 'Please open YidaLab once from the DingTalk workbench to link your identity, then try again.',
-          );
-        } catch {
-          /* best-effort */
-        }
-        return null;
+        return channelOwnerBridge;
       }
 
       return new AgentBridgeService(serverDB, resolved.userId, resolved.workspaceId);

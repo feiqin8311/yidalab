@@ -193,4 +193,46 @@ describe('generateMarkdown', () => {
 
     expect(result).toContain('Intro\n\n<think>\n\nReasoning\n\n</think>\n\nOutro');
   });
+
+  it('should flatten assistantGroup children into exported text', () => {
+    const result = generateMarkdown({
+      ...defaultParams,
+      includeTool: true,
+      messages: [
+        {
+          children: [
+            { content: 'first step', tools: [{ name: 'search' }] },
+            { content: 'final answer' },
+          ],
+          content: '',
+          createdAt: Date.now(),
+          id: 'group-1',
+          role: 'assistantGroup',
+        },
+      ] as UIChatMessage[],
+    });
+
+    expect(result).toContain('first step');
+    expect(result).toContain('final answer');
+    expect(result).toContain('"name": "search"');
+  });
+
+  it('should label assistantGroup as Assistant when withRole is true', () => {
+    const result = generateMarkdown({
+      ...defaultParams,
+      withRole: true,
+      messages: [
+        {
+          children: [{ content: 'grouped reply' }],
+          content: '',
+          createdAt: Date.now(),
+          id: 'group-1',
+          role: 'assistantGroup',
+        },
+      ] as UIChatMessage[],
+    });
+
+    expect(result).toContain('##### Assistant:');
+    expect(result).toContain('grouped reply');
+  });
 });

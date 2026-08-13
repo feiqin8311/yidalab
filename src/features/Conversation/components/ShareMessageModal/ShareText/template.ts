@@ -1,7 +1,8 @@
-import { type UIChatMessage } from '@lobechat/types';
+import type { UIChatMessage } from '@lobechat/types';
 
 import { LOADING_FLAT } from '@/const/message';
 import { normalizeThinkTags, processWithArtifact } from '@/features/Conversation/utils/markdown';
+import { getExportContent } from '@/features/ShareModal/ShareText/template';
 
 interface MarkdownParams {
   messages: UIChatMessage[];
@@ -9,6 +10,6 @@ interface MarkdownParams {
 
 export const generateMarkdown = ({ messages }: MarkdownParams): string =>
   messages
-    .filter((m) => m.content !== LOADING_FLAT)
-    .map((message) => normalizeThinkTags(processWithArtifact(message.content)))
+    .filter((m) => getExportContent(m) !== LOADING_FLAT)
+    .map((message) => normalizeThinkTags(processWithArtifact(getExportContent(message))))
     .join('\n\n');
