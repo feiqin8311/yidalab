@@ -8,15 +8,18 @@ import { isHtmlFile } from '@/components/HtmlPreview';
 import { type FileListItem } from '@/types/files';
 
 import NotSupport from './NotSupport';
+import AudioViewer from './Renderer/Audio';
 import CodeViewer from './Renderer/Code';
 import HTMLViewer from './Renderer/HTML';
 import ImageViewer from './Renderer/Image';
-import MSDocViewer from './Renderer/MSDoc';
+import MarkdownViewer from './Renderer/Markdown';
+import OfficeViewer from './Renderer/Office';
 import PDFViewer from './Renderer/PDF';
+import SpreadsheetViewer from './Renderer/Spreadsheet';
 import VideoViewer from './Renderer/Video';
 
 // File type definitions
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.svg', '.avif'];
 const IMAGE_MIME_TYPES = new Set([
   'image/jpg',
   'image/jpeg',
@@ -24,10 +27,42 @@ const IMAGE_MIME_TYPES = new Set([
   'image/webp',
   'image/gif',
   'image/bmp',
+  'image/svg+xml',
+  'image/avif',
+  'svg',
 ]);
 
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg'];
-const VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/webm', 'video/ogg', 'mp4', 'webm', 'ogg']);
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov'];
+const VIDEO_MIME_TYPES = new Set([
+  'video/mp4',
+  'video/webm',
+  'video/ogg',
+  'video/quicktime',
+  'mp4',
+  'webm',
+  'ogg',
+  'mov',
+]);
+
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.oga'];
+const AUDIO_MIME_TYPES = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mp4',
+  'audio/aac',
+  'audio/flac',
+  'audio/ogg',
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
+  'flac',
+]);
+
+const MARKDOWN_EXTENSIONS = ['.md', '.mdx', '.markdown'];
+const MARKDOWN_FILE_MIME_TYPES = new Set(['md', 'mdx', 'markdown', ...MARKDOWN_MIME_TYPES]);
 
 const CODE_EXTENSIONS = [
   // JavaScript/TypeScript
@@ -90,9 +125,6 @@ const CODE_EXTENSIONS = [
   '.clj',
   '.cljs',
   '.cljc',
-  // Markdown
-  '.md',
-  '.mdx',
   // Other
   '.vim',
   '.graphql',
@@ -160,33 +192,41 @@ const CODE_MIME_TYPES = new Set([
   'toml',
   'sql',
   'text/x-sql',
-  // Markdown
-  'md',
-  'mdx',
-  ...MARKDOWN_MIME_TYPES,
   // Other
   'graphql',
   'txt',
   'text/plain',
 ]);
 
-const MSDOC_EXTENSIONS = ['.doc', '.docx', '.odt', '.ppt', '.pptx', '.xls', '.xlsx'];
-const MSDOC_MIME_TYPES = new Set([
-  'doc',
-  'docx',
-  'odt',
-  'ppt',
-  'pptx',
+const SPREADSHEET_EXTENSIONS = ['.xls', '.xlsx', '.xlsm', '.csv', '.ods'];
+const SPREADSHEET_MIME_TYPES = new Set([
   'xls',
   'xlsx',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.oasis.opendocument.text',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'xlsm',
+  'csv',
+  'ods',
+  'text/csv',
+  'application/csv',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel.sheet.macroenabled.12',
+  'application/vnd.oasis.opendocument.spreadsheet',
 ]);
+
+const DOCX_EXTENSIONS = ['.docx'];
+const DOCX_MIME_TYPES = new Set([
+  'docx',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
+const PPTX_EXTENSIONS = ['.pptx'];
+const PPTX_MIME_TYPES = new Set([
+  'pptx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+]);
+
+const ODT_EXTENSIONS = ['.odt'];
+const ODT_MIME_TYPES = new Set(['odt', 'application/vnd.oasis.opendocument.text']);
 
 // Archive file types - not supported for preview
 const ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tgz'];
@@ -263,10 +303,29 @@ const FileViewer = memo<FileViewerProps>(({ id, style, fileType, url, name }) =>
     return <NotSupport fileName={name} style={style} url={url} />;
   }
 
-  // Microsoft Office documents - check before code files to avoid false matches
-  // (e.g., 'doc' contains 'c' which would match CODE_EXTENSIONS)
-  if (matchesFileType(fileType, name, MSDOC_EXTENSIONS, MSDOC_MIME_TYPES)) {
-    return <MSDocViewer fileId={id} url={url} />;
+  // Spreadsheets: local xlsx parse. Office Online iframe is blank for private URLs.
+  if (matchesFileType(fileType, name, SPREADSHEET_EXTENSIONS, SPREADSHEET_MIME_TYPES)) {
+    return <SpreadsheetViewer fileId={id} url={url} />;
+  }
+
+  if (matchesFileType(fileType, name, DOCX_EXTENSIONS, DOCX_MIME_TYPES)) {
+    return <OfficeViewer fileId={id} kind={'docx'} url={url} />;
+  }
+
+  if (matchesFileType(fileType, name, PPTX_EXTENSIONS, PPTX_MIME_TYPES)) {
+    return <OfficeViewer fileId={id} kind={'pptx'} url={url} />;
+  }
+
+  if (matchesFileType(fileType, name, ODT_EXTENSIONS, ODT_MIME_TYPES)) {
+    return <OfficeViewer fileId={id} kind={'odt'} url={url} />;
+  }
+
+  if (matchesFileType(fileType, name, AUDIO_EXTENSIONS, AUDIO_MIME_TYPES)) {
+    return <AudioViewer fileId={id} url={url} />;
+  }
+
+  if (matchesFileType(fileType, name, MARKDOWN_EXTENSIONS, MARKDOWN_FILE_MIME_TYPES)) {
+    return <MarkdownViewer fileId={id} url={url} />;
   }
 
   // HTML files should render as a sandboxed preview before the broader code-file fallback.
@@ -274,7 +333,7 @@ const FileViewer = memo<FileViewerProps>(({ id, style, fileType, url, name }) =>
     return <HTMLViewer fileId={id} url={url} />;
   }
 
-  // Code files (JavaScript, TypeScript, Python, Java, C++, Go, Rust, Markdown, etc.)
+  // Code / plain text
   if (matchesFileType(fileType, name, CODE_EXTENSIONS, CODE_MIME_TYPES)) {
     return <CodeViewer fileId={id} fileName={name} url={url} />;
   }
