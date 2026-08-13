@@ -146,6 +146,43 @@ describe('HookDispatcher', () => {
         dispatcher.dispatch('unknown_op', 'onComplete', makeEvent()),
       ).resolves.toBeUndefined();
     });
+
+    it('prefers in-memory handlers over serialized webhooks in local mode', async () => {
+      mockEnqueueInternalJob.mockReset();
+      const handler = vi.fn();
+      dispatcher.register(operationId, [{ handler, id: 'local', type: 'onComplete' }]);
+
+      await dispatcher.dispatch(operationId, 'onComplete', makeEvent(), [
+        {
+          id: 'bot-completion',
+          type: 'onComplete',
+          webhook: { url: '/api/agent/webhooks/bot-callback' },
+        },
+      ]);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(mockEnqueueInternalJob).not.toHaveBeenCalled();
+    });
+
+    it('delivers serialized webhooks in local mode when no in-memory handler remains', async () => {
+      mockEnqueueInternalJob.mockReset();
+      mockEnqueueInternalJob.mockResolvedValue('job-1');
+
+      await dispatcher.dispatch(operationId, 'onComplete', makeEvent(), [
+        {
+          id: 'bot-completion',
+          type: 'onComplete',
+          webhook: { url: '/api/agent/webhooks/bot-callback' },
+        },
+      ]);
+
+      expect(mockEnqueueInternalJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dedupeKey: `bot-completion:${operationId}`,
+          name: 'bot.completion',
+        }),
+      );
+    });
   });
 
   describe('dispatch (production mode)', () => {

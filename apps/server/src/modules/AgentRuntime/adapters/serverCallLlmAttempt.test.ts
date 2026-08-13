@@ -1,19 +1,22 @@
 import type { AgentEvent, BlobStore } from '@lobechat/agent-runtime';
 import { ToolNameResolver } from '@lobechat/context-engine';
 import type { ChatMethodOptions, ModelRuntime } from '@lobechat/model-runtime';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RuntimeExecutorContext } from '../context';
 import { createServerCallLlmAttempt } from './serverCallLlmAttempt';
 import type { ServerCallLlmTooling } from './serverCallLlmTooling';
 
+const consumeStreamUntilDone = vi.hoisted(() => vi.fn());
+
 vi.mock('@lobechat/model-runtime', async () => {
   const { isEmptyModelCompletion, ModelEmptyError } =
     await import('../../../../../../packages/model-runtime/src/errors/modelEmptyCompletion');
-  const { consumeStreamUntilDone } =
+  const { consumeStreamUntilDone: realConsume, LLMStreamTimeoutError } =
     await import('../../../../../../packages/model-runtime/src/utils/consumeStream');
+  consumeStreamUntilDone.mockImplementation(realConsume);
 
-  return { consumeStreamUntilDone, isEmptyModelCompletion, ModelEmptyError };
+  return { consumeStreamUntilDone, isEmptyModelCompletion, LLMStreamTimeoutError, ModelEmptyError };
 });
 
 vi.mock('@/envs/file', () => ({
@@ -92,6 +95,10 @@ const createAttempt = (
 describe('ServerCallLlmAttempt', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('collects callback output and exposes a completed attempt snapshot', async () => {
@@ -180,6 +187,45 @@ describe('ServerCallLlmAttempt', () => {
         usage: { totalOutputTokens: 3 },
       }),
     );
+  });
+
+  it('times out modelRuntime.chat() before the stream is open', async () => {
+    vi.useFakeTimers();
+    const { attempt, chat } = createAttempt(async () => {
+      await new Promise(() => {});
+    });
+
+    const pending = attempt.execute();
+    const expectation = expect(pending).rejects.toMatchObject({
+      kind: 'first_chunk',
+      name: 'LLMStreamTimeoutError',
+    });
+    await vi.advanceTimersByTimeAsync(90_000);
+    await expectation;
+    expect(chat).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('gives consumeStreamUntilDone only the leftover first-byte budget', async () => {
+    vi.useFakeTimers();
+    const { attempt } = createAttempt(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60_000));
+    });
+
+    const pending = attempt.execute();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pending;
+
+    expect(consumeStreamUntilDone).toHaveBeenCalledWith(
+      expect.any(Response),
+      expect.objectContaining({ firstChunkTimeoutMs: expect.any(Number) }),
+    );
+    const options = consumeStreamUntilDone.mock.calls.at(-1)?.[1] as {
+      firstChunkTimeoutMs?: number;
+    };
+    expect(options.firstChunkTimeoutMs).toBeGreaterThan(0);
+    expect(options.firstChunkTimeoutMs).toBeLessThanOrEqual(30_000);
+    vi.useRealTimers();
   });
 
   it('salvages a natural-stop answer emitted only in reasoning', async () => {

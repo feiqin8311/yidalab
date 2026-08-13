@@ -9,10 +9,12 @@ export type RuntimeToolFailureKind = 'replan' | 'retry' | 'stop';
 export interface LLMRetryPolicyOptions {
   emptyCompletionMaxRetries?: number;
   isEmptyCompletionError?: (error: unknown) => boolean;
+  isStreamTimeoutError?: (error: unknown) => boolean;
   maxRetries?: number;
   noRetryProviders?: readonly string[];
   retryBaseDelayMs?: number;
   retryMaxDelayMs?: number;
+  streamTimeoutMaxRetries?: number;
 }
 
 export interface RetryableToolResult {
@@ -46,16 +48,22 @@ export const resolveLLMRetryBudget = (
   provider: string,
   error: unknown,
   options: LLMRetryPolicyOptions = {},
-) =>
-  options.isEmptyCompletionError?.(error)
-    ? (options.emptyCompletionMaxRetries ?? DEFAULT_EMPTY_COMPLETION_MAX_RETRIES)
-    : resolveLLMMaxRetries(provider, options);
+) => {
+  if (options.isStreamTimeoutError?.(error)) {
+    return options.streamTimeoutMaxRetries ?? 1;
+  }
+  if (options.isEmptyCompletionError?.(error)) {
+    return options.emptyCompletionMaxRetries ?? DEFAULT_EMPTY_COMPLETION_MAX_RETRIES;
+  }
+  return resolveLLMMaxRetries(provider, options);
+};
 
 /** Loop bound — must accommodate the largest budget any error kind can request. */
 export const resolveLLMMaxAttempts = (provider: string, options: LLMRetryPolicyOptions = {}) =>
   Math.max(
     resolveLLMMaxRetries(provider, options),
     options.emptyCompletionMaxRetries ?? DEFAULT_EMPTY_COMPLETION_MAX_RETRIES,
+    options.streamTimeoutMaxRetries ?? 1,
   ) + 1;
 
 export const getLLMRetryDelayMs = (attempt: number, options: LLMRetryPolicyOptions = {}) =>

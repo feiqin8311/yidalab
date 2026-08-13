@@ -73,6 +73,36 @@ export async function executeAgentRuntimeStepJob(body: Record<string, unknown>):
   }
 }
 
+export async function handleBotCompletionJob(payload: unknown): Promise<void> {
+  const body = payload as {
+    applicationId?: string;
+    operationId?: string;
+    platformThreadId?: string;
+    userId?: string;
+  };
+  if (!body.applicationId || !body.platformThreadId) {
+    throw new Error('bot.completion missing applicationId/platformThreadId');
+  }
+  const sentKey = body.operationId ? `bot-completion:sent:${body.operationId}` : undefined;
+  const redis = sentKey ? getAgentRuntimeRedisClient() : null;
+  if (sentKey && redis) {
+    const claimed = await redis.set(sentKey, '1', 'EX', 7 * 86_400, 'NX');
+    if (claimed !== 'OK') {
+      log('bot.completion skip duplicate operationId=%s', body.operationId);
+      return;
+    }
+  }
+  try {
+    const { getServerDB } = await import('@/database/core/db-adaptor');
+    const { BotCallbackService } = await import('@/server/services/bot/BotCallbackService');
+    const db = await getServerDB();
+    await new BotCallbackService(db).handleCallback(payload as any);
+  } catch (error) {
+    if (sentKey && redis) await redis.del(sentKey);
+    throw error;
+  }
+}
+
 let handlersRegistered = false;
 
 /**
@@ -226,6 +256,17 @@ export function ensureInternalJobWorkersStarted(): void {
 
   // Ops function runs: avoid Upstash Workflow signature on the HTTP route when
   // AGENT_RUNTIME_MODE=queue delivers onComplete via internal fetch/qstash path.
+  queue.register(JOB_NAMES.botCompletion, handleBotCompletionJob);
+
+  queue.register(JOB_NAMES.botDeadline, async (payload) => {
+    const { operationId } = payload as { operationId?: string };
+    if (!operationId) throw new Error('bot.deadline requires operationId');
+    const { getServerDB } = await import('@/database/core/db-adaptor');
+    const { AbandonOperationService } = await import('@/server/services/agentRuntime');
+    const db = await getServerDB();
+    await new AbandonOperationService(db).finalizeAbandoned(operationId, 'bot_deadline_12m');
+  });
+
   queue.register(JOB_NAMES.opsFunctionComplete, async (payload) => {
     const body = payload as {
       errorMessage?: string;

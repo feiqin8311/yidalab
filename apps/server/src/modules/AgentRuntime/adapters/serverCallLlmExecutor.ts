@@ -11,7 +11,7 @@ import {
   resolveLLMRetryBudget,
 } from '@lobechat/agent-runtime';
 import { BRANDING_PROVIDER } from '@lobechat/business-const';
-import { ModelEmptyError } from '@lobechat/model-runtime';
+import { LLMStreamTimeoutError, ModelEmptyError } from '@lobechat/model-runtime';
 import {
   context as otelContext,
   SpanKind,
@@ -40,7 +40,9 @@ interface ServerCallLlmExecutionContext {
 
 const SERVER_LLM_RETRY_POLICY = {
   isEmptyCompletionError: (error: unknown) => error instanceof ModelEmptyError,
+  isStreamTimeoutError: (error: unknown) => error instanceof LLMStreamTimeoutError,
   noRetryProviders: [BRANDING_PROVIDER],
+  streamTimeoutMaxRetries: 1,
 };
 
 class ServerCallLlmTurnSession implements LLMTurnSession {

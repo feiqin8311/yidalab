@@ -989,7 +989,13 @@ export class AiAgentService {
     } = params;
 
     // Default inherit policy when context_budget_v2 is on (ops passes explicit policy).
+    // Bot / DingTalk runs always get it — unbounded SIF JSON + HTML tool args
+    // have stalled those ops with no gateway watchdog.
     let contextPolicy = contextPolicyParam;
+    if (!contextPolicy && botContext) {
+      const { botContextPolicy } = await import('@/server/services/bot/botContextPolicy');
+      contextPolicy = botContextPolicy;
+    }
     if (!contextPolicy) {
       try {
         const { getServerFeatureFlagsStateFromRuntimeConfig } =
@@ -3829,15 +3835,49 @@ export class AiAgentService {
         result.autoStarted,
       );
 
-      // Persist running operation to topic metadata for reconnect after page reload
+      // Persist running operation + serialized hooks so a container restart can
+      // still fire bot completion (AbandonOperationService has no in-memory hooks).
+      const { BOT_DEADLINE_MS } = await import('@/server/services/bot/botContextPolicy');
+      const serializedHooks = hookDispatcher.getSerializedHooks(resolvedOperationId);
+      const deadlineAt = botContext
+        ? new Date(Date.now() + BOT_DEADLINE_MS).toISOString()
+        : undefined;
       await this.topicModel.updateMetadata(topicId, {
         runningOperation: {
           assistantMessageId: assistantMessageRecord.id,
+          deadlineAt,
+          hooks: serializedHooks,
           operationId: resolvedOperationId,
           scope: appContext?.scope ?? undefined,
           threadId: appContext?.threadId ?? undefined,
         },
       });
+      if (serializedHooks?.length) {
+        await this.agentOperationModel.mergeMetadata(resolvedOperationId, {
+          hooks: serializedHooks,
+        });
+      }
+      if (botContext) {
+        void Promise.all([
+          import('@/server/services/internalJob/enqueue'),
+          import('@/server/services/internalJob/types'),
+        ])
+          .then(([{ enqueueInternalJob }, { JOB_NAMES }]) =>
+            enqueueInternalJob({
+              dedupeKey: `bot-deadline:${resolvedOperationId}`,
+              delayMs: BOT_DEADLINE_MS,
+              name: JOB_NAMES.botDeadline,
+              payload: {
+                operationId: resolvedOperationId,
+                userId: this.userId,
+                workspaceId: this.workspaceId,
+              },
+            }),
+          )
+          .catch((error) => {
+            log('execAgent: failed to schedule bot deadline (non-fatal): %O', error);
+          });
+      }
 
       // Generate a short-lived JWT for Gateway WebSocket authentication
       let gatewayToken: string | undefined;

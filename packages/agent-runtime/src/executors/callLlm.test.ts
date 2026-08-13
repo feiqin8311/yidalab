@@ -67,7 +67,7 @@ const instruction: AgentInstructionCallLlm = {
 const createMessageTransport = (): MessageTransport => ({
   createAssistantMessage: vi.fn().mockResolvedValue({ id: 'assistant-1' }),
   createToolMessage: vi.fn(),
-  deleteMessage: vi.fn(),
+  deleteMessage: vi.fn().mockResolvedValue(undefined),
   findById: vi.fn().mockResolvedValue({ id: 'parent-1' }),
   query: vi.fn(),
   update: vi.fn(),
@@ -253,19 +253,34 @@ describe('callLlm executor', () => {
     );
   });
 
+  it('deletes a newly created empty assistant message when the LLM turn fails', async () => {
+    const error = new Error('provider down');
+    const messages = createMessageTransport();
+    const stream = createStreamSink();
+    const session = createTurnSession({
+      classifyError: vi.fn().mockReturnValue({ kind: 'stop', message: error.message }),
+      runAttempt: vi.fn().mockResolvedValue({ error, ok: false, output: createAttemptOutput('') }),
+    });
+    const host = createHost(
+      { openTurn: vi.fn().mockReturnValue(session), stream: vi.fn() },
+      messages,
+      stream,
+    );
+
+    await expect(callLlm(host)(instruction, createState())).rejects.toBe(error);
+    expect(messages.deleteMessage).toHaveBeenCalledWith('assistant-1');
+  });
+
   it('publishes context build failures without executing the model turn', async () => {
     const error = new Error('context failed');
     const context: ContextBuilder = { build: vi.fn().mockRejectedValue(error) };
     const openTurn = vi.fn();
     const stream = createStreamSink();
-    const host = createHost(
-      { openTurn, stream: vi.fn() },
-      createMessageTransport(),
-      stream,
-      context,
-    );
+    const messages = createMessageTransport();
+    const host = createHost({ openTurn, stream: vi.fn() }, messages, stream, context);
 
     await expect(callLlm(host)(instruction, createState())).rejects.toBe(error);
+    expect(messages.deleteMessage).toHaveBeenCalledWith('assistant-1');
     expect(stream.publishError).toHaveBeenCalledWith({
       error,
       phase: 'llm_execution',
@@ -431,5 +446,30 @@ describe('callLlm executor', () => {
       phase: 'llm_execution',
       stepIndex: 0,
     });
+  });
+
+  it('stops retrying when the operation was abandoned to error', async () => {
+    const state = createState();
+    const error = new Error('stream aborted');
+    const output = createAttemptOutput('partial');
+    const session = createTurnSession({
+      classifyError: vi.fn().mockReturnValue({ kind: 'retry', message: error.message }),
+      runAttempt: vi.fn().mockResolvedValue({ error, ok: false, output }),
+    });
+    const operationStore: OperationStore = {
+      clearRunningMark: vi.fn(),
+      loadState: vi.fn().mockResolvedValue({ ...state, status: 'error' }),
+    };
+    const host = createHost(
+      { openTurn: vi.fn().mockReturnValue(session), stream: vi.fn() },
+      createMessageTransport(),
+      createStreamSink(),
+      createContextBuilder(),
+      operationStore,
+    );
+
+    await expect(callLlm(host)(instruction, state)).rejects.toBe(error);
+    expect(session.runAttempt).toHaveBeenCalledTimes(1);
+    expect(session.waitForRetry).not.toHaveBeenCalled();
   });
 });

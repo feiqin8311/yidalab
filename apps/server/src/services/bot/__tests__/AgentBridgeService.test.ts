@@ -190,6 +190,13 @@ describe('AgentBridgeService', () => {
     // execAgent should be called with hooks containing webhook config
     expect(mockExecAgent).toHaveBeenCalledWith(
       expect.objectContaining({
+        contextPolicy: expect.objectContaining({
+          budgets: expect.objectContaining({
+            economicInputTokens: 72_000,
+            maxToolResultTokens: 6_000,
+            maxToolRoundTokens: 16_000,
+          }),
+        }),
         hooks: expect.arrayContaining([
           expect.objectContaining({
             id: 'bot-step-progress',
@@ -203,6 +210,13 @@ describe('AgentBridgeService', () => {
             type: 'onComplete',
             webhook: expect.objectContaining({
               body: expect.objectContaining({ type: 'completion', platformThreadId: THREAD_ID }),
+            }),
+          }),
+          expect.objectContaining({
+            id: 'bot-error',
+            type: 'onError',
+            webhook: expect.objectContaining({
+              body: expect.objectContaining({ reason: 'error', type: 'completion' }),
             }),
           }),
         ]),
@@ -233,8 +247,7 @@ describe('AgentBridgeService', () => {
     const progressMessageIdFromHooks = (): unknown => {
       const call = mockExecAgent.mock.calls.at(-1);
       const hooks = call?.[0]?.hooks as
-        | Array<{ id?: string; webhook?: { body?: Record<string, unknown> } }>
-        | undefined;
+        Array<{ id?: string; webhook?: { body?: Record<string, unknown> } }> | undefined;
       return hooks?.find((h) => h.id === 'bot-completion')?.webhook?.body?.progressMessageId;
     };
 

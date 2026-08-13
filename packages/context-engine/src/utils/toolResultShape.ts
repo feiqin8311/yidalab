@@ -136,8 +136,19 @@ export const shapeStructuredJson = (
   }
 
   if (isPlainObject(value)) {
-    // Prefer common table shapes: { data: [], rows: [], items: [], results: [] }
-    for (const key of ['data', 'rows', 'items', 'results', 'list', 'records']) {
+    // Prefer common table shapes + SIF campaign dumps (adGroups/campaigns/keywords).
+    for (const key of [
+      'data',
+      'rows',
+      'items',
+      'results',
+      'list',
+      'records',
+      'adGroups',
+      'campaigns',
+      'keywords',
+      'exposedAdGroups',
+    ]) {
       if (Array.isArray(value[key])) {
         const arr = value[key] as unknown[];
         const shaped = shapeArray(arr, Math.max(1, maxTokens - 64), Math.max(64, maxChars - 200));

@@ -62,7 +62,7 @@ export const formatBotPlatformContext = ({
       'This channel cannot render Artifacts / interactive HTML inline.',
       'For analysis / ops / strategy / traffic / ads / SKU / ASIN / 类目 / 关键词 (report-class) questions:',
       '1. Run the SAME tool depth as you would on Web (demand / root / competition / ads as needed). No early-stop after partial data.',
-      '2. Produce a complete Chinese HTML report and call lobe-dingpan → uploadHtmlToDingpan with the FULL HTML in ONE tool call BEFORE the final text.',
+      '2. Produce a compact Chinese HTML report (short CSS, key tables only — no raw tool JSON dumps) and call lobe-dingpan → uploadHtmlToDingpan once BEFORE the final text.',
       '3. Final chat body = short plain-text key bullets (≈ half page max) + the tool preview_url as a bare URL line. Never invent URLs.',
       '4. Do NOT emit <lobeArtifact> or dump large HTML into the chat body.',
       '5. Binary files still use uploadToDingpan with a local filePath when available.',

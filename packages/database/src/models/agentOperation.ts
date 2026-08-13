@@ -3,7 +3,7 @@ import type {
   OperationOutcomeType,
   VerifyRunStatus,
 } from '@lobechat/types';
-import { and, eq, gte, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import { today } from '@/utils/time';
 
@@ -179,11 +179,15 @@ export class AgentOperationModel {
    * Update the row when the operation reaches a terminal state. Scoped by
    * `userId` so a leaked operationId can't be used to flip another user's
    * row. No-op when the start row was never written.
+   *
+   * Terminal writes (`done` / `error` / `interrupted`) are CAS: they refuse to
+   * overwrite an already-terminal row so a late worker cannot clobber a
+   * watchdog/abandon finalizer. Returns whether this call won the write.
    */
   async recordCompletion(
     operationId: string,
     params: RecordOperationCompletionParams,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const updates: Partial<NewAgentOperation> = {
       completionReason: params.completionReason,
       status: params.status,
@@ -210,10 +214,26 @@ export class AgentOperationModel {
     if (params.interruption !== undefined) updates.interruption = params.interruption;
     if (params.traceS3Key !== undefined) updates.traceS3Key = params.traceS3Key;
 
-    await this.db
+    const [row] = await this.db
       .update(agentOperations)
       .set(updates)
-      .where(and(eq(agentOperations.id, operationId), this.ownership()));
+      .where(
+        and(
+          eq(agentOperations.id, operationId),
+          this.ownership(),
+          or(
+            isNull(agentOperations.status),
+            inArray(agentOperations.status, [
+              'idle',
+              'running',
+              'waiting_for_human',
+              'waiting_for_async_tool',
+            ]),
+          ),
+        ),
+      )
+      .returning({ id: agentOperations.id });
+    return Boolean(row);
   }
 
   /**
@@ -249,6 +269,15 @@ export class AgentOperationModel {
       )
       .returning({ id: agentOperations.id });
     return Boolean(row);
+  }
+
+  async mergeMetadata(operationId: string, patch: Record<string, unknown>): Promise<void> {
+    const row = await this.findById(operationId);
+    if (!row) return;
+    await this.db
+      .update(agentOperations)
+      .set({ metadata: { ...row.metadata, ...patch } })
+      .where(and(eq(agentOperations.id, operationId), this.ownership()));
   }
 
   async findById(operationId: string) {

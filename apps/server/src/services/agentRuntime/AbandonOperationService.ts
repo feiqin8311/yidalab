@@ -137,6 +137,17 @@ export class AbandonOperationService {
     // Mutate state for finalize — recorder reads cost / tokens / metadata off this.
     const finalState = { ...state, error, status: 'error' as const };
 
+    // Publish the terminal status before snapshot/DB work so an in-flight
+    // modelRuntime.chat() poll sees it and aborts instead of outrunning the
+    // 12-minute watchdog. Skip already-terminal coordinator state.
+    if (shouldDispatchAbandonedLifecycle) {
+      try {
+        await this.coordinator.saveAgentState(operationId, finalState);
+      } catch (e) {
+        log('[%s] abandoned op coordinator status write failed (non-fatal): %O', operationId, e);
+      }
+    }
+
     if (this.snapshotStore) {
       await this.traceRecorder.finalize(operationId, {
         completionReason: 'error',
@@ -275,36 +286,68 @@ export class AbandonOperationService {
       type: AgentRuntimeErrorType.AgentRuntimeError,
     };
 
+    const recovered = await this.resolveAssistantMessageIdForOperation(op, operationId);
+    const assistantMessageId = recovered.assistantMessageId;
+    const serializedHooks = recovered.hooks ?? this.resolveSerializedHooks(op);
+
     try {
-      await new AgentOperationModel(
+      await new CompletionLifecycle(
         this.db,
         op.userId,
         op.workspaceId ?? undefined,
-      ).recordCompletion(operationId, {
-        completedAt: new Date(),
-        completionReason: 'error',
-        error: { message, type: String(error.type) },
-        llmCalls: 0,
-        processingTimeMs: op.startedAt ? Date.now() - new Date(op.startedAt).getTime() : null,
-        status: 'error',
-        stepCount: 0,
-        toolCalls: 0,
-        totalTokens: 0,
-      });
+      ).completeOperation(
+        {
+          agentId: op.agentId ?? undefined,
+          assistantMessageId,
+          error,
+          operationId,
+          serializedHooks,
+          topicId: op.topicId ?? undefined,
+          userId: op.userId,
+        },
+        'error',
+      );
+      result.assistantMessageUpdated = Boolean(assistantMessageId);
     } catch (e) {
-      log('[%s] no-state abandon: recordCompletion failed (non-fatal): %O', operationId, e);
+      log('[%s] no-state abandon: completeOperation failed, falling back: %O', operationId, e);
+      try {
+        await new AgentOperationModel(
+          this.db,
+          op.userId,
+          op.workspaceId ?? undefined,
+        ).recordCompletion(operationId, {
+          completedAt: new Date(),
+          completionReason: 'error',
+          error: { message, type: String(error.type) },
+          llmCalls: 0,
+          processingTimeMs: op.startedAt ? Date.now() - new Date(op.startedAt).getTime() : null,
+          status: 'error',
+          stepCount: 0,
+          toolCalls: 0,
+          totalTokens: 0,
+        });
+      } catch (inner) {
+        log('[%s] no-state abandon: recordCompletion failed (non-fatal): %O', operationId, inner);
+      }
+      if (assistantMessageId) {
+        try {
+          const messageModel = new MessageModel(this.db, op.userId, op.workspaceId ?? undefined);
+          await messageModel.update(assistantMessageId, { content: '', error });
+          result.assistantMessageUpdated = true;
+        } catch (inner) {
+          log(
+            '[%s] no-state abandon: assistant message update failed (non-fatal): %O',
+            operationId,
+            inner,
+          );
+        }
+      }
     }
+  }
 
-    const assistantMessageId = await this.resolveAssistantMessageIdForOperation(op, operationId);
-    if (!assistantMessageId) return;
-
-    try {
-      const messageModel = new MessageModel(this.db, op.userId, op.workspaceId ?? undefined);
-      await messageModel.update(assistantMessageId, { content: '', error });
-      result.assistantMessageUpdated = true;
-    } catch (e) {
-      log('[%s] no-state abandon: assistant message update failed (non-fatal): %O', operationId, e);
-    }
+  private resolveSerializedHooks(op: typeof agentOperations.$inferSelect) {
+    const fromOp = (op.metadata as { hooks?: unknown } | null)?.hooks;
+    return Array.isArray(fromOp) ? (fromOp as never) : undefined;
   }
 
   private async findOperationRow(operationId: string) {
@@ -321,7 +364,7 @@ export class AbandonOperationService {
   private async resolveAssistantMessageIdForOperation(
     op: typeof agentOperations.$inferSelect,
     operationId: string,
-  ): Promise<string | undefined> {
+  ): Promise<{ assistantMessageId?: string; hooks?: unknown[] }> {
     let topicModel: TopicModel | undefined;
 
     if (op.topicId) {
@@ -329,13 +372,23 @@ export class AbandonOperationService {
         topicModel = new TopicModel(this.db, op.userId, op.workspaceId ?? undefined);
         const topic = await topicModel.findById(op.topicId);
         const running = topic?.metadata?.runningOperation as
-          { assistantMessageId?: string; operationId?: string } | undefined;
+          | {
+              assistantMessageId?: string;
+              hooks?: unknown[];
+              operationId?: string;
+            }
+          | undefined;
 
-        if (running?.operationId && running.operationId !== operationId) return undefined;
+        if (running?.operationId && running.operationId !== operationId) {
+          return {};
+        }
 
         if (running?.operationId === operationId) {
           await topicModel.updateMetadata(op.topicId, { runningOperation: null }).catch(() => {});
-          if (running.assistantMessageId) return running.assistantMessageId;
+          return {
+            assistantMessageId: running.assistantMessageId,
+            hooks: Array.isArray(running.hooks) ? running.hooks : undefined,
+          };
         }
       } catch (e) {
         log('[%s] no-state abandon: topic lookup failed (non-fatal): %O', operationId, e);
@@ -360,10 +413,10 @@ export class AbandonOperationService {
         ),
       });
 
-      return assistant?.id;
+      return { assistantMessageId: assistant?.id };
     } catch (e) {
       log('[%s] no-state abandon: assistant lookup failed (non-fatal): %O', operationId, e);
-      return undefined;
+      return {};
     }
   }
 }

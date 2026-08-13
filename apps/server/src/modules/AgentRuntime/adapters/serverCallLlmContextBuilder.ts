@@ -2,6 +2,7 @@ import {
   type AgentState,
   type CallLLMPayload,
   extractDingpanUploadOutcomes,
+  resolveContextBudgets,
 } from '@lobechat/agent-runtime';
 import {
   type ComposioServiceSummary,
@@ -483,16 +484,14 @@ export const buildServerCallLlmContext = async ({
       return undefined;
     })(),
     toolResultPrune: (() => {
-      const budgets = state.metadata?.contextPolicy?.budgets as
-        { maxHistoricalToolTokens?: number } | undefined;
-      if (!budgets?.maxHistoricalToolTokens) {
-        // Default prune budget when context budget v2 policy is present
-        if (state.metadata?.contextPolicy) {
-          return { enabled: true, maxHistoricalToolTokens: 40_000 };
-        }
-        return undefined;
-      }
-      return { enabled: true, maxHistoricalToolTokens: budgets.maxHistoricalToolTokens };
+      if (!state.metadata?.contextPolicy) return undefined;
+      const budgets = resolveContextBudgets(state.metadata.contextPolicy);
+      return {
+        enabled: true,
+        maxHistoricalToolTokens: budgets.maxHistoricalToolTokens,
+        maxToolResultTokens: budgets.maxToolResultTokens,
+        maxToolRoundTokens: budgets.maxToolRoundTokens,
+      };
     })(),
     evalContext: ctx.evalContext,
     forceFinish: state.forceFinish,

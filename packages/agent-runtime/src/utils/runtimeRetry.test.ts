@@ -22,6 +22,16 @@ describe('runtimeRetry', () => {
     expect(resolveLLMMaxAttempts('lobehub', options)).toBe(3);
   });
 
+  it('retries stream timeouts at most once', () => {
+    const timeoutError = new Error('LLM_FIRST_CHUNK_TIMEOUT');
+    const options = {
+      isStreamTimeoutError: (error: unknown) => error === timeoutError,
+      streamTimeoutMaxRetries: 1,
+    };
+    expect(resolveLLMRetryBudget('openai', timeoutError, options)).toBe(1);
+    expect(resolveLLMRetryBudget('openai', new Error('other'), options)).toBe(5);
+  });
+
   it('calculates exponential LLM retry delay with a cap', () => {
     expect(getLLMRetryDelayMs(1)).toBe(1000);
     expect(getLLMRetryDelayMs(2)).toBe(2000);

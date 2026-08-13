@@ -11,6 +11,7 @@ import type {
 import {
   type ChatStreamPayload,
   consumeStreamUntilDone,
+  LLMStreamTimeoutError,
   type ModelRuntime,
 } from '@lobechat/model-runtime';
 
@@ -18,6 +19,13 @@ import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import { CompanyQuotaService } from '@/server/services/companyQuota';
 
 import type { RuntimeExecutorContext } from '../context';
+import {
+  LLM_FIRST_CHUNK_TIMEOUT_MS,
+  LLM_STREAM_IDLE_TIMEOUT_MS,
+  LLM_TURN_TOTAL_TIMEOUT_MS,
+  remainingDeadlineMs,
+  withDeadline,
+} from '../executorHelpers';
 import { createServerCallLlmAttempt } from './serverCallLlmAttempt';
 import { openServerCallLlmTurn } from './serverCallLlmExecutor';
 
@@ -75,24 +83,48 @@ export class ServerLLMTransport implements LLMTransport {
     let usage: LLMStreamResult['usage'];
     let streamError: unknown;
 
-    const response = await runtime.chat(runtimePayload as any, {
-      callback: {
-        onCompletion: async (data: any) => {
-          if (data.usage) usage = data.usage;
+    const abort = new AbortController();
+    const firstByteDeadlineAt = Date.now() + LLM_FIRST_CHUNK_TIMEOUT_MS;
+    const turnDeadlineAt = Date.now() + LLM_TURN_TOTAL_TIMEOUT_MS;
+    const firstByteTimeout = () => {
+      abort.abort();
+      return new LLMStreamTimeoutError('first_chunk', LLM_FIRST_CHUNK_TIMEOUT_MS);
+    };
+    const response = await withDeadline(
+      runtime.chat(runtimePayload as any, {
+        callback: {
+          onCompletion: async (data: any) => {
+            if (data.usage) usage = data.usage;
+          },
+          onError: async (errorData: unknown) => {
+            streamError = errorData;
+            handlers?.onError?.(errorData);
+          },
+          onText: async (text: string) => {
+            content += text;
+            handlers?.onText?.(text);
+          },
         },
-        onError: async (errorData: unknown) => {
-          streamError = errorData;
-          handlers?.onError?.(errorData);
-        },
-        onText: async (text: string) => {
-          content += text;
-          handlers?.onText?.(text);
-        },
-      },
-      user: this.ctx.userId,
-    });
+        signal: abort.signal,
+        user: this.ctx.userId,
+      }),
+      remainingDeadlineMs(firstByteDeadlineAt),
+      firstByteTimeout,
+    );
 
-    await consumeStreamUntilDone(response);
+    try {
+      const remainingFirstByteMs = remainingDeadlineMs(firstByteDeadlineAt);
+      if (remainingFirstByteMs <= 0) throw firstByteTimeout();
+
+      await consumeStreamUntilDone(response, {
+        firstChunkTimeoutMs: remainingFirstByteMs,
+        idleTimeoutMs: LLM_STREAM_IDLE_TIMEOUT_MS,
+        totalTimeoutMs: remainingDeadlineMs(turnDeadlineAt),
+      });
+    } catch (error) {
+      abort.abort();
+      throw error;
+    }
 
     if (streamError) {
       throw new Error(getErrorMessage(streamError));

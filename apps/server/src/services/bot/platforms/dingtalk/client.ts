@@ -114,14 +114,22 @@ export class DingTalkClient implements PlatformClient {
   }
 
   getMessenger(platformThreadId: string): PlatformMessenger {
-    // Text replies go through the Stream session webhook (chat-sdk adapter).
-    // Reactions use OpenAPI robot emotion reply/recall (same as reimburse-bot).
+    const adapter = new DingTalkAdapter(this.applicationId, this.context.redisClient);
+    const toText = (content: unknown) => {
+      if (typeof content === 'string') return content;
+      if (content && typeof content === 'object' && 'content' in content) {
+        const inner = (content as { content?: unknown }).content;
+        if (typeof inner === 'string') return inner;
+      }
+      return '';
+    };
+
     return {
-      createMessage: async () => {
-        throw new Error('DingTalk replies are sent through the active Stream session');
+      createMessage: async (content) => {
+        await adapter.postMessage(platformThreadId, toText(content));
       },
-      editMessage: async () => {
-        throw new Error('DingTalk replies are sent through the active Stream session');
+      editMessage: async (_messageId, content) => {
+        await adapter.postMessage(platformThreadId, toText(content));
       },
       addReaction: async (messageId) => {
         await this.emotion(platformThreadId, String(messageId), { recall: false });

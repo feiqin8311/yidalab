@@ -615,12 +615,12 @@ export class BotCallbackService {
       await messenger.createMessage(payload);
       console.info('[BotCallbackService] completion reply delivered via createMessage');
     } catch (error) {
-      // Last resort failed — the reply is lost. console (not debug) so the
-      // "agent ran but no reply appeared" class of failures (LOBE-11632)
-      // is visible in production logs instead of an HTTP 200 with nothing.
+      // Last resort failed — rethrow so the bot.completion job releases its
+      // Redis sent-mark and retries instead of treating this as success.
       console.error(
         `[BotCallbackService] createMessage fallback failed, reply lost: ${describePlatformError(error)}`,
       );
+      throw error;
     }
   }
 

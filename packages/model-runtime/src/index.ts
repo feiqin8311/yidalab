@@ -80,7 +80,11 @@ export { LobeZeroOneAI } from './providers/zeroone';
 export { LobeZhipuAI } from './providers/zhipu';
 export * from './types';
 export * from './types/error';
-export { consumeStreamUntilDone } from './utils/consumeStream';
+export type {
+  ConsumeStreamTimeoutKind,
+  ConsumeStreamUntilDoneOptions,
+} from './utils/consumeStream';
+export { consumeStreamUntilDone, LLMStreamTimeoutError } from './utils/consumeStream';
 export { AgentRuntimeError } from './utils/createError';
 export { getModelPropertyWithFallback } from './utils/getFallbackModelProperty';
 export { getModelPricing } from './utils/getModelPricing';

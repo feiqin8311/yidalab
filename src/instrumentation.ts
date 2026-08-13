@@ -66,6 +66,13 @@ export async function register() {
       .catch((err) => {
         console.error('[Instrumentation] Failed to start delivery drain loop:', err);
       });
+
+    // DingTalk / bot ops have no gateway inactivity DO — reclaim stuck running rows.
+    void import('@/server/services/agentRuntime/stuckOperationWatchdog')
+      .then(({ startStuckBotOperationWatchdog }) => startStuckBotOperationWatchdog())
+      .catch((err) => {
+        console.error('[Instrumentation] Failed to start stuck-bot-op watchdog:', err);
+      });
   }
 
   if (process.env.NODE_ENV !== 'production' && !process.env.ENABLE_TELEMETRY_IN_DEV) {

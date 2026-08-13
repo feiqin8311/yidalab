@@ -24,7 +24,7 @@ For HTML / dashboard / interactive reports:
    - 聊天内预览（Artifact）— in-app only, **no Drive file**
    - 钉盘链接（可预览可分享）— this tool: shareable link + in-chat workspace preview from message HTML
 2. **Artifact** → emit \`<lobeArtifact type="text/html" …>\` only. Do **not** call dingpan and do **not** write a .html file.
-3. **钉盘** → call \`uploadHtmlToDingpan\` with the **full HTML string** in \`html\` plus structured naming fields below. The product keeps that HTML on the tool message for preview; it does **not** create a resource document. Reply with \`preview_url\` (no raw HTML body in IM). Do **not** also emit lobeArtifact for the same report — the UI card/portal handles preview.
+3. **钉盘** → call \`uploadHtmlToDingpan\` with a **compact** HTML string in \`html\` (short CSS, tables of key rows only — do not dump full campaign/ad-group JSON) plus structured naming fields below. The product keeps that HTML on the tool message for preview; it does **not** create a resource document. Reply with \`preview_url\` (no raw HTML body in IM). Do **not** also emit lobeArtifact for the same report — the UI card/portal handles preview.
 4. On DingTalk or other IM channels that cannot render Artifacts, default to 钉盘 without asking when appropriate.
 5. Pass \`documentId\` **only** when uploading an already-existing resource document (user-owned). Never invent a documentId.
 </html_delivery>
@@ -53,7 +53,7 @@ Per-upload override: folderLink, or spaceId + folderId (date subfolder still app
 
 <apis>
 - **uploadToDingpan**: Upload filePath (absolute, on the execution host). Optional uploadName, folderLink, spaceId, folderId. Files land under today's date folder.
-- **uploadHtmlToDingpan**: Upload HTML. Prefer \`html\` (message artifact + Drive). Optional \`documentId\` only for existing resources. Returns preview_url (+ document_id only when documentId was provided). Only report success when tool JSON has success=true and preview_url; never invent a substitute URL.
+- **uploadHtmlToDingpan**: Upload HTML. Prefer compact \`html\` (message artifact + Drive). Optional \`documentId\` only for existing resources. Returns preview_url (+ document_id only when documentId was provided). Only report success when tool JSON has success=true and preview_url; never invent a substitute URL.
 - **dingpanStatus**: Check whether app credentials and default folder are configured (does not print secrets).
 </apis>
 

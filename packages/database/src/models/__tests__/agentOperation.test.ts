@@ -55,6 +55,23 @@ describe('AgentOperationModel', () => {
       expect(row?.completedAt).toBeNull();
     });
 
+    it('merges metadata patches without dropping existing keys', async () => {
+      const model = new AgentOperationModel(serverDB, userId);
+      const operationId = 'op-merge-meta';
+      await model.recordStart({
+        metadata: { keep: true },
+        operationId,
+      });
+
+      await model.mergeMetadata(operationId, { hooks: [{ id: 'bot-completion' }] });
+
+      const row = await model.findById(operationId);
+      expect(row?.metadata).toMatchObject({
+        hooks: [{ id: 'bot-completion' }],
+        keep: true,
+      });
+    });
+
     it('persists the agent-signal marker into metadata so server tools can read it back', async () => {
       const model = new AgentOperationModel(serverDB, userId);
       const operationId = 'op-start-marker';
@@ -175,6 +192,48 @@ describe('AgentOperationModel', () => {
       const row = await model.findById(operationId);
       expect(row?.status).toBe('waiting_for_human');
       expect(row?.completedAt).toBeNull();
+    });
+
+    it('refuses a later terminal write from overwriting an already-terminal row', async () => {
+      const model = new AgentOperationModel(serverDB, userId);
+      const operationId = 'op-cas-terminal';
+
+      await model.recordStart({ operationId });
+      const first = await model.recordCompletion(operationId, {
+        completedAt: new Date(),
+        completionReason: 'error',
+        status: 'error',
+      });
+      const second = await model.recordCompletion(operationId, {
+        completedAt: new Date(),
+        completionReason: 'done',
+        status: 'done',
+      });
+
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+      const row = await model.findById(operationId);
+      expect(row?.status).toBe('error');
+      expect(row?.completionReason).toBe('error');
+    });
+
+    it('refuses a parked write from overwriting a terminal row', async () => {
+      const model = new AgentOperationModel(serverDB, userId);
+      const operationId = 'op-cas-parked';
+
+      await model.recordStart({ operationId });
+      await model.recordCompletion(operationId, {
+        completedAt: new Date(),
+        completionReason: 'error',
+        status: 'error',
+      });
+      const parked = await model.recordCompletion(operationId, {
+        completionReason: 'waiting_for_human',
+        status: 'waiting_for_human',
+      });
+
+      expect(parked).toBe(false);
+      expect((await model.findById(operationId))?.status).toBe('error');
     });
   });
 

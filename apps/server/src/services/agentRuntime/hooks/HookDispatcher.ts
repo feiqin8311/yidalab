@@ -29,6 +29,28 @@ export async function deliverWebhook(
     ? url
     : urlJoin(process.env.INTERNAL_APP_URL || process.env.APP_URL || '', url);
 
+  // Bot completion must survive local-queue mode and process restart: always
+  // enqueue the durable job, even when the serialized hook used delivery=fetch.
+  if (url.includes('/api/agent/webhooks/bot-callback')) {
+    try {
+      const { enqueueInternalJob } = await import('@/server/services/internalJob/enqueue');
+      const { JOB_NAMES } = await import('@/server/services/internalJob/types');
+      const operationId = typeof payload.operationId === 'string' ? payload.operationId : undefined;
+      await enqueueInternalJob({
+        dedupeKey: operationId ? `bot-completion:${operationId}` : undefined,
+        name: JOB_NAMES.botCompletion,
+        payload,
+      });
+      log('Webhook delivered via internal job (bot): %s', url);
+      return;
+    } catch (error) {
+      if (fallback === 'none') throw error;
+      log('Internal job delivery failed, falling back to fetch: %O', error);
+      await fetchDeliver(resolvedUrl, payload);
+      return;
+    }
+  }
+
   if (delivery === 'qstash') {
     // Prefer internal Redis jobs (replaces QStash). Known workflow paths map to job names.
     try {
@@ -123,11 +145,12 @@ export class HookDispatcher {
   ): Promise<void> {
     const isQueueMode = isQueueAgentRuntimeEnabled();
 
-    if (!isQueueMode) {
-      // Local mode: call handler functions directly
-      const hooks = this.hooks.get(operationId)?.filter((h) => h.type === type) || [];
-
-      for (const hook of hooks) {
+    // Local in-memory handlers win when this process still holds them.
+    // Serialized webhooks are only a restart/abandon fallback — firing them
+    // first would skip Eval / ops / sub-agent local completion handlers.
+    const localHooks = this.hooks.get(operationId)?.filter((h) => h.type === type) || [];
+    if (!isQueueMode && localHooks.length > 0) {
+      for (const hook of localHooks) {
         try {
           log('[%s][%s] Dispatching local hook: %s', operationId, type, hook.id);
           await hook.handler(event as AgentHookEvent);
