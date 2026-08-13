@@ -15,6 +15,8 @@ import { emitAgentDocumentToolOutcomeSafely } from '@/server/services/agentDocum
 
 import { type ServerRuntimeRegistration } from './types';
 
+const TOOL_RESULTS_ARCHIVE_FILENAME = '.tool-results';
+
 const getAgentDocumentAppUrl = (): string | undefined => {
   try {
     return appEnv.APP_URL;
@@ -37,6 +39,55 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
       context.workspaceId,
       context.agentVisibility,
     );
+    const enabledDocumentIds = new Set(context.enabledAgentDocumentIds ?? []);
+    const runtimeCreatedDocumentIds = new Set<string>();
+    let archiveFolderIdsPromise: Promise<Set<string>> | undefined;
+
+    const getArchiveFolderIds = (agentId: string) => {
+      archiveFolderIdsPromise ??= service
+        .listDocuments(agentId, 'all', { includeArchivedToolResults: true })
+        .then(
+          (docs) =>
+            new Set(
+              docs
+                .filter((doc) => doc.filename === TOOL_RESULTS_ARCHIVE_FILENAME && !doc.parentId)
+                .map((doc) => doc.documentId),
+            ),
+        );
+
+      return archiveFolderIdsPromise;
+    };
+
+    const canUseDocument = async (
+      agentId: string,
+      doc: {
+        documentId?: string;
+        id: string;
+        parentId?: string | null;
+        templateId?: string | null;
+      },
+    ) => {
+      if (doc.templateId) return true;
+      if (enabledDocumentIds.has(doc.id) || runtimeCreatedDocumentIds.has(doc.id)) return true;
+      if (context.documentId && doc.documentId === context.documentId) return true;
+
+      const archiveFolderIds = await getArchiveFolderIds(agentId);
+      return (
+        (!!doc.documentId && archiveFolderIds.has(doc.documentId)) ||
+        (!!doc.parentId && archiveFolderIds.has(doc.parentId))
+      );
+    };
+
+    const getUsableDocument = async (agentId: string, id: string) => {
+      const doc = await service.getDocumentById(id, agentId);
+      if (!doc || !(await canUseDocument(agentId, doc))) return undefined;
+      return doc;
+    };
+
+    const trackCreatedDocument = <T extends { id?: string } | undefined>(doc: T): T => {
+      if (doc?.id) runtimeCreatedDocumentIds.add(doc.id);
+      return doc;
+    };
     const { taskId } = context;
     let workspaceSlugPromise: Promise<string | undefined> | undefined;
     const emitDocumentOutcome = async (input: {
@@ -144,58 +195,72 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
 
     return new AgentDocumentsExecutionRuntime(
       {
-        copyDocument: async ({ agentId, id, newTitle }) =>
-          pinToTask(
-            await withDocumentOutcome(
-              {
-                agentId,
-                apiName: 'copyDocument',
-                getAgentDocumentId: (result) => result?.id,
-                relation: 'created',
-                summary: 'Agent documents copied a document.',
-                toolAction: 'copy',
-              },
-              () => service.copyDocumentById(id, newTitle, agentId),
+        copyDocument: async ({ agentId, id, newTitle }) => {
+          if (!(await getUsableDocument(agentId, id))) return undefined;
+
+          return trackCreatedDocument(
+            await pinToTask(
+              await withDocumentOutcome(
+                {
+                  agentId,
+                  apiName: 'copyDocument',
+                  getAgentDocumentId: (result) => result?.id,
+                  relation: 'created',
+                  summary: 'Agent documents copied a document.',
+                  toolAction: 'copy',
+                },
+                () => service.copyDocumentById(id, newTitle, agentId),
+              ),
             ),
-          ),
+          );
+        },
         createDocument: async ({ agentId, content, hintIsSkill, title }) =>
-          pinToTask(
-            await withDocumentOutcome(
-              {
-                agentId,
-                apiName: 'createDocument',
-                getAgentDocumentId: (result) => result?.id,
-                hintIsSkill,
-                relation: 'created',
-                summary: 'Agent documents created a document.',
-                toolAction: 'create',
-              },
-              () => service.createDocument(agentId, title, content, { hintIsSkill }),
+          trackCreatedDocument(
+            await pinToTask(
+              await withDocumentOutcome(
+                {
+                  agentId,
+                  apiName: 'createDocument',
+                  getAgentDocumentId: (result) => result?.id,
+                  hintIsSkill,
+                  relation: 'created',
+                  summary: 'Agent documents created a document.',
+                  toolAction: 'create',
+                },
+                () => service.createDocument(agentId, title, content, { hintIsSkill }),
+              ),
             ),
           ),
         createTopicDocument: async ({ agentId, content, hintIsSkill, title, topicId }) =>
-          pinToTask(
-            await withDocumentOutcome(
-              {
-                agentId,
-                apiName: 'createTopicDocument',
-                getAgentDocumentId: (result) => result?.id,
-                hintIsSkill,
-                relation: 'created',
-                summary: 'Agent documents created a topic document.',
-                toolAction: 'create',
-              },
-              () => service.createForTopic(agentId, title, content, topicId, { hintIsSkill }),
+          trackCreatedDocument(
+            await pinToTask(
+              await withDocumentOutcome(
+                {
+                  agentId,
+                  apiName: 'createTopicDocument',
+                  getAgentDocumentId: (result) => result?.id,
+                  hintIsSkill,
+                  relation: 'created',
+                  summary: 'Agent documents created a topic document.',
+                  toolAction: 'create',
+                },
+                () => service.createForTopic(agentId, title, content, topicId, { hintIsSkill }),
+              ),
             ),
           ),
         listDocuments: async ({ agentId, parentId, sourceType }) => {
-          // Agents discover archived tool results via this path (see
-          // `excludeArchivedToolResults`), so keep the `.tool-results` archive visible.
+          // Archived tool results remain available as internal context receipts; user-created
+          // resource documents require an explicit attachment selection.
           const docs = await service.listDocuments(agentId, sourceType, {
             includeArchivedToolResults: true,
             parentId,
           });
-          return docs.map((d) => ({
+          const scopedDocs = (
+            await Promise.all(
+              docs.map(async (doc) => ((await canUseDocument(agentId, doc)) ? doc : undefined)),
+            )
+          ).filter((doc): doc is NonNullable<typeof doc> => !!doc);
+          return scopedDocs.map((d) => ({
             documentId: d.documentId,
             filename: d.filename,
             id: d.id,
@@ -206,18 +271,23 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
           const docs = await service.listDocumentsForTopic(agentId, topicId, sourceType, {
             includeArchivedToolResults: true,
           });
-          // Topic listing joins through topic associations rather than the agent
-          // folder tree, so the folder filter is applied in-memory here.
           const filtered = parentId ? docs.filter((d) => d.parentId === parentId) : docs;
-          return filtered.map((d) => ({
+          const scopedDocs = (
+            await Promise.all(
+              filtered.map(async (doc) => ((await canUseDocument(agentId, doc)) ? doc : undefined)),
+            )
+          ).filter((doc): doc is NonNullable<typeof doc> => !!doc);
+          return scopedDocs.map((d) => ({
             documentId: d.documentId,
             filename: d.filename,
             id: d.id,
             title: d.title,
           }));
         },
-        modifyNodes: ({ agentId, id, operations }) =>
-          withDocumentOutcome(
+        modifyNodes: async ({ agentId, id, operations }) => {
+          if (!(await getUsableDocument(agentId, id))) return undefined;
+
+          return withDocumentOutcome(
             {
               agentId,
               apiName: 'modifyNodes',
@@ -227,10 +297,16 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
               toolAction: 'edit',
             },
             () => service.modifyDocumentNodesById(id, operations, agentId),
-          ),
-        readDocument: ({ agentId, id }) => service.getDocumentSnapshotById(id, agentId),
-        removeDocument: ({ agentId, id }) =>
-          withDocumentOutcome(
+          );
+        },
+        readDocument: async ({ agentId, id }) => {
+          if (!(await getUsableDocument(agentId, id))) return undefined;
+          return service.getDocumentSnapshotById(id, agentId);
+        },
+        removeDocument: async ({ agentId, id }) => {
+          if (!(await getUsableDocument(agentId, id))) return false;
+
+          return withDocumentOutcome(
             {
               agentId,
               apiName: 'removeDocument',
@@ -240,9 +316,12 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
               toolAction: 'remove',
             },
             () => service.removeDocumentById(id, agentId),
-          ),
-        renameDocument: ({ agentId, id, newTitle }) =>
-          withDocumentOutcome(
+          );
+        },
+        renameDocument: async ({ agentId, id, newTitle }) => {
+          if (!(await getUsableDocument(agentId, id))) return undefined;
+
+          return withDocumentOutcome(
             {
               agentId,
               apiName: 'renameDocument',
@@ -252,9 +331,12 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
               toolAction: 'rename',
             },
             () => service.renameDocumentById(id, newTitle, agentId),
-          ),
-        replaceDocumentContent: ({ agentId, content, id }) =>
-          withDocumentOutcome(
+          );
+        },
+        replaceDocumentContent: async ({ agentId, content, id }) => {
+          if (!(await getUsableDocument(agentId, id))) return undefined;
+
+          return withDocumentOutcome(
             {
               agentId,
               apiName: 'replaceDocumentContent',
@@ -264,9 +346,12 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
               toolAction: 'replace',
             },
             () => service.replaceDocumentContentById(id, content, agentId),
-          ),
-        updateLoadRule: ({ agentId, id, rule }) =>
-          withDocumentOutcome(
+          );
+        },
+        updateLoadRule: async ({ agentId, id, rule }) => {
+          if (!(await getUsableDocument(agentId, id))) return undefined;
+
+          return withDocumentOutcome(
             {
               agentId,
               apiName: 'updateLoadRule',
@@ -281,7 +366,8 @@ export const agentDocumentsRuntime: ServerRuntimeRegistration = {
                 { ...rule, rule: rule.rule as DocumentLoadRule | undefined },
                 agentId,
               ),
-          ),
+          );
+        },
       },
       {
         getDocumentUrl: async ({ agentId, documentId }) => {

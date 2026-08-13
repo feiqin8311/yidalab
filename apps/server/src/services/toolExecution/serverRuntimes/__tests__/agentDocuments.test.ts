@@ -49,7 +49,9 @@ describe('agentDocumentsRuntime auto-pin to task', () => {
     copyDocumentById: ReturnType<typeof vi.fn>;
     createDocument: ReturnType<typeof vi.fn>;
     createForTopic: ReturnType<typeof vi.fn>;
+    getDocumentById: ReturnType<typeof vi.fn>;
     getDocumentSnapshotById: ReturnType<typeof vi.fn>;
+    listDocuments: ReturnType<typeof vi.fn>;
     renameDocumentById: ReturnType<typeof vi.fn>;
   };
   let pinDocument: ReturnType<typeof vi.fn>;
@@ -61,7 +63,14 @@ describe('agentDocumentsRuntime auto-pin to task', () => {
       copyDocumentById: vi.fn().mockResolvedValue(newDoc),
       createDocument: vi.fn().mockResolvedValue(newDoc),
       createForTopic: vi.fn().mockResolvedValue(newDoc),
+      getDocumentById: vi.fn().mockImplementation(async (id: string) => ({
+        documentId: 'source-document-row-id',
+        id,
+        parentId: null,
+        templateId: null,
+      })),
       getDocumentSnapshotById: vi.fn().mockResolvedValue(newDoc),
+      listDocuments: vi.fn().mockResolvedValue([]),
       renameDocumentById: vi.fn().mockResolvedValue(newDoc),
     };
     pinDocument = vi.fn().mockResolvedValue(undefined);
@@ -80,6 +89,7 @@ describe('agentDocumentsRuntime auto-pin to task', () => {
     const from = vi.fn().mockReturnValue({ where });
     const select = vi.fn().mockReturnValue({ from });
     return {
+      enabledAgentDocumentIds: ['agent-doc-assoc-id', 'missing', 'source-agent-doc-id'],
       serverDB: { select } as never,
       taskId,
       toolManifestMap: {},

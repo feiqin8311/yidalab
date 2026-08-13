@@ -345,6 +345,7 @@ export default {
   'knowledgeBase.allLibraries': 'All Libraries',
   'knowledgeBase.disabled':
     'Library chat isn’t available in this deployment. Switch to a server-side database, or use {{cloud}}.',
+  'knowledgeBase.documentsLoadError': 'Couldn’t load resource documents. Retry',
   'knowledgeBase.library.action.add': 'Add',
   'knowledgeBase.library.action.detail': 'Details',
   'knowledgeBase.library.action.remove': 'Remove',

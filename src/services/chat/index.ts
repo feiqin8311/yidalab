@@ -47,6 +47,7 @@ import {
   userProfileSelectors,
 } from '@/store/user/selectors';
 import { type ChatStreamPayload, type OpenAIChatMessage } from '@/types/openai/chat';
+import { filterAgentContextDocumentsBySelection } from '@/utils/agentDocumentContextMapping';
 import { createErrorResponse } from '@/utils/errorResponse';
 import { createTraceHeader } from '@/utils/trace';
 
@@ -62,7 +63,6 @@ import {
 } from './mecha';
 import { type FetchOptions } from './types';
 
-const defaultProvider = ModelProvider.OpenAI;
 const providersWithDeploymentName = new Set<string>([
   ModelProvider.Azure,
   ModelProvider.AzureAI,
@@ -198,6 +198,13 @@ class ChatService {
         // Agent documents are optional on the client; keep generation working if hydration fails.
         console.error('[ChatService] Failed to ensure agent documents:', error);
       }
+    }
+
+    if (agentDocuments) {
+      agentDocuments = filterAgentContextDocumentsBySelection(
+        agentDocuments,
+        chatConfig.enabledAgentDocumentIds,
+      );
     }
 
     if (isAgentBuilderEnabled) {

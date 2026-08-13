@@ -221,6 +221,8 @@ export class ServerToolTransport implements ToolTransport {
                   ? isDeviceCapablePlan(context.state.metadata.executionPlan)
                   : undefined,
                 documentId: context.state.metadata?.documentId,
+                enabledAgentDocumentIds:
+                  context.state.metadata?.agentConfig?.chatConfig?.enabledAgentDocumentIds,
                 editingAgentId: context.state.metadata?.editingAgentId,
                 execSubAgent: this.ctx.execSubAgent,
                 executionTimeoutMs: timeoutMs,

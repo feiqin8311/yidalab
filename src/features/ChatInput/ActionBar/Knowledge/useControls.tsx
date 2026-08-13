@@ -1,15 +1,20 @@
+import { AGENT_DOCUMENT_CATEGORY } from '@lobechat/const';
 import { type ItemType } from '@lobehub/ui';
 import { Icon } from '@lobehub/ui';
+import { Button } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
 import isEqual from 'fast-deep-equal';
-import { LibraryBig } from 'lucide-react';
+import { FileTextIcon, LibraryBig, RefreshCwIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import DotsLoading from '@/components/DotsLoading';
 import FileIcon from '@/components/FileIcon';
 import RepoIcon from '@/components/LibIcon';
+import { useClientDataSWR } from '@/libs/swr';
+import { agentDocumentService, agentDocumentSWRKeys } from '@/services/agentDocument';
 import { useAgentStore } from '@/store/agent';
-import { agentByIdSelectors } from '@/store/agent/selectors';
+import { agentByIdSelectors, chatConfigByIdSelectors } from '@/store/agent/selectors';
 
 import { useAgentId } from '../../hooks/useAgentId';
 import CheckboxItem from '../components/CheckboxWithLoading';
@@ -77,14 +82,33 @@ export const useControls = ({
     (s) => agentByIdSelectors.getAgentKnowledgeBasesById(agentId)(s),
     isEqual,
   );
+  const enabledAgentDocumentIds = useAgentStore(
+    (s) => chatConfigByIdSelectors.getChatConfigById(agentId)(s).enabledAgentDocumentIds ?? [],
+    isEqual,
+  );
+  const enabledAgentDocumentIdSet = new Set(enabledAgentDocumentIds);
+  const {
+    data: agentDocuments = [],
+    error: agentDocumentsError,
+    isLoading: isLoadingAgentDocuments,
+    mutate: mutateAgentDocuments,
+  } = useClientDataSWR(agentId ? agentDocumentSWRKeys.documentsList(agentId) : null, () =>
+    agentDocumentService.listDocuments({ agentId }),
+  );
+  const selectableAgentDocuments = agentDocuments.filter(
+    (document) => document.category === AGENT_DOCUMENT_CATEGORY && !document.isFolder,
+  );
 
-  const [toggleFile, toggleKnowledgeBase] = useAgentStore((s) => [
+  const [toggleFile, toggleKnowledgeBase, updateAgentChatConfigById] = useAgentStore((s) => [
     s.toggleFile,
     s.toggleKnowledgeBase,
+    s.updateAgentChatConfigById,
   ]);
   const enabledCount =
     files.filter((item) => item.enabled).length +
-    knowledgeBases.filter((item) => item.enabled).length;
+    knowledgeBases.filter((item) => item.enabled).length +
+    selectableAgentDocuments.filter((document) => enabledAgentDocumentIdSet.has(document.id))
+      .length;
 
   const libraryItems = knowledgeBases.map((item) => ({
     icon: <RepoIcon />,
@@ -120,11 +144,64 @@ export const useControls = ({
     ),
   }));
 
+  const documentItems: ItemType[] = selectableAgentDocuments.map((document) => ({
+    icon: <FileTextIcon size={20} />,
+    key: document.id,
+    label: (
+      <CheckboxItem
+        checked={enabledAgentDocumentIdSet.has(document.id)}
+        hasPadding={false}
+        id={document.id}
+        label={document.title || document.filename}
+        labelMaxWidth={labelMaxWidth}
+        onUpdate={async (id, enabled) => {
+          const nextIds = enabled
+            ? [...new Set([...enabledAgentDocumentIds, id])]
+            : enabledAgentDocumentIds.filter((documentId) => documentId !== id);
+          await updateAgentChatConfigById(agentId, { enabledAgentDocumentIds: nextIds });
+        }}
+      />
+    ),
+  }));
+
+  const documentStateItems: ItemType[] = isLoadingAgentDocuments
+    ? [
+        {
+          disabled: true,
+          key: 'agent-documents-loading',
+          label: <DotsLoading />,
+        },
+      ]
+    : agentDocumentsError
+      ? [
+          {
+            icon: <RefreshCwIcon size={16} />,
+            key: 'agent-documents-error',
+            label: (
+              <Button
+                size={'small'}
+                type={'text'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void mutateAgentDocuments();
+                }}
+              >
+                {t('knowledgeBase.documentsLoadError')}
+              </Button>
+            ),
+          },
+        ]
+      : documentItems;
+
   // Flat list (no "Libraries" / "Files" group headers): libraries first, then files.
   const relatedGroups: ItemType[] = [
     ...libraryItems,
     ...(libraryItems.length > 0 && fileItems.length > 0 ? [{ type: 'divider' as const }] : []),
     ...fileItems,
+    ...((libraryItems.length > 0 || fileItems.length > 0) && documentStateItems.length > 0
+      ? [{ type: 'divider' as const }]
+      : []),
+    ...documentStateItems,
   ];
 
   const footer = (

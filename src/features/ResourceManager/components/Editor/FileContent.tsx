@@ -20,8 +20,13 @@ const FilePreviewer = memo<FilePreviewerProps>(({ fileId }) => {
   if (!fileId || !displayFile) return null;
 
   return (
-    <Flexbox height={'100%'} width={'100%'}>
-      <Flexbox flex={1} height={'100%'} style={{ overflow: 'auto' }}>
+    <Flexbox height={'100%'} style={{ minHeight: 0, minWidth: 0 }} width={'100%'}>
+      <Flexbox
+        flex={1}
+        height={'100%'}
+        style={{ minHeight: 0, minWidth: 0, overflow: 'auto' }}
+        width={'100%'}
+      >
         <FileViewer {...displayFile} />
       </Flexbox>
     </Flexbox>

@@ -29,7 +29,7 @@ const createFailedResult = (
   errorMessage: string,
 ): { content: string; error: any; state: any; success: false } => ({
   content: errorMessage,
-  error: { message: errorMessage },
+  error: { message: errorMessage, type: 'PluginServerError' },
   state: {},
   success: false,
 });

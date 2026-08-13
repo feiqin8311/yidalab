@@ -27,17 +27,18 @@ const ImageViewer = memo<ImageViewerProps>(({ url }) => {
   }
 
   return (
-    <Center height={'100%'} width={'100%'}>
+    <Center height={'100%'} style={{ minHeight: 0, minWidth: 0, overflow: 'auto' }} width={'100%'}>
       {!isLoaded && <NeuralNetworkLoading size={36} />}
       <img
         alt="Image preview"
         src={url}
         style={{
           display: isLoaded ? 'block' : 'none',
-          height: '100%',
+          height: 'auto',
+          maxHeight: '100%',
+          maxWidth: '100%',
           objectFit: 'contain',
-          overflow: 'hidden',
-          width: '100%',
+          width: 'auto',
         }}
         onError={() => setFailed(true)}
         onLoad={() => setIsLoaded(true)}

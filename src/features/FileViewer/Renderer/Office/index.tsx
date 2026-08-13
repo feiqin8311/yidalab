@@ -11,6 +11,8 @@ import { type OfficePreviewKind, useOfficePreview } from '../../hooks/useOfficeP
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   article: css`
+    overflow-x: auto;
+
     max-width: 880px;
     margin-inline: auto;
     padding: 24px;
@@ -33,7 +35,8 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
 
     table {
       border-collapse: collapse;
-      width: 100%;
+      width: max-content;
+      min-width: 100%;
       margin-block: 12px;
     }
 

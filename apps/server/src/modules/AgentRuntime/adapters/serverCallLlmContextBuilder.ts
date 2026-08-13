@@ -42,7 +42,10 @@ import { serverMessagesEngine } from '@/server/modules/Mecha/ContextEngineering'
 import { AgentDocumentsService } from '@/server/services/agentDocuments';
 import { MarketService } from '@/server/services/market';
 import { OnboardingService } from '@/server/services/onboarding';
-import { toAgentContextDocuments } from '@/utils/agentDocumentContextMapping';
+import {
+  filterAgentContextDocumentsBySelection,
+  toAgentContextDocuments,
+} from '@/utils/agentDocumentContextMapping';
 
 import type { RuntimeExecutorContext } from '../context';
 import { buildPostProcessUrl, log, resolveRuntimeHistoryCount } from '../executorHelpers';
@@ -144,7 +147,10 @@ export const buildServerCallLlmContext = async ({
       );
       const docs = await agentDocService.getAgentContextDocuments(agentId);
       if (docs.length > 0) {
-        agentDocuments = toAgentContextDocuments(docs);
+        agentDocuments = filterAgentContextDocumentsBySelection(
+          toAgentContextDocuments(docs),
+          agentConfig?.chatConfig?.enabledAgentDocumentIds,
+        );
         log('Resolved %d agent documents for agent %s', agentDocuments.length, agentId);
       }
     } catch (error) {

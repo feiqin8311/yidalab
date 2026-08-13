@@ -241,7 +241,7 @@ export class ClientToolExecutionActionImpl {
           ? undefined
           : {
               message: (mcpResult.error as any)?.message ?? 'MCP tool call failed',
-              type: (mcpResult.error as any)?.type,
+              type: (mcpResult.error as any)?.type ?? 'PluginServerError',
             },
         state: mcpResult.state,
         success: !!mcpResult.success,
