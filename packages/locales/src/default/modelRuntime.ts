@@ -27,7 +27,9 @@ export default {
   ExceededContextWindow:
     'The current request content exceeds the length that the model can handle. Please reduce the amount of content and try again.',
   InsufficientQuota:
-    "Sorry, the quota for this key has been reached. Please check if your account balance is sufficient or try again after increasing the key's quota.",
+    "This model's quota is used up. Switch to another model, wait for the reset, or increase the plan quota.",
+  InsufficientQuotaWithReset:
+    "This model's quota is used up. It resets at {{resetAt}}. Switch to another model or wait.",
   InvalidBedrockCredentials:
     'Bedrock authentication failed. Please check the AccessKeyId/SecretAccessKey and retry.',
   InvalidComfyUIArgs: 'Invalid ComfyUI configuration. Please check the settings and try again.',

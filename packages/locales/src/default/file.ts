@@ -267,8 +267,7 @@ export default {
   'preview.office.slide': 'Slide {{number}}',
   'preview.spreadsheet.empty': 'This sheet is empty.',
   'preview.spreadsheet.loadError': 'Failed to preview this spreadsheet.',
-  'preview.spreadsheet.truncated':
-    'Showing {{shownRows}} of {{totalRows}} rows, {{shownCols}} of {{totalCols}} columns.',
+  'preview.spreadsheet.summary': '{{totalRows}} rows, {{totalCols}} columns.',
   'preview.unsupportedFileAndContact':
     'This file format is not currently supported for online preview. If you have a request for previewing, feel free to <1>contact us</1>.',
   'resource': 'Resource',

@@ -316,6 +316,25 @@ describe('ErrorMessageExtra', () => {
     expect(screen.getByText('guide:claude-code:rate_limit')).toBeInTheDocument();
   });
 
+  it('keeps the localized quota message instead of the raw 429 body', () => {
+    render(
+      <ErrorMessageExtra
+        error={{ message: 'modelRuntime:InsufficientQuotaWithReset' }}
+        data={{
+          error: {
+            message:
+              '429 You have exceeded the 5-hour usage quota. It will reset at 2026-08-13 13:41:39 +0800 CST.',
+            type: AgentRuntimeErrorType.InsufficientQuota,
+          } as any,
+          id: 'msg-quota-reset',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('modelRuntime:InsufficientQuotaWithReset')).toBeInTheDocument();
+    expect(screen.queryByText(/You have exceeded the 5-hour usage quota/)).not.toBeInTheDocument();
+  });
+
   it('falls back to the raw error message instead of rendering a blank block', () => {
     render(
       <ErrorMessageExtra

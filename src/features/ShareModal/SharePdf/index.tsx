@@ -11,7 +11,6 @@ import { FORM_STYLE } from '@/const/layoutTokens';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useAgentStore } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors';
-import { useChatStore } from '@/store/chat';
 
 import { useShareData } from '../ShareDataProvider';
 import { generateMarkdown } from '../ShareText/template';
@@ -72,30 +71,27 @@ const SharePdf = memo((props: { message?: UIChatMessage }) => {
 
   // Use the same data gathering logic as ShareText
   const [systemRole] = useAgentStore((s) => [agentSelectors.currentAgentSystemRole(s)]);
-  const activeId = useChatStore((s) => s.activeAgentId);
-  const { context, displayMessages, title } = useShareData();
+  const { displayMessages, title } = useShareData();
 
   const { generatePdf, downloadPdf, pdfData, loading, error } = usePdfGeneration();
 
   const handleGeneratePdf = async () => {
-    if (activeId && displayMessages.length > 0) {
-      // Generate markdown with current field values
-      const currentMarkdownContent = generateMarkdown({
-        ...fieldValue,
-        messages: outerMessage ? [outerMessage] : displayMessages,
-        systemRole,
-        title,
-      }).replaceAll('\n\n\n', '\n');
+    const messages = outerMessage ? [outerMessage] : displayMessages;
+    if (messages.length === 0) return;
 
-      if (currentMarkdownContent.trim()) {
-        await generatePdf({
-          content: currentMarkdownContent,
-          sessionId: activeId,
-          title,
-          topicId: context.topicId || undefined,
-        });
-      }
-    }
+    const currentMarkdownContent = generateMarkdown({
+      ...fieldValue,
+      messages,
+      systemRole,
+      title,
+    }).replaceAll('\n\n\n', '\n');
+
+    if (!currentMarkdownContent.trim()) return;
+
+    await generatePdf({
+      content: currentMarkdownContent,
+      title,
+    });
   };
 
   // Update configuration when form changes

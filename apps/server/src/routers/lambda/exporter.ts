@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { marked } from 'marked';
 import PDFDocument from 'pdfkit';
 import { z } from 'zod';
@@ -26,23 +28,29 @@ const exportProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) =
 });
 const workspaceExportProcedure = exportProcedure.use(withRbacPermission('workspace:update:all'));
 
-const REGULAR_FONT_URL =
-  'https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@2.004R/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf';
+const LOCAL_FONT_CANDIDATES = [
+  process.env.PDF_FONT_PATH,
+  '/app/fonts/NotoSansSC-Regular.otf',
+  '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.otf',
+  '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+].filter((path): path is string => Boolean(path));
 
-let regularFontCache: Buffer | null = null;
+let regularFontCache: Buffer | null | undefined;
 
-const loadRegularFont = async (): Promise<Buffer> => {
-  if (regularFontCache) return regularFontCache;
+const loadRegularFont = async (): Promise<Buffer | null> => {
+  if (regularFontCache !== undefined) return regularFontCache;
 
-  const response = await fetch(REGULAR_FONT_URL);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch font from CDN: ${response.status} ${response.statusText}`);
+  for (const fontPath of LOCAL_FONT_CANDIDATES) {
+    try {
+      regularFontCache = await readFile(fontPath);
+      return regularFontCache;
+    } catch {
+      // try the next candidate
+    }
   }
 
-  const fontBuffer = Buffer.from(await response.arrayBuffer());
-  regularFontCache = fontBuffer;
-
-  return fontBuffer;
+  regularFontCache = null;
+  return null;
 };
 
 const generatePdfFromMarkdown = async (
@@ -68,8 +76,10 @@ const generatePdfFromMarkdown = async (
 
       const chunks: Buffer[] = [];
 
-      doc.registerFont('Regular', regularFont);
-      doc.font('Regular');
+      if (regularFont) {
+        doc.registerFont('Regular', regularFont);
+        doc.font('Regular');
+      }
 
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => {

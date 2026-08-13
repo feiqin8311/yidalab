@@ -6,7 +6,7 @@ import { createModal } from '@lobehub/ui/base-ui';
 import { Input, Spin } from 'antd';
 import { createStaticStyles, cx } from 'antd-style';
 import { ChevronLeft, ChevronRight, Expand, FileText } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -229,6 +229,13 @@ const PdfPreview = memo<PdfPreviewProps>(({ loading, pdfData, onGeneratePdf }) =
 
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
+  const [previewError, setPreviewError] = useState(false);
+
+  useEffect(() => {
+    setPreviewError(false);
+    setNumPages(0);
+    setPageNumber(1);
+  }, [pdfData]);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -282,6 +289,17 @@ const PdfPreview = memo<PdfPreviewProps>(({ loading, pdfData, onGeneratePdf }) =
     );
   }
 
+  if (previewError) {
+    return (
+      <div
+        className={cx(containerStyles.preview, containerStyles.previewWide)}
+        style={{ padding: 12 }}
+      >
+        <div className={localStyles.emptyState}>{t('shareModal.pdfGenerationError')}</div>
+      </div>
+    );
+  }
+
   const pdfDataUri = `data:application/pdf;base64,${pdfData}`;
 
   const handleFullscreen = () => {
@@ -315,6 +333,7 @@ const PdfPreview = memo<PdfPreviewProps>(({ loading, pdfData, onGeneratePdf }) =
               <div className={localStyles.loadingText}>{t('shareModal.loadingPdf')}</div>
             </div>
           }
+          onLoadError={() => setPreviewError(true)}
           onLoadSuccess={onDocumentLoadSuccess}
         >
           <Page

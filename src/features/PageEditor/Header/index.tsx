@@ -12,6 +12,7 @@ import ToggleRightPanelButton from '@/features/RightPanel/ToggleRightPanelButton
 import { usePermission } from '@/hooks/usePermission';
 
 import EditingIndicator from '../EditingIndicator';
+import { PAGE_COPILOT_ENABLED } from '../pageCopilotEnabled';
 import { usePageAgentPanelControl } from '../RightPanel/OverrideContext';
 import { selectors, usePageEditorStore } from '../store';
 import Breadcrumb from './Breadcrumb';
@@ -34,7 +35,8 @@ const Header = memo(() => {
   // surface, so viewers can't open it; History is read-only and stays available
   // to everyone. Without this guard the button toggles the store, then disappears
   // via `hideWhenExpanded` while the panel refuses to open — a no-op control.
-  const canExpandRightPanel = hasEditPermission || rightPanelMode === 'history';
+  const canExpandRightPanel =
+    rightPanelMode === 'history' || (PAGE_COPILOT_ENABLED && hasEditPermission);
 
   return (
     <NavHeader

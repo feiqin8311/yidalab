@@ -27,9 +27,10 @@ export type AddFilesToKnowledgeBaseResult = Awaited<
 /**
  * Orchestrates long-lived resource processing (documents / chunks / workbook).
  *
- * Entry points: resource page / knowledge base / document import (createFile with
- * processingPolicy=persistent). Chat attachments never call this — they stay
- * on_demand and use ContextResourceResolver at prompt time.
+ * Entry points: document import (createFile), KB link (`addFilesToKnowledgeBase`),
+ * and explicit UI/API chunk actions. Resource page / KB uploads no longer call
+ * this from createFile. Chat attachments stay on_demand and use
+ * ContextResourceResolver at prompt time.
  *
  * KB link (Lambda / Agent runtime / OpenAPI) must go through
  * `addFilesToKnowledgeBase` so upgrade + ingestion stay one path.

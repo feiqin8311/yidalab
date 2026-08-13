@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useFileStore } from '@/store/file';
 
+import { PAGE_COPILOT_ENABLED } from '../pageCopilotEnabled';
 import { usePageAgentPanelControl } from '../RightPanel/OverrideContext';
 import { usePageEditorStore } from '../store';
 
@@ -34,7 +35,7 @@ export const useAskCopilotItem = (editor: IEditor | undefined): ChatInputActions
   const { toggle: togglePageAgentPanel } = usePageAgentPanelControl();
 
   return useMemo(() => {
-    if (!editor) return [];
+    if (!PAGE_COPILOT_ENABLED || !editor) return [];
 
     const label = t('cmdk.askLobeAI');
 

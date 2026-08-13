@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 import { DESKTOP_HEADER_ICON_SIZE } from '@/const/layoutTokens';
 import { AutoSaveHint } from '@/features/EditorCanvas';
+import { PAGE_COPILOT_ENABLED } from '@/features/PageEditor/pageCopilotEnabled';
 import { usePageAgentPanelControl } from '@/features/PageEditor/RightPanel/OverrideContext';
 import { usePageEditorStore } from '@/features/PageEditor/store';
 import ToggleRightPanelButton from '@/features/RightPanel/ToggleRightPanelButton';
@@ -56,11 +57,13 @@ const DocumentModalHeader = memo<DocumentModalHeaderProps>(({ onClose }) => {
         )}
       </Flexbox>
       <Flexbox horizontal align={'center'} gap={4}>
-        <ToggleRightPanelButton
-          expand={showPageAgentPanel}
-          showActive={false}
-          onToggle={() => togglePageAgentPanel()}
-        />
+        {PAGE_COPILOT_ENABLED && (
+          <ToggleRightPanelButton
+            expand={showPageAgentPanel}
+            showActive={false}
+            onToggle={() => togglePageAgentPanel()}
+          />
+        )}
         <ActionIcon
           icon={XIcon}
           size={DESKTOP_HEADER_ICON_SIZE}
