@@ -64,9 +64,9 @@ export const archiveToolResultIfNeeded = async ({
   }
 
   const maxLength = limit ?? DEFAULT_TOOL_RESULT_MAX_LENGTH;
-  // Token shaping only when policy explicitly supplies a budget (context_budget_v2).
-  // Without it, keep legacy char-only truncate so flag-off behavior is unchanged.
-  const tokenBudget = maxToolResultTokens;
+  // Always structure-shape before the char cap so 2k-row SIF dumps (adGroups)
+  // stay valid JSON instead of mid-string cuts.
+  const tokenBudget = maxToolResultTokens && maxToolResultTokens > 0 ? maxToolResultTokens : 8_000;
 
   let modelContent = content;
   let truncatedByShape = false;

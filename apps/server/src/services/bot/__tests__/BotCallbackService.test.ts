@@ -620,6 +620,19 @@ describe('BotCallbackService', () => {
       await expect(service.handleCallback(body)).resolves.toBeUndefined();
     });
 
+    it('throws when createMessage fallback fails so the completion job can retry', async () => {
+      mockEditMessage.mockRejectedValueOnce(new Error('Edit failed'));
+      mockCreateMessage.mockRejectedValueOnce(new Error('dingtalk down'));
+
+      const body = makeBody({
+        lastAssistantContent: 'The actual answer the user needs.',
+        reason: 'completed',
+        type: 'completion',
+      });
+
+      await expect(service.handleCallback(body)).rejects.toThrow('dingtalk down');
+    });
+
     it('should fall back to createMessage when editMessage fails on completion', async () => {
       mockEditMessage.mockRejectedValueOnce(
         new Error("Telegram API editMessageText failed: 400 Bad Request: can't parse entities"),

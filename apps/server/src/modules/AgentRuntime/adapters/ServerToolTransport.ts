@@ -294,7 +294,7 @@ export class ServerToolTransport implements ToolTransport {
         agentId: context.state.metadata?.agentId,
         identifier: chatToolPayload.identifier,
         limit: context.toolResultMaxLength,
-        maxToolResultTokens: policyBudgets?.maxToolResultTokens,
+        maxToolResultTokens: policyBudgets?.maxToolResultTokens ?? 8_000,
         serverDB,
         toolCallId: chatToolPayload.id,
         topicId: this.ctx.topicId ?? context.state.metadata?.topicId,

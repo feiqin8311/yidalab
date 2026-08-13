@@ -57,7 +57,7 @@ export class ForceFinishSummaryInjector extends BaseProvider {
       ? [
           reasonLine,
           'You are in DELIVERY-ONLY mode: research tools are disabled.',
-          'Using ONLY data already in this conversation, produce a complete Chinese HTML report and call lobe-dingpan → uploadHtmlToDingpan with the FULL HTML in ONE tool call.',
+          'Using ONLY data already in this conversation, produce a compact Chinese HTML report (no huge CSS, no full raw JSON dumps) and call lobe-dingpan → uploadHtmlToDingpan once.',
           'Do not call any other tools. Do not invent data. After the tool returns preview_url, final text = short plain-text bullets + the bare preview_url.',
           'If upload is impossible (missing content), say once that delivery failed and why — never claim upload success without preview_url.',
         ].join(' ')

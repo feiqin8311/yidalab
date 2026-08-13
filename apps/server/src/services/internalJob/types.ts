@@ -38,4 +38,6 @@ export const JOB_NAMES = {
   taskWatchdog: 'task.watchdog',
   opsFunctionComplete: 'ops.function.on-complete',
   verifyComplete: 'verify.on-complete',
+  botCompletion: 'bot.completion',
+  botDeadline: 'bot.deadline',
 } as const;

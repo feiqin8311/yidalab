@@ -33,7 +33,11 @@ const isOperationInterrupted = async (host: AgentRuntimeHost) => {
 
   try {
     const latestState = await operationStore.loadState(host.operation.operationId);
-    return latestState?.status === 'interrupted';
+    return (
+      latestState?.status === 'interrupted' ||
+      latestState?.status === 'error' ||
+      latestState?.status === 'done'
+    );
   } catch (error) {
     console.error('[call_llm] Failed to load operation state for retry guard:', error);
     return false;
@@ -246,6 +250,7 @@ export const callLlm =
     }
 
     const existingAssistantMessageId = llmPayload.assistantMessageId;
+    const createdAssistantThisTurn = !existingAssistantMessageId;
     const assistantMessage = existingAssistantMessageId
       ? { id: existingAssistantMessageId }
       : await transports.messages.createAssistantMessage({
@@ -284,6 +289,13 @@ export const callLlm =
         state,
       })
       .catch(async (error) => {
+        if (createdAssistantThisTurn) {
+          try {
+            await transports.messages.deleteMessage(assistantMessage.id);
+          } catch {
+            // ignore cleanup failure
+          }
+        }
         await transports.stream.publishError?.({
           error,
           phase: 'llm_execution',
@@ -304,6 +316,13 @@ export const callLlm =
       const session = await llm.openTurn(turn);
       return await executeTurnSession(host, session, turn);
     } catch (error) {
+      if (createdAssistantThisTurn) {
+        try {
+          await transports.messages.deleteMessage(assistantMessage.id);
+        } catch {
+          // ignore cleanup failure
+        }
+      }
       await transports.stream.publishError?.({
         error,
         phase: 'llm_execution',

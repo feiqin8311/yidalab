@@ -194,7 +194,11 @@ export class CompletionLifecycle {
    * outage must never block hook dispatch or the executor's terminal
    * cleanup path.
    */
-  private async persistCompletion(operationId: string, state: any, reason: string): Promise<void> {
+  private async persistCompletion(
+    operationId: string,
+    state: any,
+    reason: string,
+  ): Promise<boolean> {
     const completionReason: any =
       reason === 'max_steps' ||
       reason === 'cost_limit' ||
@@ -220,7 +224,7 @@ export class CompletionLifecycle {
     const completedAt = isParkedStatus(status) ? undefined : new Date();
 
     try {
-      await this.agentOperationModel.recordCompletion(operationId, {
+      const wrote = await this.agentOperationModel.recordCompletion(operationId, {
         completedAt,
         completionReason,
         cost: state?.cost ?? null,
@@ -247,6 +251,18 @@ export class CompletionLifecycle {
         traceS3Key,
         usage: state?.usage ?? null,
       });
+      if (wrote === false) {
+        const existing = await this.agentOperationModel.findById(operationId);
+        if (
+          existing &&
+          (existing.status === 'done' ||
+            existing.status === 'error' ||
+            existing.status === 'interrupted')
+        ) {
+          log('[%s] recordCompletion lost CAS — another writer already finalized', operationId);
+          return false;
+        }
+      }
     } catch (error) {
       log('[%s] Failed to persist operation completion (non-fatal): %O', operationId, error);
     }
@@ -261,6 +277,8 @@ export class CompletionLifecycle {
         status: edgeStatus,
       }).catch(() => {});
     }
+
+    return true;
   }
 
   /**
@@ -505,7 +523,8 @@ export class CompletionLifecycle {
 
       // Finalize the agent_operations row before user hooks fire so
       // downstream consumers see the row in its terminal shape.
-      await this.persistCompletion(operationId, state, reason);
+      const persisted = await this.persistCompletion(operationId, state, reason);
+      if (!persisted) return;
 
       if (isAsyncToolPark) return;
 

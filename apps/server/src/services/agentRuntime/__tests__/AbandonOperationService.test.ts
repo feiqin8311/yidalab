@@ -18,10 +18,12 @@ const buildCoordinator = (
   overrides: Partial<{
     loadAgentState: ReturnType<typeof vi.fn>;
     deleteAgentOperation: ReturnType<typeof vi.fn>;
+    saveAgentState: ReturnType<typeof vi.fn>;
   }> = {},
 ) => ({
   loadAgentState: vi.fn(),
   deleteAgentOperation: vi.fn().mockResolvedValue(undefined),
+  saveAgentState: vi.fn().mockResolvedValue(undefined),
   ...overrides,
 });
 
@@ -40,8 +42,10 @@ vi.mock('@/database/models/agentOperation', () => ({
 }));
 
 const dispatchHooksMock = vi.fn().mockResolvedValue(undefined);
+const completeOperationMock = vi.fn().mockResolvedValue(undefined);
 vi.mock('../CompletionLifecycle', () => ({
   CompletionLifecycle: vi.fn().mockImplementation(() => ({
+    completeOperation: completeOperationMock,
     dispatchHooks: dispatchHooksMock,
   })),
 }));
@@ -90,6 +94,7 @@ describe('AbandonOperationService', () => {
   beforeEach(() => {
     messageUpdateMock.mockClear();
     dispatchHooksMock.mockClear();
+    completeOperationMock.mockClear();
     findOperationMock.mockReset().mockResolvedValue(null);
     recordCompletionMock.mockClear();
     findThreadMock.mockReset().mockResolvedValue(null);
@@ -135,6 +140,7 @@ describe('AbandonOperationService', () => {
       metadata: {
         runningOperation: {
           assistantMessageId: 'msg_assist_1',
+          hooks: [{ id: 'bot-completion', type: 'onComplete', webhook: { url: '/x' } }],
           operationId: 'op_x',
         },
       },
@@ -153,23 +159,16 @@ describe('AbandonOperationService', () => {
       finalized: false,
       found: false,
     });
-    expect(recordCompletionMock).toHaveBeenCalledWith(
-      'op_x',
+    expect(completeOperationMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        completionReason: 'error',
-        status: 'error',
-        stepCount: 0,
-        toolCalls: 0,
+        assistantMessageId: 'msg_assist_1',
+        operationId: 'op_x',
+        serializedHooks: [expect.objectContaining({ id: 'bot-completion' })],
+        userId: 'user_x',
       }),
+      'error',
     );
     expect(topicUpdateMetadataMock).toHaveBeenCalledWith('tpc_x', { runningOperation: null });
-    expect(messageUpdateMock).toHaveBeenCalledWith('msg_assist_1', {
-      content: '',
-      error: expect.objectContaining({
-        message: expect.stringContaining('inactivity_watchdog'),
-        type: 'AgentRuntimeError',
-      }),
-    });
   });
 
   it('keeps no-state terminal operations classified as completed phantom timeouts', async () => {
@@ -227,7 +226,14 @@ describe('AbandonOperationService', () => {
     const result = await svc.finalizeAbandoned('op_old', 'inactivity_watchdog');
 
     expect(result.abandoned).toBe(true);
-    expect(recordCompletionMock).toHaveBeenCalled();
+    expect(completeOperationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: 'op_old',
+        userId: 'user_x',
+      }),
+      'error',
+    );
+    expect(completeOperationMock.mock.calls[0][0].assistantMessageId).toBeUndefined();
     expect(topicUpdateMetadataMock).not.toHaveBeenCalled();
     expect(messageUpdateMock).not.toHaveBeenCalled();
   });
@@ -301,6 +307,11 @@ describe('AbandonOperationService', () => {
       }),
       'error',
       { skipErrorMessageWrite: true },
+    );
+
+    expect(coord.saveAgentState).toHaveBeenCalledWith(
+      'op_x',
+      expect.objectContaining({ status: 'error' }),
     );
 
     // Coordinator state cleaned

@@ -284,7 +284,7 @@ describe('CompletionLifecycle.dispatchHooks — error persistence', () => {
     const budget = { required: 12 };
 
     (lifecycle as any).messageModel = { update: updateMessage };
-    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(true);
     vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
     vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});
 
@@ -324,7 +324,7 @@ describe('CompletionLifecycle.dispatchHooks — verify plan race', () => {
 
   it('awaits the start-time verify-plan instantiation before running the completion gate', async () => {
     const lifecycle = buildLifecycle();
-    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(true);
     vi.spyOn(lifecycle as any, 'createVerifyMessage').mockResolvedValue(undefined);
     vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
     vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});
@@ -387,7 +387,7 @@ describe('CompletionLifecycle.dispatchHooks — async-tool park', () => {
 
   it('persists the parked status but does NOT fire onComplete or unregister hooks', async () => {
     const lifecycle = buildLifecycle();
-    const persistSpy = vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    const persistSpy = vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(true);
     const dispatchSpy = vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
     const unregisterSpy = vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});
 
@@ -400,7 +400,7 @@ describe('CompletionLifecycle.dispatchHooks — async-tool park', () => {
 
   it('fires onComplete and unregisters on a terminal completion', async () => {
     const lifecycle = buildLifecycle();
-    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(true);
     const dispatchSpy = vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
     const unregisterSpy = vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});
 
@@ -409,6 +409,20 @@ describe('CompletionLifecycle.dispatchHooks — async-tool park', () => {
 
     expect(dispatchSpy).toHaveBeenCalledWith('op-1', 'onComplete', expect.anything(), []);
     expect(unregisterSpy).toHaveBeenCalledWith('op-1');
+  });
+
+  it('skips hooks when persistCompletion lost the terminal CAS', async () => {
+    const lifecycle = buildLifecycle();
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(false);
+    const dispatchSpy = vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
+
+    await lifecycle.dispatchHooks(
+      'op-1',
+      { metadata: { agentId: 'a', _hooks: [] }, status: 'done' },
+      'done',
+    );
+
+    expect(dispatchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -427,7 +441,7 @@ describe('CompletionLifecycle.dispatchHooks — lastAssistantContent DB recovery
   });
 
   const setupSpies = (lifecycle: CompletionLifecycle) => {
-    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(undefined);
+    vi.spyOn(lifecycle as any, 'persistCompletion').mockResolvedValue(true);
     vi.spyOn(lifecycle as any, 'createVerifyMessage').mockResolvedValue(undefined);
     vi.spyOn(verifyServices, 'runVerifyOnCompletion').mockResolvedValue(undefined);
     vi.spyOn(hookDispatcher, 'unregister').mockImplementation(() => {});

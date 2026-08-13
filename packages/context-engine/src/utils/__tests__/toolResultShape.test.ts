@@ -65,6 +65,37 @@ describe('shapeStructuredJson', () => {
     expect(() => JSON.parse(r.content)).not.toThrow();
   });
 
+  it('keeps campaign summary and samples 2852 SIF adGroups instead of dumping all', () => {
+    const payload = {
+      adGroupCount: 2852,
+      adGroups: Array.from({ length: 2852 }, (_, i) => ({
+        adGroupCreateDate: '2025-03-03',
+        adGroupId: `AG${i}`,
+        adGroupType: 'SP',
+        historicalKeywordCount: 11,
+        variantCount: 1,
+      })),
+      campaignDisplayId: 'QASG',
+      campaignId: 'QASG',
+      campaignType: 'SP',
+      structureScope: 'historical',
+    };
+    const r = shapeStructuredJson(payload, 800);
+    expect(r.truncated).toBe(true);
+    expect(r.coverage?.totalRows).toBe(2852);
+    const parsed = JSON.parse(r.content) as {
+      adGroupCount: number;
+      adGroups: unknown[];
+      campaignId: string;
+      _coverage: { totalRows: number };
+    };
+    expect(parsed.campaignId).toBe('QASG');
+    expect(parsed.adGroupCount).toBe(2852);
+    expect(parsed._coverage.totalRows).toBe(2852);
+    expect(parsed.adGroups.length).toBeLessThan(40);
+    expect(approxTokensFromText(r.content)).toBeLessThanOrEqual(800);
+  });
+
   it('does not crash on a single 100KB row', () => {
     const r = shapeStructuredJson(['x'.repeat(100_000)], 200);
     expect(r.truncated).toBe(true);

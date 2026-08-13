@@ -86,4 +86,48 @@ describe('consumeStreamUntilDone', () => {
     // The function should acquire a new reader and release it
     expect(releaseLockSpy).toHaveBeenCalled();
   });
+
+  it('times out when no first byte arrives', async () => {
+    const stream = new ReadableStream({
+      start() {
+        // never enqueue
+      },
+    });
+    const response = new Response(stream);
+    await expect(
+      consumeStreamUntilDone(response, { firstChunkTimeoutMs: 30 }),
+    ).rejects.toMatchObject({
+      errorType: 'LLM_FIRST_CHUNK_TIMEOUT',
+      kind: 'first_chunk',
+      name: 'LLMStreamTimeoutError',
+    });
+  });
+
+  it('times out when the stream never terminates', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('hi'));
+      },
+    });
+    const response = new Response(stream);
+    await expect(consumeStreamUntilDone(response, { idleTimeoutMs: 30 })).rejects.toMatchObject({
+      errorType: 'LLM_STREAM_IDLE_TIMEOUT',
+      kind: 'idle',
+      name: 'LLMStreamTimeoutError',
+    });
+  });
+
+  it('times out when the turn hard limit is reached', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('hi'));
+      },
+    });
+    const response = new Response(stream);
+    await expect(consumeStreamUntilDone(response, { totalTimeoutMs: 30 })).rejects.toMatchObject({
+      errorType: 'LLM_TURN_HARD_LIMIT',
+      kind: 'hard_limit',
+      name: 'LLMStreamTimeoutError',
+    });
+  });
 });

@@ -353,16 +353,65 @@ export const resolveRuntimeHistoryCount = (historyCount?: number) => {
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export const LLM_FIRST_CHUNK_TIMEOUT_MS = 90_000;
+export const LLM_STREAM_IDLE_TIMEOUT_MS = 120_000;
+export const LLM_TURN_TOTAL_TIMEOUT_MS = 8 * 60_000;
+
+const TERMINAL_OPERATION_STATUSES = new Set(['done', 'error', 'interrupted']);
+
 export const isOperationInterrupted = async (ctx: RuntimeExecutorContext) => {
   if (!ctx.loadAgentState) return false;
 
   try {
     const latestState = await ctx.loadAgentState(ctx.operationId);
-    return latestState?.status === 'interrupted';
+    // Missing state means the op was abandoned / cleaned up — treat as stop.
+    if (!latestState) return true;
+    return TERMINAL_OPERATION_STATUSES.has(latestState.status);
   } catch (error) {
     console.error('[RuntimeExecutors] Failed to load operation state for retry guard:', error);
     return false;
   }
+};
+
+export const remainingDeadlineMs = (deadlineAt: number) => Math.max(0, deadlineAt - Date.now());
+
+export const withDeadline = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => Error,
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(onTimeout()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+export const watchAndAbortWhenTerminal = (
+  ctx: RuntimeExecutorContext,
+  abort: AbortController,
+  intervalMs = 200,
+): (() => void) => {
+  let stopped = false;
+  const run = async () => {
+    while (!stopped && !abort.signal.aborted) {
+      if (await isOperationInterrupted(ctx)) {
+        abort.abort();
+        return;
+      }
+      await sleep(intervalMs);
+    }
+  };
+  void run();
+  return () => {
+    stopped = true;
+  };
 };
 
 export const buildToolDiscoveryConfig = (

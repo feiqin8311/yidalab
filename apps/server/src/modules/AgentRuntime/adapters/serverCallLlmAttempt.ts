@@ -4,6 +4,7 @@ import type { ChatStreamPayload, ModelRuntime } from '@lobechat/model-runtime';
 import {
   consumeStreamUntilDone,
   isEmptyModelCompletion,
+  LLMStreamTimeoutError,
   ModelEmptyError,
 } from '@lobechat/model-runtime';
 import type {
@@ -17,7 +18,18 @@ import type {
 import { pickString, toRecord } from '@lobechat/utils/object';
 
 import type { RuntimeExecutorContext } from '../context';
-import { isOperationInterrupted, log, timing } from '../executorHelpers';
+import {
+  isOperationInterrupted,
+  LLM_FIRST_CHUNK_TIMEOUT_MS,
+  LLM_STREAM_IDLE_TIMEOUT_MS,
+  LLM_TURN_TOTAL_TIMEOUT_MS,
+  log,
+  remainingDeadlineMs,
+  timing,
+  watchAndAbortWhenTerminal,
+  withDeadline,
+} from '../executorHelpers';
+import { previewToolsCallingForStream } from './previewToolsCallingForStream';
 import {
   createServerCallLlmStreamSink,
   type ServerCallLlmStreamSink,
@@ -131,100 +143,135 @@ export class ServerCallLlmAttempt {
       this.chatPayload.tools?.length ?? 0,
     );
 
-    const response = await this.modelRuntime.chat(this.chatPayload, {
-      callback: {
-        onBase64Image: async ({ image }) => {
-          this.onFirstChunk();
-          await this.streamSink.appendBase64Image(image);
-        },
-        onCompletion: async (data) => {
-          if (data.usage) this.usage = data.usage;
-          if (data.speed) this.speed = data.speed;
-          if (data.finishReason) this.finishReason = data.finishReason;
-        },
-        onContentPart: async (part) => {
-          this.onFirstChunk();
-          await this.streamSink.appendContentPart(part);
-        },
-        onError: async (errorData) => {
-          this.streamError = errorData;
-          console.error(`[${this.operationLogId}][stream_error]`, errorData);
-        },
-        onGrounding: async (groundingData) => {
-          log(`[${this.operationLogId}][grounding] %O`, groundingData);
-          this.grounding = groundingData;
+    const abort = new AbortController();
+    const stopWatch = watchAndAbortWhenTerminal(this.ctx, abort);
+    const firstByteDeadlineAt = Date.now() + LLM_FIRST_CHUNK_TIMEOUT_MS;
+    const turnDeadlineAt = Date.now() + LLM_TURN_TOTAL_TIMEOUT_MS;
+    const firstByteTimeout = () => {
+      abort.abort();
+      return new LLMStreamTimeoutError('first_chunk', LLM_FIRST_CHUNK_TIMEOUT_MS);
+    };
+    const heartbeat = () => {
+      this.onFirstChunk();
+    };
 
-          await this.ctx.streamManager.publishStreamChunk(
-            this.ctx.operationId,
-            this.ctx.stepIndex,
-            {
-              chunkType: 'grounding',
-              grounding: groundingData,
+    try {
+      const response = await withDeadline(
+        this.modelRuntime.chat(this.chatPayload, {
+          callback: {
+            onBase64Image: async ({ image }) => {
+              heartbeat();
+              await this.streamSink.appendBase64Image(image);
             },
-          );
-        },
-        onReasoningPart: async (part) => {
-          this.onFirstChunk();
-          await this.streamSink.appendReasoningPart(part);
-        },
-        onText: async (text) => {
-          this.onFirstChunk();
-          timing(
-            '[%s] onText received chunk at %d, length: %d',
-            this.operationLogId,
-            Date.now(),
-            text.length,
-          );
-          await this.streamSink.appendText(text);
-        },
-        onThinking: async (reasoning) => {
-          this.onFirstChunk();
-          timing(
-            '[%s] onThinking received chunk at %d, length: %d',
-            this.operationLogId,
-            Date.now(),
-            reasoning.length,
-          );
-          await this.streamSink.appendThinking(reasoning);
-        },
-        onToolsCalling: async ({ toolsCalling: raw }) => {
-          const resolvedCalls = new ToolNameResolver().resolve(
-            raw,
-            this.resolved.promptManifestMap,
-            this.resolved.tools.map((tool) => tool.function.name),
-          );
-          const payload = resolvedCalls.map((toolCall) => ({
-            ...toolCall,
-            executor: this.resolved.executorMap?.[toolCall.identifier],
-            source: this.resolved.sourceMap[toolCall.identifier],
-          }));
-
-          this.toolsCalling = payload;
-          // Keep raw arguments through execution so malformed JSON can reach the
-          // tool error path and give the model a self-repair signal. Finalizers
-          // sanitize only the persisted DB and replay-state copies.
-          this.toolCalls = raw;
-
-          await this.streamSink.flushTextBuffer();
-          await this.ctx.streamManager.publishStreamChunk(
-            this.ctx.operationId,
-            this.ctx.stepIndex,
-            {
-              chunkType: 'tools_calling',
-              toolsCalling: payload,
+            onCompletion: async (data) => {
+              heartbeat();
+              if (data.usage) this.usage = data.usage;
+              if (data.speed) this.speed = data.speed;
+              if (data.finishReason) this.finishReason = data.finishReason;
             },
-          );
-        },
-      },
-      metadata: {
-        operationId: this.ctx.operationId,
-        topicId: this.topicId,
-        trigger: this.trigger,
-      },
-      user: this.ctx.userId,
-    });
+            onContentPart: async (part) => {
+              heartbeat();
+              await this.streamSink.appendContentPart(part);
+            },
+            onError: async (errorData) => {
+              this.streamError = errorData;
+              console.error(`[${this.operationLogId}][stream_error]`, errorData);
+            },
+            onGrounding: async (groundingData) => {
+              heartbeat();
+              log(`[${this.operationLogId}][grounding] %O`, groundingData);
+              this.grounding = groundingData;
 
-    await consumeStreamUntilDone(response);
+              await this.ctx.streamManager.publishStreamChunk(
+                this.ctx.operationId,
+                this.ctx.stepIndex,
+                {
+                  chunkType: 'grounding',
+                  grounding: groundingData,
+                },
+              );
+            },
+            onReasoningPart: async (part) => {
+              heartbeat();
+              await this.streamSink.appendReasoningPart(part);
+            },
+            onText: async (text) => {
+              heartbeat();
+              timing(
+                '[%s] onText received chunk at %d, length: %d',
+                this.operationLogId,
+                Date.now(),
+                text.length,
+              );
+              await this.streamSink.appendText(text);
+            },
+            onThinking: async (reasoning) => {
+              heartbeat();
+              timing(
+                '[%s] onThinking received chunk at %d, length: %d',
+                this.operationLogId,
+                Date.now(),
+                reasoning.length,
+              );
+              await this.streamSink.appendThinking(reasoning);
+            },
+            onToolsCalling: async ({ toolsCalling: raw }) => {
+              heartbeat();
+              const resolvedCalls = new ToolNameResolver().resolve(
+                raw,
+                this.resolved.promptManifestMap,
+                this.resolved.tools.map((tool) => tool.function.name),
+              );
+              const payload = resolvedCalls.map((toolCall) => ({
+                ...toolCall,
+                executor: this.resolved.executorMap?.[toolCall.identifier],
+                source: this.resolved.sourceMap[toolCall.identifier],
+              }));
+
+              this.toolsCalling = payload;
+              // Keep raw arguments through execution so malformed JSON can reach the
+              // tool error path and give the model a self-repair signal. Finalizers
+              // sanitize only the persisted DB and replay-state copies.
+              this.toolCalls = raw;
+
+              await this.streamSink.flushTextBuffer();
+              await this.ctx.streamManager.publishStreamChunk(
+                this.ctx.operationId,
+                this.ctx.stepIndex,
+                {
+                  chunkType: 'tools_calling',
+                  // Full HTML/JSON stays on `this.toolsCalling` for execution.
+                  toolsCalling: previewToolsCallingForStream(payload),
+                },
+              );
+            },
+          },
+          metadata: {
+            operationId: this.ctx.operationId,
+            topicId: this.topicId,
+            trigger: this.trigger,
+          },
+          signal: abort.signal,
+          user: this.ctx.userId,
+        }),
+        remainingDeadlineMs(firstByteDeadlineAt),
+        firstByteTimeout,
+      );
+
+      const remainingFirstByteMs = remainingDeadlineMs(firstByteDeadlineAt);
+      if (remainingFirstByteMs <= 0) throw firstByteTimeout();
+
+      await consumeStreamUntilDone(response, {
+        firstChunkTimeoutMs: remainingFirstByteMs,
+        idleTimeoutMs: LLM_STREAM_IDLE_TIMEOUT_MS,
+        totalTimeoutMs: remainingDeadlineMs(turnDeadlineAt),
+      });
+    } catch (error) {
+      abort.abort();
+      throw error;
+    } finally {
+      stopWatch();
+    }
 
     if (this.streamError) throw createStreamExecutionError(this.streamError);
 

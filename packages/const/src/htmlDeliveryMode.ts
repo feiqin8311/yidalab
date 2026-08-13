@@ -26,7 +26,7 @@ export const buildHtmlDeliveryInstruction = (mode?: string | null): string => {
     return [
       '## HTML deliverable surface (agent preference — HARD)',
       'Mode: **钉盘链接（可预览）** (`dingpan`) — dual surface: in-app preview card + shareable Drive link',
-      '- For HTML / interactive / visual reports: call `lobe-dingpan` → `uploadHtmlToDingpan` with the full HTML.',
+      '- For HTML / interactive / visual reports: call `lobe-dingpan` → `uploadHtmlToDingpan` with compact HTML (no huge CSS / raw JSON dumps).',
       '- After success: reply with the tool `preview_url` (shareable). The product UI shows workspace preview from `document_id` — do **not** also emit `<lobeArtifact type="text/html">` (avoids duplicate HTML in context) unless the user explicitly asks for Artifact tags.',
       '- Do **not** ask the user how to deliver.',
       '- If tool content is empty/error, say upload failed — **never invent** substitute URLs.',

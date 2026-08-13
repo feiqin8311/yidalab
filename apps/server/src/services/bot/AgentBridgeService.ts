@@ -11,6 +11,7 @@ import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
 import { createAbortError, isAbortError } from '@/server/services/agentRuntime/abort';
 import { AiAgentService } from '@/server/services/aiAgent';
+import { botContextPolicy } from '@/server/services/bot/botContextPolicy';
 import { GatewayService } from '@/server/services/gateway';
 import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewayClient';
 import { isQueueAgentRuntimeEnabled } from '@/server/services/queue/impls';
@@ -1023,6 +1024,7 @@ export class AgentBridgeService {
           autoStart: true,
           botContext,
           botPlatformContext,
+          contextPolicy: botContextPolicy,
           discordContext: channelContext
             ? {
                 channel: channelContext.channel,
@@ -1052,6 +1054,23 @@ export class AgentBridgeService {
               type: 'onComplete',
               webhook: {
                 body: { ...webhookBody, type: 'completion', userPrompt: prompt },
+                delivery: 'qstash',
+                url: callbackUrl,
+              },
+            },
+            {
+              handler: async () => {
+                /* local handler not used in queue mode */
+              },
+              id: 'bot-error',
+              type: 'onError',
+              webhook: {
+                body: {
+                  ...webhookBody,
+                  reason: 'error',
+                  type: 'completion',
+                  userPrompt: prompt,
+                },
                 delivery: 'qstash',
                 url: callbackUrl,
               },
@@ -1202,6 +1221,7 @@ export class AgentBridgeService {
           autoStart: true,
           botContext,
           botPlatformContext,
+          contextPolicy: botContextPolicy,
           discordContext: channelContext
             ? {
                 channel: channelContext.channel,
