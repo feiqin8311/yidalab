@@ -208,6 +208,14 @@ export const formatErrorForState = (error: unknown): ChatMessageError => {
       };
     }
 
+    if ((error as Error & { code?: string }).code === 'CONTEXT_BUDGET_EXCEEDED') {
+      return enrichWithSpec({
+        body: { name: error.name },
+        message: error.message,
+        type: AgentRuntimeErrorType.ExceededContextWindow,
+      });
+    }
+
     return enrichWithSpec({
       body: { name: error.name },
       message: error.message,

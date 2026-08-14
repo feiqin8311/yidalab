@@ -55,6 +55,25 @@ describe('formatErrorForState', () => {
       expect(result.body).toEqual({ name: 'TypeError' });
     });
 
+    it('maps CONTEXT_BUDGET_EXCEEDED Error to ExceededContextWindow instead of a bare 500', () => {
+      const error = new Error('Context estimate 103355 exceeds hard budget 100000');
+      (error as Error & { code?: string }).code = 'CONTEXT_BUDGET_EXCEEDED';
+
+      const result = formatErrorForState(error);
+
+      expect(result.type).toBe(AgentRuntimeErrorType.ExceededContextWindow);
+      expect(result.message).toBe('Context estimate 103355 exceeds hard budget 100000');
+    });
+
+    it('refines an already-wrapped 500 hard-budget reject into ExceededContextWindow', () => {
+      const result = formatErrorForState({
+        message: 'Context estimate 103355 exceeds hard budget 100000',
+        type: ChatErrorType.InternalServerError,
+      });
+
+      expect(result.type).toBe(AgentRuntimeErrorType.ExceededContextWindow);
+    });
+
     it('falls back to AgentRuntimeError for unknown thrown values', () => {
       const result = formatErrorForState('plain string failure');
 

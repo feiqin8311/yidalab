@@ -395,6 +395,23 @@ describe('replyTemplate', () => {
       );
     });
 
+    it('maps CONTEXT_BUDGET_EXCEEDED to the same context-window copy', () => {
+      expect(renderAgentError('CONTEXT_BUDGET_EXCEEDED', undefined, 'op-1')).toContain(
+        'Context window exceeded',
+      );
+    });
+
+    it('uses friendly copy for hard-budget rejects wrapped as 500 errors', () => {
+      const en = renderAgentError(
+        '500',
+        'Context estimate 103355 exceeds hard budget 100000',
+        'op-1',
+      );
+      expect(en).toContain('Context window exceeded');
+      expect(en).toContain('op-1');
+      expect(en).not.toContain('**Agent Execution Failed**\nOperation ID');
+    });
+
     it('returns the friendly InsufficientBudgetForModel copy instead of the generic user fallback', () => {
       const en = renderAgentError('InsufficientBudgetForModel', undefined, 'op-1');
       expect(en).toContain('Not enough credits');

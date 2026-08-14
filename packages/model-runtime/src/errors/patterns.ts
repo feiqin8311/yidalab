@@ -133,6 +133,11 @@ export const ERROR_PATTERNS: ErrorPattern[] = [
   },
   {
     code: AgentRuntimeErrorType.ExceededContextWindow,
+    match: sub('exceeds hard budget'),
+    note: 'context-engine gate: "Context estimate N exceeds hard budget M"',
+  },
+  {
+    code: AgentRuntimeErrorType.ExceededContextWindow,
     match: sub('上下文已经全量可用'),
     note: 'proxy gates 1m context — request overflowed the default window',
   },
