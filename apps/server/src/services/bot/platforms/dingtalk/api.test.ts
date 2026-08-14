@@ -6,6 +6,7 @@ import {
   readResponseBodyWithLimit,
   sendDingTalkRobotMarkdown,
 } from './api';
+import { DINGTALK_REQUEST_TIMEOUT_MS } from './const';
 
 describe('downloadDingTalkRobotFile', () => {
   afterEach(() => {
@@ -127,6 +128,22 @@ describe('getDingTalkAccessToken', () => {
     expect(a).toBe('cached-tok');
     expect(b).toBe('cached-tok');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds access token requests', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ accessToken: 'bounded-tok', expireIn: 7200 })),
+        ),
+    );
+
+    await getDingTalkAccessToken('bounded-token-app', 'sec');
+
+    expect(timeout).toHaveBeenCalledWith(DINGTALK_REQUEST_TIMEOUT_MS);
   });
 
   it('retries transient token endpoint failures with backoff', async () => {

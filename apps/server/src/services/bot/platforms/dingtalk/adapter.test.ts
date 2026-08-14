@@ -6,7 +6,7 @@ import {
   isDingTalkInboundAcceptable,
   toDingTalkPlainText,
 } from './adapter';
-import { DINGTALK_FALLBACK_CACHE_MAX_ENTRIES } from './const';
+import { DINGTALK_FALLBACK_CACHE_MAX_ENTRIES, DINGTALK_REQUEST_TIMEOUT_MS } from './const';
 
 describe('DingTalkAdapter', () => {
   afterEach(() => {
@@ -85,8 +85,34 @@ describe('DingTalkAdapter', () => {
       'https://dingtalk.example/reply',
       expect.objectContaining({
         body: JSON.stringify({ markdown: { text: 'world', title: 'world' }, msgtype: 'markdown' }),
+        signal: expect.any(AbortSignal),
       }),
     );
+  });
+
+  it('bounds session webhook delivery with the DingTalk request timeout', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const adapter = new DingTalkAdapter('app-timeout');
+    await adapter.initialize({ processMessage: vi.fn() } as any);
+    await adapter.handleWebhook(
+      new Request('https://example.com', {
+        body: JSON.stringify({
+          conversationId: 'cid-timeout',
+          conversationType: '1',
+          msgId: 'msg-timeout',
+          msgtype: 'text',
+          senderId: 'user-timeout',
+          sessionWebhook: 'https://dingtalk.example/timeout',
+          text: { content: 'hello' },
+        }),
+        method: 'POST',
+      }),
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}')));
+
+    await adapter.postMessage('dingtalk:1:cid-timeout', 'bounded reply');
+
+    expect(timeout).toHaveBeenCalledWith(DINGTALK_REQUEST_TIMEOUT_MS);
   });
 
   it('falls back to proactive delivery when sessionWebhook returns a business failure', async () => {

@@ -4,6 +4,7 @@ import {
   appendBotDingpanPreviewLink,
   scrubFakeUploadProgressNarration,
   shouldEnsureDingpanForBotReply,
+  wrapBotReplyAsHtml,
 } from './botDingpanDeliveryHeuristic';
 
 describe('shouldEnsureDingpanForBotReply', () => {
@@ -70,5 +71,42 @@ describe('scrubFakeUploadProgressNarration', () => {
     const cleaned = scrubFakeUploadProgressNarration(body);
     expect(cleaned.length).toBeLessThan(body.length / 5);
     expect((cleaned.match(/日期改为/g) ?? []).length).toBeLessThan(4);
+  });
+});
+
+describe('wrapBotReplyAsHtml', () => {
+  it('renders report Markdown as structured, responsive HTML', async () => {
+    const html = await wrapBotReplyAsHtml(
+      `## 核心结论
+
+- 旺季峰值在 8 月
+- 提前四周起量
+
+| 指标 | 结果 |
+| --- | ---: |
+| 搜索量 | 12,800 |
+
+![趋势图](https://cdn.example.com/trend.png)`,
+      '加拿大开学季分析',
+    );
+
+    expect(html).toContain('<h2>核心结论</h2>');
+    expect(html).toContain('<ul>');
+    expect(html).toContain('<table>');
+    expect(html).toContain('<th>指标</th>');
+    expect(html).toContain('<img src="https://cdn.example.com/trend.png" alt="趋势图">');
+    expect(html).toContain('@media(max-width:640px)');
+    expect(html).not.toContain('| --- |');
+  });
+
+  it('does not execute raw HTML embedded in a model reply', async () => {
+    const html = await wrapBotReplyAsHtml(
+      '正常结论。\n\n<script>alert("unsafe")</script>',
+      '安全报告',
+    );
+
+    expect(html).toContain('<p>正常结论。</p>');
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('alert("unsafe")');
   });
 });

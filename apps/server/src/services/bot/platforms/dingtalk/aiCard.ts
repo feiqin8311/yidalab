@@ -1,4 +1,5 @@
 import { getDingTalkAccessToken } from './api';
+import { DINGTALK_REQUEST_TIMEOUT_MS } from './const';
 
 const DINGTALK_CARD_API = 'https://api.dingtalk.com/v1.0/card';
 
@@ -37,6 +38,7 @@ const requestCardApi = async (
       'x-acs-dingtalk-access-token': token,
     },
     method,
+    signal: AbortSignal.timeout(DINGTALK_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {

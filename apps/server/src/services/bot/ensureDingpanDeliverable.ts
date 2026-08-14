@@ -441,7 +441,7 @@ export async function ensureDingpanDeliverable(params: {
       const userName = await resolveUserDisplayName(db, userId);
       const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '');
       const title = `Bot报告_${userName || 'YidaLab'}_${stamp}`;
-      const html = wrapBotReplyAsHtml(reply, title);
+      const html = await wrapBotReplyAsHtml(reply, title);
 
       const bridge = createDocumentBridge(db, userId, workspaceId);
       const runtime = new DingpanExecutionRuntime({ documentBridge: bridge });

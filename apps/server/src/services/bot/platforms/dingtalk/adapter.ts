@@ -18,6 +18,7 @@ import {
   DINGTALK_DELIVERY_TARGET_TTL_SECONDS,
   DINGTALK_FALLBACK_CACHE_MAX_ENTRIES,
   DINGTALK_MARKDOWN_CHAR_LIMIT,
+  DINGTALK_REQUEST_TIMEOUT_MS,
 } from './const';
 
 /** Inbound robot payload fields we care about (text + media). */
@@ -406,6 +407,7 @@ export class DingTalkAdapter {
             body: JSON.stringify({ markdown: { text, title }, msgtype: 'markdown' }),
             headers: { 'Content-Type': 'application/json' },
             method: 'POST',
+            signal: AbortSignal.timeout(DINGTALK_REQUEST_TIMEOUT_MS),
           });
           if (!response.ok) {
             const detail = await response.text().catch(() => '');

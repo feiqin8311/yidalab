@@ -26,6 +26,7 @@ const POLL_MS = 500;
  */
 export class RedisJobQueue {
   private readonly redis: Redis;
+  private blockingRedisClients: Redis[] = [];
   private readonly handlers = new Map<string, JobHandler>();
   private running = false;
   private workers: Promise<void>[] = [];
@@ -79,8 +80,14 @@ export class RedisJobQueue {
 
   start(): void {
     if (this.running) return;
+    // Blocking Redis commands monopolize their connection. Give every BRPOP
+    // worker its own connection so runtime XADD/GET/SET traffic on `redis`
+    // cannot queue behind up to `concurrency` one-second waits.
+    this.blockingRedisClients = Array.from({ length: this.concurrency }, () =>
+      this.redis.duplicate(),
+    );
     this.running = true;
-    this.workers = Array.from({ length: this.concurrency }, (_, i) => this.workerLoop(i));
+    this.workers = this.blockingRedisClients.map((redis, index) => this.workerLoop(index, redis));
     void this.delayedPumpLoop();
     log('workers started concurrency=%d', this.concurrency);
   }
@@ -88,7 +95,9 @@ export class RedisJobQueue {
   async stop(): Promise<void> {
     this.running = false;
     await Promise.allSettled(this.workers);
+    await Promise.allSettled(this.blockingRedisClients.map((redis) => redis.quit()));
     this.workers = [];
+    this.blockingRedisClients = [];
   }
 
   private async delayedPumpLoop(): Promise<void> {
@@ -116,11 +125,11 @@ export class RedisJobQueue {
     await multi.exec();
   }
 
-  private async workerLoop(index: number): Promise<void> {
+  private async workerLoop(index: number, blockingRedis: Redis): Promise<void> {
     while (this.running) {
       try {
         // BRPOP blocks up to 1s so stop() can exit promptly.
-        const result = await this.redis.brpop(KEY.ready, 1);
+        const result = await blockingRedis.brpop(KEY.ready, 1);
         if (!result) {
           // Real Redis BRPOP blocks; non-blocking fakes (tests) must not spin.
           await sleep(20);
