@@ -51,6 +51,11 @@ export function defineConfig(config: CustomNextConfig) {
               'public/icons/**',
               'packages/database/migrations/**',
 
+              // Next's standalone tracer can copy only the @swc/helpers CJS files even when
+              // the server launcher later resolves ESM helpers at runtime (Next 16.3.1).
+              // Include the full pnpm package so the traced symlink never targets a partial tree.
+              'node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**/*',
+
               // Ensure native bindings are included in standalone output.
               // `@napi-rs/canvas` is loaded via dynamic `require()` (see packages/file-loaders),
               // which may not be picked up by Next.js output tracing.
