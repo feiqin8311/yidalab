@@ -4,6 +4,7 @@ import {
   downloadDingTalkRobotFile,
   getDingTalkAccessToken,
   readResponseBodyWithLimit,
+  sendDingTalkRobotMarkdown,
 } from './api';
 
 describe('downloadDingTalkRobotFile', () => {
@@ -110,6 +111,7 @@ describe('readResponseBodyWithLimit', () => {
 describe('getDingTalkAccessToken', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('caches token', async () => {
@@ -125,5 +127,96 @@ describe('getDingTalkAccessToken', () => {
     expect(a).toBe('cached-tok');
     expect(b).toBe('cached-tok');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries transient token endpoint failures with backoff', async () => {
+    vi.useFakeTimers();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ accessToken: 'retry-tok', expireIn: 7200 }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const tokenPromise = getDingTalkAccessToken('retry-app', 'sec');
+    await vi.runAllTimersAsync();
+
+    await expect(tokenPromise).resolves.toBe('retry-tok');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('sendDingTalkRobotMarkdown', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects DingTalk business failures returned with HTTP 200', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ accessToken: 'business-token', expireIn: 7200 })),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ code: 'Forbidden.AccessDenied', message: 'missing permission' }),
+        ),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      sendDingTalkRobotMarkdown({
+        clientId: 'business-failure-app',
+        clientSecret: 'sec',
+        conversationId: 'cid-business',
+        conversationType: '2',
+        text: 'reply',
+        title: 'reply',
+      }),
+    ).rejects.toThrow(/Forbidden\.AccessDenied.*missing permission/);
+  });
+
+  it('rejects a proactive DM without either sender identifier', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      sendDingTalkRobotMarkdown({
+        clientId: 'missing-user-app',
+        clientSecret: 'sec',
+        conversationId: 'cid-missing-user',
+        conversationType: '1',
+        text: 'reply',
+        title: 'reply',
+      }),
+    ).rejects.toThrow(/senderStaffId or senderId/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects DM recipients reported in invalidStaffIdList', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ accessToken: 'invalid-user-token', expireIn: 7200 })),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ invalidStaffIdList: ['invalid-user'] })),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(
+      sendDingTalkRobotMarkdown({
+        clientId: 'invalid-user-app',
+        clientSecret: 'sec',
+        conversationId: 'cid-invalid-user',
+        conversationType: '1',
+        text: 'reply',
+        title: 'reply',
+        userId: 'invalid-user',
+      }),
+    ).rejects.toThrow(/invalid=1/);
   });
 });

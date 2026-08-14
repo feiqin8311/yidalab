@@ -20,11 +20,11 @@ import { pickString, toRecord } from '@lobechat/utils/object';
 import type { RuntimeExecutorContext } from '../context';
 import {
   isOperationInterrupted,
-  LLM_FIRST_CHUNK_TIMEOUT_MS,
   LLM_STREAM_IDLE_TIMEOUT_MS,
   LLM_TURN_TOTAL_TIMEOUT_MS,
   log,
   remainingDeadlineMs,
+  resolveLLMFirstChunkTimeoutMs,
   timing,
   watchAndAbortWhenTerminal,
   withDeadline,
@@ -145,11 +145,12 @@ export class ServerCallLlmAttempt {
 
     const abort = new AbortController();
     const stopWatch = watchAndAbortWhenTerminal(this.ctx, abort);
-    const firstByteDeadlineAt = Date.now() + LLM_FIRST_CHUNK_TIMEOUT_MS;
+    const firstChunkTimeoutMs = resolveLLMFirstChunkTimeoutMs(this.trigger);
+    const firstByteDeadlineAt = Date.now() + firstChunkTimeoutMs;
     const turnDeadlineAt = Date.now() + LLM_TURN_TOTAL_TIMEOUT_MS;
     const firstByteTimeout = () => {
       abort.abort();
-      return new LLMStreamTimeoutError('first_chunk', LLM_FIRST_CHUNK_TIMEOUT_MS);
+      return new LLMStreamTimeoutError('first_chunk', firstChunkTimeoutMs);
     };
     const heartbeat = () => {
       this.onFirstChunk();

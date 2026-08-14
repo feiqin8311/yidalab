@@ -10,8 +10,15 @@ import type {
 } from 'chat';
 import { Message, parseMarkdown, stringifyMarkdown } from 'chat';
 
+import { splitMessage } from '../../messageSplitting';
 import { stripMarkdown } from '../stripMarkdown';
 import type { BotPlatformRedisClient } from '../types';
+import { ensureDingTalkBusinessSuccess, sendDingTalkRobotMarkdown } from './api';
+import {
+  DINGTALK_DELIVERY_TARGET_TTL_SECONDS,
+  DINGTALK_FALLBACK_CACHE_MAX_ENTRIES,
+  DINGTALK_MARKDOWN_CHAR_LIMIT,
+} from './const';
 
 /** Inbound robot payload fields we care about (text + media). */
 export interface DingTalkRobotMessage {
@@ -83,6 +90,29 @@ export function resolveDingTalkAuthorUserId(raw: {
 }
 
 const fallbackWebhooks = new Map<string, { expiresAt: number; url: string }>();
+const fallbackDeliveryTargets = new Map<
+  string,
+  { conversationId: string; conversationType: string; expiresAt: number; userId?: string }
+>();
+const setBoundedFallbackEntry = <T extends { expiresAt: number }>(
+  map: Map<string, T>,
+  key: string,
+  value: T,
+): void => {
+  const now = Date.now();
+  for (const [entryKey, entry] of map) {
+    if (entry.expiresAt <= now) map.delete(entryKey);
+  }
+
+  // Refresh insertion order so frequently active conversations are retained.
+  map.delete(key);
+  while (map.size >= DINGTALK_FALLBACK_CACHE_MAX_ENTRIES) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+  map.set(key, value);
+};
 
 /** chat stringifyMarkdown emits CommonMark autolinks; strip for plain-text IM. */
 export function toDingTalkPlainText(text: string): string {
@@ -276,6 +306,7 @@ export class DingTalkAdapter {
   constructor(
     private readonly applicationId: string,
     private readonly redis?: BotPlatformRedisClient,
+    private readonly clientSecret?: string,
   ) {}
 
   async initialize(chat: ChatInstance): Promise<void> {
@@ -299,6 +330,13 @@ export class DingTalkAdapter {
       conversationType: raw.conversationType,
     });
     await this.saveWebhook(threadId, raw.sessionWebhook, raw.sessionWebhookExpiredTime);
+    await this.saveDeliveryTarget(threadId, {
+      conversationId: raw.conversationId,
+      conversationType: raw.conversationType,
+      // OpenAPI prefers enterprise userid, but some external robot payloads only
+      // expose the encrypted senderId. Keep it as a delivery-only fallback.
+      userId: raw.senderStaffId?.trim() || raw.senderId?.trim() || undefined,
+    });
     void this.chat.processMessage(this as any, threadId, () =>
       Promise.resolve(this.parseMessage(raw)),
     );
@@ -352,35 +390,40 @@ export class DingTalkAdapter {
     message: AdapterPostableMessage,
   ): Promise<RawMessage<unknown>> {
     const webhook = await this.getWebhook(threadId);
-    if (!webhook) {
-      throw new Error(
-        'DingTalk session webhook has expired. Reply is saved in the topic — send a new message to continue, or open the web app.',
-      );
-    }
-
     const content = this.renderPostable(message);
-    const MAX = 3500;
-    const text =
-      content.length > MAX
-        ? `${content.slice(0, MAX - 40)}\n\n…(内容过长，完整版请在 Web 查看)`
-        : content;
-    const title =
-      toDingTalkPlainText(stripMarkdown(text.split('\n').find((line) => line.trim()) ?? '')).slice(
-        0,
-        60,
-      ) || 'YidaLab';
+    const chunks = splitMessage(content, DINGTALK_MARKDOWN_CHAR_LIMIT);
+    let raw: unknown;
+    let useProactive = !webhook;
 
-    const response = await fetch(webhook, {
-      body: JSON.stringify({ markdown: { text, title }, msgtype: 'markdown' }),
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-    });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      throw new Error(`DingTalk reply failed: HTTP ${response.status} ${detail}`.trim());
+    for (const text of chunks) {
+      const title =
+        toDingTalkPlainText(
+          stripMarkdown(text.split('\n').find((line) => line.trim()) ?? ''),
+        ).slice(0, 60) || 'YidaLab';
+      if (!useProactive && webhook) {
+        try {
+          const response = await fetch(webhook, {
+            body: JSON.stringify({ markdown: { text, title }, msgtype: 'markdown' }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+          });
+          if (!response.ok) {
+            const detail = await response.text().catch(() => '');
+            throw new Error(`HTTP ${response.status} ${detail}`.trim());
+          }
+          raw = await response.json();
+          ensureDingTalkBusinessSuccess(raw, 'sessionWebhook send');
+          continue;
+        } catch (error) {
+          useProactive = true;
+          logDeliveryFallback(threadId, error);
+        }
+      }
+
+      raw = await this.postProactive(threadId, text, title);
     }
 
-    return { id: crypto.randomUUID(), raw: await response.json(), threadId };
+    return { id: crypto.randomUUID(), raw, threadId };
   }
 
   editMessage(threadId: string, _messageId: string, message: AdapterPostableMessage) {
@@ -439,6 +482,72 @@ export class DingTalkAdapter {
     return `dingtalk:session-webhook:${this.applicationId}:${threadId}`;
   }
 
+  private deliveryTargetKey(threadId: string) {
+    return `dingtalk:delivery-target:${this.applicationId}:${threadId}`;
+  }
+
+  private async getDeliveryTarget(
+    threadId: string,
+  ): Promise<{ conversationId: string; conversationType: string; userId?: string } | undefined> {
+    const key = this.deliveryTargetKey(threadId);
+    const value = this.redis ? await this.redis.get(key) : fallbackDeliveryTargets.get(key);
+    if (!value) return undefined;
+    if (typeof value !== 'string') {
+      if (value.expiresAt < Date.now()) {
+        fallbackDeliveryTargets.delete(key);
+        return undefined;
+      }
+      return value;
+    }
+    try {
+      return JSON.parse(value) as {
+        conversationId: string;
+        conversationType: string;
+        userId?: string;
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async postProactive(threadId: string, text: string, title: string): Promise<unknown> {
+    if (!this.clientSecret) {
+      throw new Error('DingTalk session webhook unavailable and proactive credentials are missing');
+    }
+    const decoded = this.decodeThreadId(threadId);
+    const saved = await this.getDeliveryTarget(threadId);
+    return sendDingTalkRobotMarkdown({
+      clientId: this.applicationId,
+      clientSecret: this.clientSecret,
+      conversationId: saved?.conversationId ?? decoded.conversationId,
+      conversationType: saved?.conversationType ?? decoded.conversationType,
+      text,
+      title,
+      userId: saved?.userId,
+    });
+  }
+
+  private async saveDeliveryTarget(
+    threadId: string,
+    target: { conversationId: string; conversationType: string; userId?: string },
+  ): Promise<void> {
+    const key = this.deliveryTargetKey(threadId);
+    if (this.redis) {
+      await (this.redis as any).set(
+        key,
+        JSON.stringify(target),
+        'EX',
+        DINGTALK_DELIVERY_TARGET_TTL_SECONDS,
+      );
+      return;
+    }
+    const now = Date.now();
+    setBoundedFallbackEntry(fallbackDeliveryTargets, key, {
+      ...target,
+      expiresAt: now + DINGTALK_DELIVERY_TARGET_TTL_SECONDS * 1000,
+    });
+  }
+
   private async saveWebhook(threadId: string, url: string, expiresAt?: number) {
     const ttlMs = Math.max(60_000, (expiresAt ?? Date.now() + 3_600_000) - Date.now());
     const ttlSeconds = Math.ceil(ttlMs / 1000);
@@ -446,13 +555,28 @@ export class DingTalkAdapter {
       await (this.redis as any).set(this.key(threadId), url, 'EX', ttlSeconds);
       return;
     }
-    fallbackWebhooks.set(this.key(threadId), { expiresAt: Date.now() + ttlMs, url });
+    setBoundedFallbackEntry(fallbackWebhooks, this.key(threadId), {
+      expiresAt: Date.now() + ttlMs,
+      url,
+    });
   }
 
   private async getWebhook(threadId: string): Promise<string | undefined> {
     if (this.redis) return (await this.redis.get(this.key(threadId))) ?? undefined;
-    const item = fallbackWebhooks.get(this.key(threadId));
-    if (!item || item.expiresAt < Date.now()) return undefined;
+    const key = this.key(threadId);
+    const item = fallbackWebhooks.get(key);
+    if (!item) return undefined;
+    if (item.expiresAt < Date.now()) {
+      fallbackWebhooks.delete(key);
+      return undefined;
+    }
     return item.url;
   }
 }
+
+const logDeliveryFallback = (threadId: string, error: unknown): void => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[DingTalk] sessionWebhook delivery failed; trying proactive API (thread=${threadId}, error=${message})`,
+  );
+};

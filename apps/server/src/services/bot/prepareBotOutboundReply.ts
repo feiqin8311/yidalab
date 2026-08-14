@@ -2,10 +2,10 @@
  * Unified bot outbound reply preparation.
  *
  * Product model (YidaLab):
- * - The agent run is the same as Web: tools, analysis depth, HTML report, dingpan.
- * - Web topic holds the full work product.
- * - DingTalk / IM is only a **relay channel**: short conclusions + real dingpan URL
- *   (cannot render Artifacts / inline HTML).
+ * - The agent run is shared with Web: tools, analysis depth, reports, and topic history.
+ * - DingTalk is a primary conversation surface and receives the complete Markdown reply.
+ * - Channels with tighter message constraints may opt into compact relay mode.
+ * - Files and HTML reports remain external deliverables and are attached as trusted links.
  *
  * Isolation rule: only this operation's dingpan uploads may be attached.
  * Never fall back to topic history (cross-turn report contamination).
@@ -25,7 +25,7 @@ import type { BotTurnContext } from './botTurnContext';
 import { ensureDingpanDeliverable } from './ensureDingpanDeliverable';
 
 const MISSING_REPORT_NOTE =
-  '说明：本轮未能上传钉盘报告（系统补交付也未成功）。请到 YidaLab 打开同一话题查看中间结果后重试。';
+  '说明：本轮钉盘报告上传失败；上述分析结果已在当前会话完整返回。如仍需报告文件，请重新提出生成报告请求。';
 
 const MAX_RELAY_CHARS = 1200;
 
@@ -55,7 +55,7 @@ const scrubUntrustedDingpanUrls = (text: string, allowed?: string): string => {
 };
 
 /**
- * Keep a short plain-text relay for IM. Prefer bullets / conclusion blocks.
+ * Keep a short plain-text relay for channels that cannot carry the full answer.
  */
 export const compactBotRelayText = (reply: string, maxChars = MAX_RELAY_CHARS): string => {
   let text = reply.trim();
@@ -139,7 +139,7 @@ const markOutcomeVerifiedIfNeeded = async (params: {
 };
 
 /**
- * Single exit for bot → IM text after agent completion.
+ * Single exit for bot-channel text after agent completion.
  */
 export async function prepareBotOutboundReply(params: {
   assistantMessageId?: string;

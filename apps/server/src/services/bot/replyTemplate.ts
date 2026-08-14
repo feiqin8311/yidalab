@@ -2,48 +2,12 @@ import type { StepPresentationData } from '../agentRuntime/types';
 import { getExtremeAck } from './ackPhrases';
 import { type BotReplyLocale, formatDuration } from './platforms';
 
+export { splitMessage } from './messageSplitting';
+
 // Use raw Unicode emoji instead of Chat SDK emoji placeholders,
 // because bot-callback webhooks send via DiscordPlatformClient directly
 // (not through the Chat SDK adapter that resolves placeholders).
 const EMOJI_THINKING = '💭';
-
-// ==================== Message Splitting ====================
-
-const DEFAULT_CHAR_LIMIT = 1800;
-
-export function splitMessage(text: string, limit = DEFAULT_CHAR_LIMIT): string[] {
-  if (text.length <= limit) {
-    // Whitespace-only input would be rejected by Telegram as "message text is empty",
-    // so drop it here rather than letting downstream make a guaranteed-failing API call.
-    return text.trim() ? [text] : [];
-  }
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= limit) {
-      if (remaining.trim()) chunks.push(remaining);
-      break;
-    }
-
-    // Try to find a paragraph break
-    let splitAt = remaining.lastIndexOf('\n\n', limit);
-    // Fall back to line break
-    if (splitAt <= 0) splitAt = remaining.lastIndexOf('\n', limit);
-    // Hard cut
-    if (splitAt <= 0) splitAt = limit;
-
-    const chunk = remaining.slice(0, splitAt);
-    // A boundary near the start (e.g. text begins with "\n\n") can produce a
-    // whitespace-only chunk; emitting it would trigger Telegram's empty-text
-    // 400 and silently drop the rest of the reply.
-    if (chunk.trim()) chunks.push(chunk);
-    remaining = remaining.slice(splitAt).replace(/^\n+/, '');
-  }
-
-  return chunks;
-}
 
 // ==================== Params ====================
 

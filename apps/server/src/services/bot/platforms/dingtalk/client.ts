@@ -144,12 +144,18 @@ export class DingTalkClient implements PlatformClient {
   }
 
   createAdapter(): Record<string, any> {
-    return { dingtalk: new DingTalkAdapter(this.applicationId, this.context.redisClient) };
+    return {
+      dingtalk: new DingTalkAdapter(
+        this.applicationId,
+        this.context.redisClient,
+        this.config.credentials.clientSecret,
+      ),
+    };
   }
 
   getMessenger(platformThreadId: string): PlatformMessenger {
-    const adapter = new DingTalkAdapter(this.applicationId, this.context.redisClient);
     const clientSecret = this.config.credentials.clientSecret;
+    const adapter = new DingTalkAdapter(this.applicationId, this.context.redisClient, clientSecret);
     const toText = (content: unknown) => {
       if (typeof content === 'string') return content;
       if (content && typeof content === 'object' && 'content' in content) {

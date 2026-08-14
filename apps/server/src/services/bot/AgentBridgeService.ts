@@ -26,6 +26,7 @@ import {
   RECEIVED_REACTION_EMOJI,
   THINKING_REACTION_EMOJI,
 } from './platforms';
+import { DINGTALK_MARKDOWN_CHAR_LIMIT } from './platforms/dingtalk/const';
 import { prepareBotOutboundReply } from './prepareBotOutboundReply';
 import { clearReactionState, saveReactionState } from './reactionState';
 import {
@@ -931,6 +932,7 @@ export class AgentBridgeService {
       messengerInstallationKey: botContext?.messengerInstallationKey,
       platformThreadId: botContext?.platformThreadId,
       progressMessageId: nativeProgressMessageId ?? progressMessage?.id,
+      senderExternalUserId: botContext?.senderExternalUserId,
       // Pass thread name only if it's user-set.
       // Bot-generated threads use "Thread <locale date>" (e.g. "Thread 4/9/2026, 6:00:00 PM"),
       // which always starts with "Thread " followed by a digit.
@@ -1409,7 +1411,8 @@ export class AgentBridgeService {
                   if (hasText || hasAttachments) {
                     let chunks: string[];
                     if (hasText) {
-                      // Same agent work as Web; IM is relay only (short text + dingpan URL).
+                      // DingTalk is a primary conversation surface and receives the full reply.
+                      // Other channels may still opt into compact relay mode.
                       lastAssistantContent = await prepareBotOutboundReply({
                         assistantMessageId: event.assistantMessageId as string | undefined,
                         db: this.db,
@@ -1433,7 +1436,11 @@ export class AgentBridgeService {
                       // platform's parse_mode. `formatReply` only appends a
                       // plain-text stats line.
                       const finalText = client?.formatReply?.(replyBody, replyStats) ?? replyBody;
-                      chunks = splitMessage(finalText, charLimit);
+                      const effectiveCharLimit =
+                        botContext?.platform === 'dingtalk'
+                          ? (charLimit ?? DINGTALK_MARKDOWN_CHAR_LIMIT)
+                          : charLimit;
+                      chunks = splitMessage(finalText, effectiveCharLimit);
                       if (chunks.length === 0) chunks = [''];
                     } else {
                       // Attachment-only reply — drive one empty chunk so the
@@ -1466,18 +1473,14 @@ export class AgentBridgeService {
                       // must not surface as "Agent Execution Failed" — the run
                       // already succeeded and content is in the topic.
                       const msg = error instanceof Error ? error.message : String(error);
+                      const deliveryPath =
+                        botContext?.platform === 'dingtalk'
+                          ? 'sessionWebhook->proactiveApi'
+                          : 'platformMessenger';
                       console.error(
-                        `[AgentBridge] final reply delivery failed (content preserved in topic): ${msg}`,
+                        `[AgentBridge] final reply undeliverable (operationId=${event.operationId ?? 'unknown'}, topicId=${resolvedTopicId ?? event.topicId ?? 'unknown'}, thread=${botContext?.platformThreadId ?? thread.id}, sender=${botContext?.senderExternalUserId ?? 'unknown'}, delivery=${deliveryPath}): ${msg}`,
                       );
                       log('executeWithCallback[local]: failed to send final message: %O', error);
-                      try {
-                        const hint = /session webhook has expired|webhook/i.test(msg)
-                          ? '回复已生成，但钉钉会话通道已过期。请在 Web 查看完整结果，或再发一条消息继续。'
-                          : '回复已生成，但推送到当前会话失败。请在 Web 查看完整结果，或再发一条消息。';
-                        await thread.post({ markdown: hint });
-                      } catch {
-                        // webhook may already be dead — ignore
-                      }
                     }
 
                     log(
@@ -1525,7 +1528,7 @@ export class AgentBridgeService {
                   }
 
                   // Last resort: still post a short notice so DingTalk is not silent.
-                  const emptyFallback = '本轮未能生成有效回复。请重试，或到 Web 打开同一话题查看。';
+                  const emptyFallback = '本轮未能生成有效回复。请稍后重新发送问题。';
                   console.error(
                     `[AgentBridge] completion had no deliverable content (operationId=${event.operationId}, topicId=${resolvedTopicId}); posting fallback notice`,
                   );
@@ -1684,14 +1687,14 @@ export class AgentBridgeService {
       if (!topicId) return undefined;
       const toolErrors = await messageModel.findRecentToolErrorsInTopic(topicId);
       if (toolErrors.length === 0) {
-        return '本轮未能生成有效回复（工具调用异常或模型空输出）。请缩短问题后重试，或到 Web 打开同一话题查看中间结果。';
+        return '本轮未能生成有效回复（工具调用异常或模型空输出）。请缩短问题后重新发送。';
       }
       const unique = [...new Set(toolErrors)].slice(0, 3);
       return [
         '本轮未能生成完整回复，工具侧出现错误：',
         ...unique.map((e) => `- ${e}`),
         '',
-        '建议：缩小领星查询日期窗口（单次≤90天）、确认 MCP 已 activate 后重试；或到 Web 查看该话题。',
+        '建议：缩小领星查询日期窗口（单次≤90天）、确认 MCP 已 activate 后重新发送问题。',
       ].join('\n');
     } catch (error) {
       log('recoverBotReplyContent failed (non-fatal): %O', error);
