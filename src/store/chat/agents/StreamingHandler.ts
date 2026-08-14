@@ -46,11 +46,17 @@ const log = debug('lobe-store:streaming-handler');
 export class StreamingHandler {
   // ========== Text state ==========
   private output = '';
+  private contentFrameId?: number;
+  private contentFrameTimeout?: ReturnType<typeof setTimeout>;
+  private hasPublishedContent = false;
 
   // ========== Reasoning state ==========
   private thinkingContent = '';
   private thinkingStartAt?: number;
   private thinkingDuration?: number;
+  private hasPublishedReasoning = false;
+  private reasoningFrameId?: number;
+  private reasoningFrameTimeout?: ReturnType<typeof setTimeout>;
   private reasoningOperationId?: string;
   private reasoningParts: MessageContentPart[] = [];
 
@@ -134,6 +140,8 @@ export class StreamingHandler {
    * Handle streaming finish
    */
   async handleFinish(finishData: FinishData): Promise<StreamingResult> {
+    this.flushScheduledStreamUpdates();
+
     // Update traceId
     if (finishData.traceId) {
       this.msgTraceId = finishData.traceId;
@@ -229,8 +237,7 @@ export class StreamingHandler {
       this.context.operationId,
     );
 
-    // Notify update
-    this.callbacks.onContentUpdate(this.output, this.buildReasoningState());
+    this.publishOrScheduleContentUpdate();
   }
 
   private handleReasoningChunk(chunk: { text: string; type: 'reasoning' }): void {
@@ -239,7 +246,7 @@ export class StreamingHandler {
 
     this.thinkingContent += chunk.text;
 
-    this.callbacks.onReasoningUpdate({ content: this.thinkingContent });
+    this.publishOrScheduleReasoningUpdate();
   }
 
   private handleReasoningPartChunk(chunk: {
@@ -439,6 +446,80 @@ export class StreamingHandler {
           }
         : undefined,
     );
+  }
+
+  private publishContentUpdate(): void {
+    this.callbacks.onContentUpdate(this.output, this.buildReasoningState());
+  }
+
+  private publishOrScheduleContentUpdate(): void {
+    if (!this.hasPublishedContent) {
+      this.hasPublishedContent = true;
+      this.publishContentUpdate();
+      return;
+    }
+    if (this.contentFrameId !== undefined || this.contentFrameTimeout !== undefined) return;
+
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      this.contentFrameId = globalThis.requestAnimationFrame(() => {
+        this.contentFrameId = undefined;
+        this.publishContentUpdate();
+      });
+      return;
+    }
+
+    this.contentFrameTimeout = setTimeout(() => {
+      this.contentFrameTimeout = undefined;
+      this.publishContentUpdate();
+    }, 16);
+  }
+
+  private publishReasoningUpdate(): void {
+    this.callbacks.onReasoningUpdate({ content: this.thinkingContent });
+  }
+
+  private publishOrScheduleReasoningUpdate(): void {
+    if (!this.hasPublishedReasoning) {
+      this.hasPublishedReasoning = true;
+      this.publishReasoningUpdate();
+      return;
+    }
+    if (this.reasoningFrameId !== undefined || this.reasoningFrameTimeout !== undefined) return;
+
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      this.reasoningFrameId = globalThis.requestAnimationFrame(() => {
+        this.reasoningFrameId = undefined;
+        this.publishReasoningUpdate();
+      });
+      return;
+    }
+
+    this.reasoningFrameTimeout = setTimeout(() => {
+      this.reasoningFrameTimeout = undefined;
+      this.publishReasoningUpdate();
+    }, 16);
+  }
+
+  private flushScheduledStreamUpdates(): void {
+    if (this.contentFrameId !== undefined) {
+      globalThis.cancelAnimationFrame?.(this.contentFrameId);
+      this.contentFrameId = undefined;
+      this.publishContentUpdate();
+    } else if (this.contentFrameTimeout !== undefined) {
+      clearTimeout(this.contentFrameTimeout);
+      this.contentFrameTimeout = undefined;
+      this.publishContentUpdate();
+    }
+
+    if (this.reasoningFrameId !== undefined) {
+      globalThis.cancelAnimationFrame?.(this.reasoningFrameId);
+      this.reasoningFrameId = undefined;
+      this.publishReasoningUpdate();
+    } else if (this.reasoningFrameTimeout !== undefined) {
+      clearTimeout(this.reasoningFrameTimeout);
+      this.reasoningFrameTimeout = undefined;
+      this.publishReasoningUpdate();
+    }
   }
 
   private buildReasoningState(): ReasoningState | undefined {

@@ -10,6 +10,7 @@ import { BrandingProviderCard } from '@/business/client/features/BrandingProvide
 import { useIsDark } from '@/hooks/useIsDark';
 import { type AiProviderListItem } from '@/types/aiProvider';
 
+import { getProviderDisplayName } from '../../features/getProviderDisplayName';
 import EnableSwitch from './EnableSwitch';
 import { styles } from './style';
 
@@ -23,6 +24,7 @@ const ProviderCard = memo<ProviderCardProps>(
   ({ id, description, name, enabled, source, logo, loading, onProviderSelect }) => {
     const { t } = useTranslation('providers');
     const isDarkMode = useIsDark();
+    const displayName = getProviderDisplayName({ id, name });
 
     if (loading)
       return (
@@ -56,14 +58,14 @@ const ProviderCard = memo<ProviderCardProps>(
                       provider={id}
                       size={24}
                       style={{ color: cssVar.colorText }}
-                      title={name}
+                      title={displayName}
                     />
                     {isCodingPlanProvider(id) && <Tag color={'geekblue'}>{'Coding Plan'}</Tag>}
                   </Flexbox>
                 ) : (
                   <Flexbox horizontal align={'center'} gap={12}>
                     {logo ? (
-                      <Avatar alt={name || id} avatar={logo} size={28} />
+                      <Avatar alt={displayName} avatar={logo} size={28} />
                     ) : (
                       <ProviderIcon
                         provider={id}
@@ -72,7 +74,7 @@ const ProviderCard = memo<ProviderCardProps>(
                         type={'avatar'}
                       />
                     )}
-                    <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{name || id}</Text>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{displayName}</Text>
                   </Flexbox>
                 )}
               </Flexbox>

@@ -24,6 +24,8 @@ import { buildPostProcessUrl } from './executorHelpers';
  * message, model, context, blob, stream, operation, and tool ports.
  */
 export const buildHost = (ctx: RuntimeExecutorContext): AgentRuntimeHost => {
+  ctx.operationCache ??= new Map();
+  const context = new ServerContextBuilder(ctx);
   const blob = ctx.userId
     ? new ServerBlobStore(ctx.serverDB, ctx.userId, ctx.workspaceId)
     : undefined;
@@ -47,8 +49,8 @@ export const buildHost = (ctx: RuntimeExecutorContext): AgentRuntimeHost => {
       compression: ctx.userId
         ? new ServerCompressionTransport(ctx.serverDB, ctx.userId, ctx.workspaceId)
         : undefined,
-      context: new ServerContextBuilder(ctx),
-      llm: ctx.userId ? new ServerLLMTransport(ctx, blob) : undefined,
+      context,
+      llm: ctx.userId ? new ServerLLMTransport(ctx, blob, context) : undefined,
       messages: new ServerMessageTransport(ctx.messageModel, {
         db: ctx.serverDB,
         postProcessUrl: buildPostProcessUrl(ctx),

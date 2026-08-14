@@ -47,6 +47,7 @@ interface CreateServerCallLlmAttemptInput {
   model: string;
   modelRuntime: Pick<ModelRuntime, 'chat'>;
   onFirstChunk: () => void;
+  onFirstPublish?: () => void;
   operationLogId: string;
   provider: string;
   resolved: ServerCallLlmTooling['resolved'];
@@ -82,6 +83,7 @@ export class ServerCallLlmAttempt {
   private readonly model: string;
   private readonly modelRuntime: Pick<ModelRuntime, 'chat'>;
   private readonly onFirstChunk: () => void;
+  private readonly onFirstPublish: () => void;
   private readonly operationLogId: string;
   private readonly provider: string;
   private readonly resolved: ServerCallLlmTooling['resolved'];
@@ -105,6 +107,7 @@ export class ServerCallLlmAttempt {
     model,
     modelRuntime,
     onFirstChunk,
+    onFirstPublish,
     operationLogId,
     provider,
     resolved,
@@ -119,6 +122,7 @@ export class ServerCallLlmAttempt {
     this.model = model;
     this.modelRuntime = modelRuntime;
     this.onFirstChunk = onFirstChunk;
+    this.onFirstPublish = onFirstPublish ?? (() => {});
     this.operationLogId = operationLogId;
     this.provider = provider;
     this.resolved = resolved;
@@ -126,6 +130,7 @@ export class ServerCallLlmAttempt {
       blobStore,
       ctx,
       events,
+      onFirstPublish: this.onFirstPublish,
       operationLogId,
     });
     this.topicId = topicId;

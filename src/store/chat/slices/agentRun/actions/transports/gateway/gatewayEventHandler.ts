@@ -1,5 +1,6 @@
 import type {
   AgentStreamEvent,
+  ModelFailoverData,
   StepCompleteData,
   StreamChunkData,
   StreamStartData,
@@ -581,6 +582,9 @@ export const createGatewayEventHandler = (
         enqueue(() => {
           const data = event.data as StreamChunkData | undefined;
           if (!data) return;
+          if (get().operations?.[operationId]?.metadata?.modelFailover) {
+            get().updateOperationMetadata(operationId, { modelFailover: undefined });
+          }
 
           if (data.chunkType === 'text' && data.content) {
             // Text after reasoning marks the end of the thinking pass — see
@@ -644,6 +648,35 @@ export const createGatewayEventHandler = (
               fetchAndReplaceMessages(get, context).catch(console.error);
             }
           }
+        });
+        break;
+      }
+
+      case 'model_failover': {
+        enqueue(() => {
+          const data = event.data as ModelFailoverData | undefined;
+          if (!data?.to) return;
+
+          endReasoningIfNeeded();
+          accumulatedContent = '';
+          accumulatedReasoning = '';
+          get().updateOperationMetadata(operationId, {
+            modelFailover: { from: data.from, reason: data.reason, to: data.to },
+          });
+          get().internal_dispatchMessage(
+            {
+              id: currentAssistantMessageId,
+              type: 'updateMessage',
+              value: {
+                content: '',
+                model: data.to.model,
+                provider: data.to.provider,
+                reasoning: undefined,
+                tools: undefined,
+              },
+            },
+            dispatchContext,
+          );
         });
         break;
       }
@@ -782,6 +815,19 @@ export const createGatewayEventHandler = (
           await Promise.all([
             maybeRefresh,
             dispatchOnAfterCall(data, context.topicId ?? undefined).catch(console.error),
+          ]);
+        });
+        break;
+      }
+
+      case 'tool_result_committed': {
+        enqueue(async () => {
+          await Promise.all([
+            fetchAndReplaceMessages(get, context).catch(console.error),
+            dispatchOnAfterCall(
+              event.data as ToolEndData | undefined,
+              context.topicId ?? undefined,
+            ).catch(console.error),
           ]);
         });
         break;

@@ -134,6 +134,46 @@ const createHost = (
 });
 
 describe('callLlm executor', () => {
+  it('prepares the provider concurrently with context construction', async () => {
+    let resolveBuild: ((value: ContextBuildOutput) => void) | undefined;
+    let resolvePrepare: (() => void) | undefined;
+    const build = vi.fn(
+      () =>
+        new Promise<ContextBuildOutput>((resolve) => {
+          resolveBuild = resolve;
+        }),
+    );
+    const prepare = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePrepare = resolve;
+        }),
+    );
+    const session = createTurnSession();
+    const openTurn = vi.fn().mockReturnValue(session);
+    const host = createHost(
+      { openTurn, prepare, stream: vi.fn() },
+      createMessageTransport(),
+      createStreamSink(),
+      { build },
+    );
+
+    const execution = callLlm(host)(instruction, createState());
+    await vi.waitFor(() => {
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(prepare).toHaveBeenCalledWith({ model: 'gpt-4', provider: 'openai' });
+    });
+    expect(openTurn).not.toHaveBeenCalled();
+
+    resolvePrepare?.();
+    await Promise.resolve();
+    expect(openTurn).not.toHaveBeenCalled();
+
+    resolveBuild?.({ ...contextOutput });
+    await execution;
+    expect(openTurn).toHaveBeenCalledTimes(1);
+  });
+
   it('prepares the assistant message and delegates call_llm execution to the LLM transport', async () => {
     const state = createState();
     const session = createTurnSession();
@@ -191,6 +231,11 @@ describe('callLlm executor', () => {
       assistantMessage: { id: 'assistant-1' },
       context: contextOutput,
       model: 'gpt-4',
+      payload: expect.objectContaining({
+        messages: instruction.payload.messages,
+        model: 'gpt-4',
+        provider: 'openai',
+      }),
       provider: 'openai',
       state,
       stepLabel: undefined,
@@ -398,6 +443,74 @@ describe('callLlm executor', () => {
     expect(session.recordResult).toHaveBeenCalledWith(finalOutput);
     expect(session.handleError).not.toHaveBeenCalled();
     expect(session.close).toHaveBeenCalledWith(undefined);
+  });
+
+  it('fails over after the current candidate exhausts retries and finalizes with the actual model', async () => {
+    const error = new Error('primary unavailable');
+    const primary = { model: 'primary-model', provider: 'provider-a' };
+    const fallback = { model: 'fallback-model', provider: 'provider-b' };
+    let currentCandidate = primary;
+    const finalOutput = createAttemptOutput('recovered');
+    const runAttempt = vi
+      .fn()
+      .mockResolvedValueOnce({ error, ok: false, output: createAttemptOutput() })
+      .mockResolvedValueOnce({ ok: true, output: finalOutput });
+    const tryFailover = vi.fn().mockImplementation(() => {
+      currentCandidate = fallback;
+      return { candidateIndex: 2, from: primary, to: fallback, totalCandidates: 2 };
+    });
+    const session = createTurnSession({
+      classifyError: vi.fn().mockReturnValue({
+        code: 'ProviderServiceUnavailable',
+        kind: 'retry',
+        message: error.message,
+      }),
+      getCurrentCandidate: () => currentCandidate,
+      maxAttempts: 2,
+      resolveRetryBudget: vi.fn().mockReturnValue(0),
+      runAttempt,
+      tryFailover,
+    });
+    const messages = createMessageTransport();
+    const stream = createStreamSink();
+    const host = createHost(
+      { openTurn: vi.fn().mockReturnValue(session), stream: vi.fn() },
+      messages,
+      stream,
+    );
+
+    const result = await callLlm(host)(instruction, createState());
+
+    expect(tryFailover).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        error,
+        errorInfo: expect.objectContaining({ code: 'ProviderServiceUnavailable' }),
+        retryBudget: 0,
+      }),
+    );
+    expect(stream.publishEvent).toHaveBeenCalledWith({
+      data: {
+        attempt: 2,
+        candidateIndex: 2,
+        errorType: 'ProviderServiceUnavailable',
+        from: primary,
+        reason: error.message,
+        to: fallback,
+        totalCandidates: 2,
+      },
+      stepIndex: 0,
+      type: 'model_failover',
+    });
+    expect(messages.update).toHaveBeenCalledWith(
+      'assistant-1',
+      expect.objectContaining({
+        content: 'recovered',
+        model: fallback.model,
+        provider: fallback.provider,
+      }),
+    );
+    expect(result.newState.metadata?.activeModelCandidate).toEqual(fallback);
   });
 
   it('stops retrying and persists the partial attempt when the operation is interrupted', async () => {

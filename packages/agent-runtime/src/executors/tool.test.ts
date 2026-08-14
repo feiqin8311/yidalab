@@ -211,6 +211,115 @@ describe('tool executors', () => {
     );
   });
 
+  it('publishes each tool as it settles but returns results in model call order', async () => {
+    type BatchExecution = {
+      attempts: number;
+      result: {
+        content: string;
+        executionTime: number;
+        state: Record<string, unknown>;
+        success: boolean;
+      };
+    };
+    let resolveFirst: ((value: BatchExecution) => void) | undefined;
+    let resolveSecond: ((value: BatchExecution) => void) | undefined;
+    runTool.mockImplementation(
+      (tool) =>
+        new Promise((resolve) => {
+          if (tool.id === 'first-call') resolveFirst = resolve;
+          else resolveSecond = resolve;
+        }),
+    );
+    createToolMessage.mockImplementation(async (message) => ({
+      id: `${message.tool_call_id}-message`,
+    }));
+    const instruction: Extract<AgentInstruction, { type: 'call_tools_batch' }> = {
+      payload: {
+        parentMessageId: 'assistant-msg-1',
+        toolsCalling: [createToolCall('first-call'), createToolCall('second-call')],
+      },
+      type: 'call_tools_batch',
+    };
+
+    const execution = callToolsBatch(host)(instruction, createState());
+    await vi.waitFor(() => expect(runTool).toHaveBeenCalledTimes(2));
+
+    resolveSecond?.({
+      attempts: 1,
+      result: { content: 'second', executionTime: 10, state: {}, success: true },
+    });
+    await vi.waitFor(() =>
+      expect(publishEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            payload: expect.objectContaining({
+              toolCalling: expect.objectContaining({ id: 'second-call' }),
+            }),
+          }),
+          type: 'tool_end',
+        }),
+      ),
+    );
+    expect(createToolMessage).toHaveBeenCalledTimes(1);
+    expect(createToolMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ tool_call_id: 'second-call' }),
+    );
+
+    resolveFirst?.({
+      attempts: 1,
+      result: { content: 'first', executionTime: 20, state: {}, success: true },
+    });
+    const result = await execution;
+
+    expect(createToolMessage.mock.calls.map(([message]) => message.tool_call_id)).toEqual([
+      'second-call',
+      'first-call',
+    ]);
+    expect(result.nextContext?.payload).toMatchObject({
+      parentMessageId: 'second-call-message',
+      toolResults: [
+        expect.objectContaining({ toolCallId: 'first-call' }),
+        expect.objectContaining({ toolCallId: 'second-call' }),
+      ],
+    });
+  });
+
+  it('reconciles already-visible tool messages after applying the round budget', async () => {
+    runTool.mockResolvedValue({
+      attempts: 1,
+      result: {
+        content: 'large result '.repeat(200),
+        executionTime: 10,
+        state: {},
+        success: true,
+      },
+    });
+    const instruction: Extract<AgentInstruction, { type: 'call_tools_batch' }> = {
+      payload: {
+        parentMessageId: 'assistant-msg-1',
+        toolsCalling: [createToolCall('first-call'), createToolCall('second-call')],
+      },
+      type: 'call_tools_batch',
+    };
+
+    await callToolsBatch(host)(
+      instruction,
+      createState({
+        metadata: {
+          agentId: 'agent-1',
+          contextPolicy: { budgets: { maxToolRoundTokens: 20 } },
+          threadId: 'thread-1',
+          topicId: 'topic-1',
+        },
+      }),
+    );
+
+    expect(host.transports.messages.updateToolMessage).toHaveBeenCalled();
+    expect(publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'tool_result_committed' }),
+    );
+  });
+
   it('publishes and rethrows tool-message persist errors', async () => {
     const error = new Error('database failed');
     createToolMessage.mockRejectedValueOnce(error);

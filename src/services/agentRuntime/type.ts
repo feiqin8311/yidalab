@@ -14,6 +14,8 @@ export interface StreamEvent {
     | 'stream_end'
     | 'visible_output_end'
     | 'stream_retry'
+    | 'model_failover'
+    | 'tool_result_committed'
     | 'step_start'
     | 'step_complete'
     | 'error'

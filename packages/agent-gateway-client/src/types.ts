@@ -13,8 +13,10 @@ export type AgentStreamEventType =
    */
   | 'visible_output_end'
   | 'stream_retry'
+  | 'model_failover'
   | 'tool_start'
   | 'tool_end'
+  | 'tool_result_committed'
   | 'tool_execute'
   /**
    * Producer-side tool result content (heterogeneous CLI agents emit this
@@ -110,6 +112,16 @@ export interface StreamStartData {
   assistantMessage: StreamStartAssistantMessage;
   model?: string;
   provider?: string;
+}
+
+export interface ModelFailoverData {
+  attempt: number;
+  candidateIndex: number;
+  errorType?: string;
+  from: { model: string; provider: string };
+  reason: string;
+  to: { model: string; provider: string };
+  totalCandidates: number;
 }
 
 export interface ToolStartData {

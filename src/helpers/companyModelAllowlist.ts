@@ -24,8 +24,7 @@ export const isModelAllowed = (
 };
 
 export interface ProviderWithModels {
-  [key: string]: unknown;
-  children: Array<{ id: string; [key: string]: unknown }>;
+  children: Array<{ id: string }>;
   id: string;
 }
 

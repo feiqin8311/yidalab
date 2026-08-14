@@ -53,6 +53,7 @@ const executeTurnSession = async (
   let errorHandled = false;
   let lastOutput: LLMAttemptOutput | undefined;
   let terminalError: unknown;
+  let candidateAttempt = 1;
 
   try {
     for (let attempt = 1; attempt <= session.maxAttempts; attempt++) {
@@ -60,13 +61,17 @@ const executeTurnSession = async (
       lastOutput = execution.output;
 
       if (execution.ok) {
+        const activeCandidate = session.getCurrentCandidate?.() ?? {
+          model: turn.model,
+          provider: turn.provider,
+        };
         return await finalizeCallLlmTurn({
           assistantMessageId: turn.assistantMessage.id,
           events,
           host,
-          model: turn.model,
+          model: activeCandidate.model,
           output: execution.output,
-          provider: turn.provider,
+          provider: activeCandidate.provider,
           recordResult: session.recordResult?.bind(session),
           shouldReplayAssistantReasoning: turn.context.replayAssistantReasoning,
           state: turn.state,
@@ -79,25 +84,25 @@ const executeTurnSession = async (
       const retryBudget = session.resolveRetryBudget(error);
       let interrupted = await isOperationInterrupted(host);
 
-      if (!interrupted && shouldRetryLLM(classified.kind, attempt, retryBudget)) {
-        const delayMs = getLLMRetryDelayMs(attempt);
+      if (!interrupted && shouldRetryLLM(classified.kind, candidateAttempt, retryBudget)) {
+        const delayMs = getLLMRetryDelayMs(candidateAttempt);
         const retryEvent: AgentEvent = {
           data: {
-            attempt: attempt + 1,
+            attempt: candidateAttempt + 1,
             delayMs,
             errorType: classified.code,
             kind: classified.kind,
-            maxAttempts: session.maxAttempts,
+            maxAttempts: retryBudget + 1,
           },
           type: 'stream_retry',
         };
         events.push(retryEvent);
 
         await session.onRetry?.({
-          attempt,
+          attempt: candidateAttempt,
           delayMs,
           error: classified,
-          maxAttempts: session.maxAttempts,
+          maxAttempts: retryBudget + 1,
         });
         await host.transports.stream.publishEvent({
           data: retryEvent.data,
@@ -107,7 +112,44 @@ const executeTurnSession = async (
         await (session.waitForRetry ?? waitForRetry)(delayMs);
 
         interrupted = await isOperationInterrupted(host);
-        if (!interrupted) continue;
+        if (!interrupted) {
+          candidateAttempt += 1;
+          continue;
+        }
+      }
+
+      if (!interrupted && session.tryFailover) {
+        const failover = await session.tryFailover({
+          attempt: candidateAttempt,
+          error,
+          errorInfo: classified,
+          events,
+          output: execution.output,
+          retryBudget,
+        });
+
+        if (failover) {
+          const failoverEvent: AgentEvent = {
+            data: {
+              attempt: attempt + 1,
+              candidateIndex: failover.candidateIndex,
+              errorType: classified.code,
+              from: failover.from,
+              reason: classified.message,
+              to: failover.to,
+              totalCandidates: failover.totalCandidates,
+            },
+            type: 'model_failover',
+          };
+          events.push(failoverEvent);
+          await host.transports.stream.publishEvent({
+            data: failoverEvent.data,
+            stepIndex: host.operation.stepIndex,
+            type: 'model_failover',
+          });
+          candidateAttempt = 1;
+          continue;
+        }
       }
 
       errorHandled = true;
@@ -281,13 +323,22 @@ export const callLlm =
       type: 'stream_start',
     });
 
-    const context = await contextBuilder
-      .build({
+    const contextBuildStartedAt = Date.now();
+    const prepareModel = llm.prepare?.({ model, provider }).catch((error) => {
+      // Preparation is an optimization. The real attempt must still run so the
+      // session can classify the failure and advance to a configured fallback.
+      console.error(`[call_llm] Failed to prepare ${provider}/${model}:`, error);
+    });
+    const context = await Promise.all([
+      contextBuilder.build({
         model,
         payload: llmPayload,
         provider,
         state,
-      })
+      }),
+      prepareModel,
+    ])
+      .then(([builtContext]) => builtContext)
       .catch(async (error) => {
         if (createdAssistantThisTurn) {
           try {
@@ -303,12 +354,14 @@ export const callLlm =
         });
         throw error;
       });
+    context.buildDurationMs = Date.now() - contextBuildStartedAt;
 
     try {
       const turn: LLMTurnInput = {
         assistantMessage,
         context,
         model,
+        payload: llmPayload,
         provider,
         state,
         stepLabel,

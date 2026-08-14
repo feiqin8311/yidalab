@@ -568,6 +568,7 @@
   "operation.execHeterogeneousAgent": "{{name}} is running",
   "operation.execServerAgentRuntime": "Task is running in the server. You are safe to leave this page",
   "operation.heterogeneousAgentFallback": "External agent",
+  "operation.modelFailover": "Switched to {{provider}} / {{model}}",
   "operation.sendMessage": "Sending message",
   "operation.streamRetry": "{{name}} upstream is busy ({{status}}), retrying",
   "operation.streamRetry.unknownStatus": "unknown status",

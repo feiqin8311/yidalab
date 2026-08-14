@@ -2,6 +2,7 @@ export * from './deliveryClaimGuard';
 export * from './llmErrorClassifier';
 export * from './mcpAvailabilityClaimGuard';
 export * from './messageSelectors';
+export * from './modelFailover';
 export * from './replay';
 export * from './runBrakes';
 export * from './runtimeRetry';

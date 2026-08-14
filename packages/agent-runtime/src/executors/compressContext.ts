@@ -221,16 +221,25 @@ export const compressContext =
     try {
       const compression = requireCompressionTransport(host);
       const llm = requireLLMTransport(host);
+      const compressionModel =
+        newState.modelRuntimeConfig?.compressionModel || newState.modelRuntimeConfig;
 
-      const dbMessages = await transports.messages.query(
-        {
-          agentId: state.metadata?.agentId,
-          groupId: state.metadata?.groupId,
-          threadId: state.metadata?.threadId,
-          topicId,
-        },
-        { resolveAssetUrls: true },
-      );
+      if (!compressionModel?.model || !compressionModel?.provider) {
+        return await onFailure(new Error('compression_model_missing'));
+      }
+
+      const [dbMessages] = await Promise.all([
+        transports.messages.query(
+          {
+            agentId: state.metadata?.agentId,
+            groupId: state.metadata?.groupId,
+            threadId: state.metadata?.threadId,
+            topicId,
+          },
+          { resolveAssetUrls: true },
+        ),
+        llm.prepare?.({ model: compressionModel.model, provider: compressionModel.provider }),
+      ]);
 
       const messageIds = dbMessages
         .filter(
@@ -274,13 +283,6 @@ export const compressContext =
         .map((m) => m.id);
       const strictUserIds =
         userIdsFromSummarize.length > 0 ? userIdsFromSummarize : currentUserMessageIds;
-
-      const compressionModel =
-        newState.modelRuntimeConfig?.compressionModel || newState.modelRuntimeConfig;
-
-      if (!compressionModel?.model || !compressionModel?.provider) {
-        return await onFailure(new Error('compression_model_missing'));
-      }
 
       const resolvedLegacy =
         legacySummary ?? (existingSnapshot ? undefined : existingSummary) ?? undefined;

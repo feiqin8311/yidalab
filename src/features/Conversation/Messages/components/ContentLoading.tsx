@@ -129,8 +129,15 @@ const ContentLoading = memo<ContentLoadingProps>(({ id, startTime: startTimeOver
 
     return undefined;
   };
+  const modelFailover = runningOp?.metadata?.modelFailover;
+  const modelFailoverLabel = modelFailover
+    ? t('operation.modelFailover', {
+        model: modelFailover.to.model,
+        provider: modelFailover.to.provider,
+      })
+    : undefined;
   const streamRetryLabel = getStreamRetryLabel();
-  const operationLabel = streamRetryLabel ?? getOperationLabel();
+  const operationLabel = modelFailoverLabel ?? streamRetryLabel ?? getOperationLabel();
   const operationLabelClassName = streamRetryLabel
     ? shinyTextStyles.errorText
     : shinyTextStyles.shinyText;

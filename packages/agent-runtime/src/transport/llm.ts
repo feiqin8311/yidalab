@@ -71,6 +71,7 @@ export interface LLMAttemptInput {
   maxAttempts: number;
   model: string;
   onFirstChunk?: () => void;
+  onFirstPublish?: () => void;
   provider: string;
   state: AgentState;
 }
@@ -82,6 +83,7 @@ export interface LLMTurnInput {
   assistantMessage: RuntimeMessageRef;
   context: ContextBuildOutput;
   model: string;
+  payload: CallLLMPayload;
   provider: string;
   state: AgentState;
   stepLabel?: string;
@@ -107,16 +109,36 @@ export interface LLMTurnRetryInput {
   maxAttempts: number;
 }
 
+export interface LLMTurnFailoverInput {
+  attempt: number;
+  error: unknown;
+  errorInfo: ClassifiedLLMError;
+  events: AgentEvent[];
+  output: LLMAttemptOutput;
+  retryBudget: number;
+}
+
+export interface LLMTurnFailoverResult {
+  candidateIndex: number;
+  from: { model: string; provider: string };
+  to: { model: string; provider: string };
+  totalCandidates: number;
+}
+
 /** Host-bound lifecycle for one logical model turn across all retry attempts. */
 export interface LLMTurnSession {
   classifyError: (error: unknown) => ClassifiedLLMError;
   close: (error?: unknown) => Promise<void> | void;
+  getCurrentCandidate?: () => { model: string; provider: string };
   handleError: (input: LLMTurnErrorInput) => Promise<void>;
   maxAttempts: number;
   onRetry?: (input: LLMTurnRetryInput) => Promise<void> | void;
   recordResult?: (output: LLMAttemptOutput) => Promise<void> | void;
   resolveRetryBudget: (error: unknown) => number;
   runAttempt: (input: LLMTurnAttemptInput) => Promise<LLMAttemptExecution>;
+  tryFailover?: (
+    input: LLMTurnFailoverInput,
+  ) => Promise<LLMTurnFailoverResult | undefined> | LLMTurnFailoverResult | undefined;
   waitForRetry?: (delayMs: number) => Promise<void>;
 }
 
@@ -135,6 +157,8 @@ export interface LLMTransport {
    * finalization while the session retains provider policy and tracing hooks.
    */
   openTurn?: (input: LLMTurnInput) => Promise<LLMTurnSession> | LLMTurnSession;
+  /** Starts provider initialization/quota checks while context is being prepared. */
+  prepare?: (input: { model: string; provider: string }) => Promise<void>;
   /** Executes one model attempt and returns both successful or partial output. */
   runAttempt?: (input: LLMAttemptInput) => Promise<LLMAttemptExecution>;
   stream: (

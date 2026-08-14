@@ -14,6 +14,7 @@ import { AiModelModel } from '@/database/models/aiModel';
 
 import type { RuntimeExecutorContext } from '../context';
 import { log } from '../executorHelpers';
+import { getOperationCached } from '../operationCache';
 
 interface ResolveServerCallLlmContextHintsInput {
   ctx: RuntimeExecutorContext;
@@ -86,7 +87,9 @@ export const resolveServerCallLlmContextHints = async ({
   if (!modelDisplayName && ctx.serverDB && ctx.userId) {
     try {
       const aiModelModel = new AiModelModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
-      const userModel = await aiModelModel.findByIdAndProvider(model, provider);
+      const userModel = await getOperationCached(ctx, `model:${provider}:${model}`, () =>
+        aiModelModel.findByIdAndProvider(model, provider),
+      );
       modelDisplayName = userModel?.displayName ?? undefined;
     } catch (error) {
       log('Failed to resolve user model display name for %s: %O', model, error);

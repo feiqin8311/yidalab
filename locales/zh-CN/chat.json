@@ -568,6 +568,7 @@
   "operation.execHeterogeneousAgent": "{{name}} 正在运行",
   "operation.execServerAgentRuntime": "任务正在服务器运行，您可以放心离开此页面",
   "operation.heterogeneousAgentFallback": "外部智能体",
+  "operation.modelFailover": "已切换到 {{provider}} / {{model}}",
   "operation.sendMessage": "消息发送中",
   "operation.streamRetry": "{{name}} 上游繁忙（{{status}}），正在重试",
   "operation.streamRetry.unknownStatus": "未知状态",
