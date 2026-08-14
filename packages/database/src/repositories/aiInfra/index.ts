@@ -150,6 +150,7 @@ export class AiInfraRepos {
 
     // 1. First create a mapping based on DEFAULT_MODEL_PROVIDER_LIST id order
     const orderMap = new Map(DEFAULT_MODEL_PROVIDER_LIST.map((item, index) => [item.id, index]));
+    const builtinProviderMap = new Map(DEFAULT_MODEL_PROVIDER_LIST.map((item) => [item.id, item]));
 
     const builtinProviders = DEFAULT_MODEL_PROVIDER_LIST.map((item) => ({
       description: item.description,
@@ -161,7 +162,18 @@ export class AiInfraRepos {
       source: 'builtin',
     })) as AiProviderListItem[];
 
-    const mergedProviders = mergeArrayById(builtinProviders, userProviders);
+    const mergedProviders = mergeArrayById(builtinProviders, userProviders).map((provider) => {
+      const builtinProvider = builtinProviderMap.get(provider.id);
+
+      // Older rows can contain an empty string name. Unlike null/undefined,
+      // mergeArrayById treats it as an explicit override, which leaves a
+      // built-in provider navigable only by its icon in the settings sidebar.
+      if (builtinProvider && !provider.name?.trim()) {
+        return { ...provider, name: builtinProvider.name };
+      }
+
+      return provider;
+    });
 
     // 3. Sort based on orderMap
     return mergedProviders.sort((a, b) => {
