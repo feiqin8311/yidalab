@@ -415,6 +415,7 @@ export function renderError(operationId?: string, lng?: BotReplyLocale): string 
 const FRIENDLY_ERROR_BY_TYPE: Record<string, keyof SystemStrings> = {
   // ── user-fixable config / input (attribution: user) ──
   ContentModeration: 'errorContentModeration',
+  CONTEXT_BUDGET_EXCEEDED: 'errorExceededContextWindow',
   ExceededContextWindow: 'errorExceededContextWindow',
   // Cloud-managed credits: balance is positive but below the model's estimated
   // cost, so the fix is topping up / upgrading — not editing the input.
@@ -479,6 +480,12 @@ const COMMAND_CONNECTION_CLOSED_TYPES = new Set([
   'StateStoreReadError',
 ]);
 
+// Context-engine hard-budget rejects used to land as InternalServerError (500)
+// with "Context estimate N exceeds hard budget M". Same 500-wrapper problem as
+// command-disconnect: keep the friendly context-window copy even when
+// classification hasn't refined the type yet.
+const CONTEXT_BUDGET_EXCEEDED_TYPES = new Set(['500', 'InternalServerError']);
+
 const isCommandConnectionClosedError = (
   errorType: string | undefined,
   errorMessage: string | undefined,
@@ -487,6 +494,16 @@ const isCommandConnectionClosedError = (
   if (!errorMessage) return false;
 
   return /command aborted due to connection close/i.test(errorMessage);
+};
+
+const isContextBudgetExceededError = (
+  errorType: string | undefined,
+  errorMessage: string | undefined,
+) => {
+  if (errorType && !CONTEXT_BUDGET_EXCEEDED_TYPES.has(String(errorType))) return false;
+  if (!errorMessage) return false;
+
+  return /exceeds hard budget/i.test(errorMessage);
 };
 
 /**
@@ -514,6 +531,10 @@ export function renderAgentError(
 
   if (isCommandConnectionClosedError(errorType, errorMessage)) {
     return appendOperationId(strings.errorCommandConnectionClosed, operationId);
+  }
+
+  if (isContextBudgetExceededError(errorType, errorMessage)) {
+    return appendOperationId(strings.errorExceededContextWindow, operationId);
   }
 
   const stringKey =

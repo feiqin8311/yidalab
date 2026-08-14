@@ -83,16 +83,23 @@ export const resolveServerCallLlmContextHints = async ({
 
   // Custom/remote user models aren't in the bundled model bank, so both cards
   // miss. Fall back to the user's own AI model record so server-side runs still
-  // surface identity (the inbox `{{model}}` fallback no longer exists).
-  if (!modelDisplayName && ctx.serverDB && ctx.userId) {
+  // surface identity (the inbox `{{model}}` fallback no longer exists) and pick
+  // up a configured context window (OpenAI-compatible proxies like
+  // `sub2api-openai` otherwise inherit the 100k unknown-model default).
+  let userModelContextWindowTokens: number | undefined;
+  if ((!modelDisplayName || !modelCard?.contextWindowTokens) && ctx.serverDB && ctx.userId) {
     try {
       const aiModelModel = new AiModelModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
       const userModel = await getOperationCached(ctx, `model:${provider}:${model}`, () =>
         aiModelModel.findByIdAndProvider(model, provider),
       );
-      modelDisplayName = userModel?.displayName ?? undefined;
+      if (!modelDisplayName) modelDisplayName = userModel?.displayName ?? undefined;
+      const window = userModel?.contextWindowTokens;
+      if (typeof window === 'number' && window > 0) {
+        userModelContextWindowTokens = window;
+      }
     } catch (error) {
-      log('Failed to resolve user model display name for %s: %O', model, error);
+      log('Failed to resolve user model metadata for %s: %O', model, error);
     }
   }
 
@@ -164,9 +171,15 @@ export const resolveServerCallLlmContextHints = async ({
     builtinModels.find((item) => item.id === targetModel && item.providerId === targetProvider) ??
     builtinModels.find((item) => item.id === targetModel);
 
+  // Window is a hard gate, not a label: custom OpenAI-compatible providers
+  // (sub2api-*, newapi, …) serve the same model id without a provider-scoped
+  // card. Inherit the canonical window so we don't fall back to the 100k
+  // unknown-model default and reject a request the real model can hold.
+  // User-record window wins over canonical when the operator set one.
   const contextWindowTokens =
     modelCard?.contextWindowTokens ??
-    (provider === ModelProvider.LobeHub ? canonicalModelCard?.contextWindowTokens : undefined);
+    userModelContextWindowTokens ??
+    canonicalModelCard?.contextWindowTokens;
 
   return {
     capabilities: {

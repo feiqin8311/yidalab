@@ -35,6 +35,14 @@ describe('matchErrorPattern', () => {
     expect(matchErrorPattern({ message })?.code).toBe(AgentRuntimeErrorType.ExceededContextWindow);
   });
 
+  it('classifies context-engine hard-budget rejects as ExceededContextWindow', () => {
+    expect(
+      matchErrorPattern({
+        message: 'Context estimate 103355 exceeds hard budget 100000',
+      })?.code,
+    ).toBe(AgentRuntimeErrorType.ExceededContextWindow);
+  });
+
   it('disambiguates 429-class rate limit from balance-class quota', () => {
     expect(matchErrorPattern({ message: 'rate_limit_exceeded' })?.code).toBe(
       AgentRuntimeErrorType.RateLimitExceeded,
