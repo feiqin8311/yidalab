@@ -1,4 +1,5 @@
-import { type LobeChatDatabase } from '@lobechat/database';
+import type { LobeChatDatabase } from '@lobechat/database';
+import type { ResourceProcessingPolicy } from '@lobechat/types';
 import { inferContentTypeFromImageUrl, nanoid, uuid } from '@lobechat/utils';
 import { TRPCError } from '@trpc/server';
 import { sha256 } from 'js-sha256';
@@ -205,9 +206,10 @@ export class FileService {
      * Explicit content-processing policy. Bot/chat uploads should pass
      * `on_demand` so rows never rely on null→on_demand implicit fallback.
      */
-    processingPolicy?: 'none' | 'on_demand' | 'persistent';
+    processingPolicy?: ResourceProcessingPolicy;
     size: number;
     url: string;
+    visibility?: 'private' | 'public';
   }): Promise<{ fileId: string; url: string }> {
     // Check if hash already exists in globalFiles
     const existingFile = await this.fileModel.checkHash(params.fileHash);
@@ -229,6 +231,7 @@ export class FileService {
 
     // Create database record
     // If hash doesn't exist, also create globalFiles record
+    const persistentResource = params.processingPolicy === 'persistent';
     const { id } = await this.fileModel.create(
       {
         fileHash: params.fileHash,
@@ -236,9 +239,13 @@ export class FileService {
         id: params.id, // Use custom ID if provided
         metadata: params.metadata,
         name: params.name,
+        ...(persistentResource
+          ? { persistReason: 'resource_upload' as const, processingRequestedAt: new Date() }
+          : {}),
         processingPolicy: params.processingPolicy,
         size: params.size,
         url: params.url,
+        ...(params.visibility ? { visibility: params.visibility } : {}),
       },
       !isExist, // insertToGlobalFiles
     );
@@ -398,7 +405,10 @@ export class FileService {
     buffer: Buffer,
     mimeType: string,
     pathname: string,
-    options?: { processingPolicy?: 'none' | 'on_demand' | 'persistent' },
+    options?: {
+      processingPolicy?: ResourceProcessingPolicy;
+      visibility?: 'private' | 'public';
+    },
   ): Promise<{ fileId: string; key: string; url: string }> {
     // Use uploadBuffer with explicit contentType so S3 Content-Type matches
     // the actual bytes (e.g. PNG buffer won't get image/jpeg from .jpg pathname)
@@ -425,6 +435,7 @@ export class FileService {
       processingPolicy: options?.processingPolicy,
       size,
       url: key,
+      visibility: options?.visibility,
     });
 
     return { fileId: createdId, key, url };

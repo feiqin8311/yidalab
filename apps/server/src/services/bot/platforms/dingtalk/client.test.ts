@@ -89,6 +89,7 @@ describe('DingTalkClient.extractFiles', () => {
     expect(result?.files).toHaveLength(1);
     expect(result!.files![0].name).toBe('data.xlsx');
     expect(result!.files![0].buffer?.toString()).toBe('xlsx-bytes');
+    expect(result!.files![0].persistToResourceLibrary).toBe(true);
   });
 
   it('skips oversized declared size with warning', async () => {

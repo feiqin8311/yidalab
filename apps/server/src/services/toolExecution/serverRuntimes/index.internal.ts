@@ -9,6 +9,7 @@ import { agentDocumentsRuntime } from './agentDocuments';
 import { agentManagementRuntime } from './agentManagement';
 import { briefRuntime } from './brief';
 import { calculatorRuntime } from './calculator';
+import { cloudSandboxRuntime } from './cloudSandbox';
 import { credsRuntime } from './creds';
 import { dingpanRuntime } from './dingpan';
 import { fbaAlertRuntime } from './fbaAlert';
@@ -43,6 +44,7 @@ const registerRuntimes = (runtimes: ServerRuntimeRegistration[]) => {
 registerRuntimes([
   agentBuilderRuntime,
   webBrowsingRuntime,
+  cloudSandboxRuntime,
   calculatorRuntime,
   agentDocumentsRuntime,
   agentManagementRuntime,

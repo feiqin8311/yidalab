@@ -23,6 +23,7 @@ const userId = 'ai-model-test-user-id';
 const workspaceId = 'ai-model-test-workspace-id';
 const aiProviderModel = new AiModelModel(serverDB, userId);
 const workspaceAiModelModel = new AiModelModel(serverDB, userId, workspaceId);
+const otherWorkspaceAiModelModel = new AiModelModel(serverDB, 'user2', workspaceId);
 
 beforeEach(async () => {
   await serverDB.delete(users);
@@ -216,6 +217,29 @@ describe('AiModelModel', () => {
   });
 
   describe('update', () => {
+    it('should keep one shared workspace model when different members update it', async () => {
+      await workspaceAiModelModel.update('grok-4.3', 'sub2api-grok', {
+        displayName: 'Old Grok',
+      });
+      await otherWorkspaceAiModelModel.update('grok-4.3', 'sub2api-grok', {
+        displayName: 'Grok 4.3',
+      });
+
+      const rows = await serverDB
+        .select()
+        .from(aiModels)
+        .where(
+          and(
+            eq(aiModels.id, 'grok-4.3'),
+            eq(aiModels.providerId, 'sub2api-grok'),
+            eq(aiModels.workspaceId, workspaceId),
+          ),
+        );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.displayName).toBe('Grok 4.3');
+    });
+
     it('should update a ai provider', async () => {
       const { id } = await aiProviderModel.create({
         organization: 'Qwen',

@@ -33,7 +33,7 @@ export class AiModelModel {
   private conflictTarget() {
     return this.workspaceId
       ? {
-          target: [aiModels.id, aiModels.providerId, aiModels.userId, aiModels.workspaceId],
+          target: [aiModels.id, aiModels.providerId, aiModels.workspaceId],
           targetWhere: isNotNull(aiModels.workspaceId),
         }
       : {

@@ -45,7 +45,7 @@ export class AiProviderModel {
   private conflictTarget() {
     return this.workspaceId
       ? {
-          target: [aiProviders.id, aiProviders.userId, aiProviders.workspaceId],
+          target: [aiProviders.id, aiProviders.workspaceId],
           targetWhere: isNotNull(aiProviders.workspaceId),
         }
       : {
@@ -228,6 +228,7 @@ export class AiProviderModel {
       })
       .from(aiProviders)
       .where(and(eq(aiProviders.id, id), this.scopeWhere()))
+      .orderBy(desc(aiProviders.updatedAt))
       .limit(1);
 
     const [result] = await query;

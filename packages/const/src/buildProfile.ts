@@ -83,6 +83,7 @@ export const INTERNAL_BUILTIN_TOOL_IDS = [
   'lobe-knowledge-base',
   'lobe-user-memory',
   'lobe-local-system',
+  'lobe-cloud-sandbox',
   'lobe-agent-documents',
   'lobe-task',
   'lobe-agent',

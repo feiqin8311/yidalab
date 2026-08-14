@@ -61,8 +61,8 @@ export const aiProviders = pgTable(
     uniqueIndex('ai_providers_id_user_id_unique')
       .on(table.id, table.userId)
       .where(isNull(table.workspaceId)),
-    uniqueIndex('ai_providers_id_user_id_workspace_id_unique')
-      .on(table.id, table.userId, table.workspaceId)
+    uniqueIndex('ai_providers_id_workspace_id_unique')
+      .on(table.id, table.workspaceId)
       .where(isNotNull(table.workspaceId)),
     index('ai_providers_user_id_idx').on(table.userId),
     index('ai_providers_workspace_id_idx').on(table.workspaceId),
@@ -113,8 +113,8 @@ export const aiModels = pgTable(
     uniqueIndex('ai_models_id_provider_id_user_id_unique')
       .on(table.id, table.providerId, table.userId)
       .where(isNull(table.workspaceId)),
-    uniqueIndex('ai_models_id_provider_id_user_id_workspace_id_unique')
-      .on(table.id, table.providerId, table.userId, table.workspaceId)
+    uniqueIndex('ai_models_id_provider_id_workspace_id_unique')
+      .on(table.id, table.providerId, table.workspaceId)
       .where(isNotNull(table.workspaceId)),
     index('ai_models_user_id_idx').on(table.userId),
     index('ai_models_workspace_id_idx').on(table.workspaceId),

@@ -16,6 +16,7 @@ const userId = 'session-group-model-test-user-id';
 const workspaceId = 'ai-provider-test-workspace-id';
 const aiProviderModel = new AiProviderModel(serverDB, userId);
 const workspaceAiProviderModel = new AiProviderModel(serverDB, userId, workspaceId);
+const otherWorkspaceAiProviderModel = new AiProviderModel(serverDB, 'user2', workspaceId);
 
 beforeEach(async () => {
   await serverDB.delete(users);
@@ -265,6 +266,28 @@ describe('AiProviderModel', () => {
   });
 
   describe('updateConfig', () => {
+    it('should keep one shared workspace configuration when different members save it', async () => {
+      const providerId = 'sub2api-grok';
+
+      await workspaceAiProviderModel.updateConfig(providerId, {
+        keyVaults: { apiKey: 'stale-key' },
+      });
+      await otherWorkspaceAiProviderModel.updateConfig(providerId, {
+        keyVaults: { apiKey: 'fresh-key' },
+      });
+
+      const rows = await serverDB
+        .select()
+        .from(aiProviders)
+        .where(and(eq(aiProviders.id, providerId), eq(aiProviders.workspaceId, workspaceId)));
+      const provider = await workspaceAiProviderModel.getAiProviderById(providerId, (text) =>
+        JSON.parse(text as string),
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(provider?.keyVaults).toEqual({ apiKey: 'fresh-key' });
+    });
+
     it('should update provider config with encryption and merge keyVaults', async () => {
       const providerId = 'aihubmix';
       await serverDB.insert(aiProviders).values({

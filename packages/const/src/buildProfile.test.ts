@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   getYidaLabProcessRole,
   isInternalBuildProfile,
+  isInternalBuiltinToolId,
   shouldRunResidentWorkers,
   YIDALAB_BUILD_PROFILE,
 } from './buildProfile';
@@ -38,5 +39,9 @@ describe('buildProfile', () => {
   it('exports a build profile string', () => {
     expect(YIDALAB_BUILD_PROFILE === 'full' || YIDALAB_BUILD_PROFILE === 'internal').toBe(true);
     expect(typeof isInternalBuildProfile()).toBe('boolean');
+  });
+
+  it('keeps the cloud sandbox available in the internal build', () => {
+    expect(isInternalBuiltinToolId('lobe-cloud-sandbox')).toBe(true);
   });
 });
