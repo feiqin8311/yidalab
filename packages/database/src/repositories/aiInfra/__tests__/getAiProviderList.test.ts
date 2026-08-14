@@ -43,6 +43,21 @@ describe('AiInfraRepos', () => {
       expect(openaiProvider).toMatchObject({ enabled: true, name: 'Custom OpenAI' });
     });
 
+    it('should retain the builtin name when a saved provider name is blank', async () => {
+      const builtinMoonshot = DEFAULT_MODEL_PROVIDER_LIST.find((item) => item.id === 'moonshot');
+      expect(builtinMoonshot).toBeDefined();
+
+      vi.spyOn(repo.aiProviderModel, 'getAiProviderList').mockResolvedValueOnce([
+        { id: 'moonshot', name: '' } as AiProviderListItem,
+      ]);
+
+      const result = await repo.getAiProviderList();
+
+      expect(result.find((provider) => provider.id === 'moonshot')).toMatchObject({
+        name: builtinMoonshot?.name,
+      });
+    });
+
     it('should sort providers according to DEFAULT_MODEL_PROVIDER_LIST order', async () => {
       vi.spyOn(repo.aiProviderModel, 'getAiProviderList').mockResolvedValue([]);
 
