@@ -2,7 +2,8 @@ import { type AgentState } from '@lobechat/agent-runtime';
 import { LobeActivatorIdentifier } from '@lobechat/builtin-tool-activator';
 import { type OperationToolSet } from '@lobechat/context-engine';
 import { type ToolType } from '@lobechat/observability-otel/modules/agent-runtime';
-import { type ChatToolPayload } from '@lobechat/types';
+import type { ChatToolPayload } from '@lobechat/types';
+import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
 
 import { type LobeChatDatabase } from '@/database/type';
@@ -354,8 +355,14 @@ export const resolveRuntimeHistoryCount = (historyCount?: number) => {
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const LLM_FIRST_CHUNK_TIMEOUT_MS = 90_000;
+// Bot runs are asynchronous and have a 12-minute watchdog. A longer first-chunk
+// budget tolerates heavy tool payloads while two timeout attempts still fit that envelope.
+export const LLM_BOT_FIRST_CHUNK_TIMEOUT_MS = 150_000;
 export const LLM_STREAM_IDLE_TIMEOUT_MS = 120_000;
 export const LLM_TURN_TOTAL_TIMEOUT_MS = 8 * 60_000;
+
+export const resolveLLMFirstChunkTimeoutMs = (trigger?: unknown) =>
+  trigger === RequestTrigger.Bot ? LLM_BOT_FIRST_CHUNK_TIMEOUT_MS : LLM_FIRST_CHUNK_TIMEOUT_MS;
 
 const TERMINAL_OPERATION_STATUSES = new Set(['done', 'error', 'interrupted']);
 

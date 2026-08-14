@@ -29,6 +29,7 @@ import {
   platformRegistry,
   resolveBotProviderConfig,
 } from './platforms';
+import { DINGTALK_MARKDOWN_CHAR_LIMIT } from './platforms/dingtalk/const';
 import { prepareBotOutboundReply } from './prepareBotOutboundReply';
 import { clearReactionState, getReactionState, saveReactionState } from './reactionState';
 import {
@@ -109,6 +110,7 @@ export interface BotCallbackBody {
   progressMessageId?: string;
   reason?: string;
   reasoning?: string;
+  senderExternalUserId?: string;
   shouldContinue?: boolean;
   stepType?: 'call_llm' | 'call_tool';
   thinking?: boolean;
@@ -183,15 +185,24 @@ export class BotCallbackService {
       // Stop typing on the gateway
       this.stopGatewayTyping(connectionId, platformThreadId);
 
-      await this.handleCompletion(
-        body,
-        messenger,
-        progressMessageId ?? '',
-        client,
-        replyLocale,
-        charLimit,
-        canEdit,
-      );
+      try {
+        await this.handleCompletion(
+          body,
+          messenger,
+          progressMessageId ?? '',
+          client,
+          replyLocale,
+          charLimit,
+          canEdit,
+        );
+      } catch (error) {
+        const deliveryPath =
+          platform === 'dingtalk' ? 'sessionWebhook->proactiveApi' : 'platformMessenger';
+        console.error(
+          `[BotCallbackService] completion reply undeliverable (operationId=${body.operationId ?? 'unknown'}, topicId=${body.topicId ?? 'unknown'}, thread=${platformThreadId}, sender=${body.senderExternalUserId ?? 'unknown'}, delivery=${deliveryPath}): ${describePlatformError(error)}`,
+        );
+        throw error;
+      }
       await this.clearStepReaction(body, client, platform);
       // Clear the active thread tracker so the thread can accept new messages.
       // In queue mode, the bridge handler's finally block skips this cleanup
@@ -415,14 +426,14 @@ export class BotCallbackService {
 
       const toolErrors = await messageModel.findRecentToolErrorsInTopic(topicId);
       if (toolErrors.length === 0) {
-        return '本轮未能生成有效回复（工具调用异常或模型空输出）。请缩短问题后重试，或到 Web 打开同一话题查看中间结果。';
+        return '本轮未能生成有效回复（工具调用异常或模型空输出）。请缩短问题后重新发送。';
       }
       const unique = [...new Set(toolErrors)].slice(0, 3);
       return [
         '本轮未能生成完整回复，工具侧出现错误：',
         ...unique.map((e) => `- ${e}`),
         '',
-        '建议：缩小领星查询日期窗口（单次≤90天）、确认 MCP 已 activate 后重试；或到 Web 查看该话题。',
+        '建议：缩小领星查询日期窗口（单次≤90天）、确认 MCP 已 activate 后重新发送问题。',
       ].join('\n');
     } catch (error) {
       log('recoverBotReplyContent failed (non-fatal): %O', error);
@@ -542,7 +553,10 @@ export class BotCallbackService {
       const msgBody = renderFinalReply(replyText!);
       const formattedBody = client.formatMarkdown?.(msgBody) ?? msgBody;
       const finalText = client.formatReply?.(formattedBody, stats) ?? formattedBody;
-      chunks = splitMessage(finalText, charLimit);
+      const effectiveCharLimit = body.platformThreadId.startsWith('dingtalk:')
+        ? (charLimit ?? DINGTALK_MARKDOWN_CHAR_LIMIT)
+        : charLimit;
+      chunks = splitMessage(finalText, effectiveCharLimit);
       if (chunks.length === 0) {
         log('handleCompletion: all chunks empty after formatting, skipping send');
         // Even with no text we still want to deliver the attachments.

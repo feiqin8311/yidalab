@@ -2,6 +2,7 @@ import type { AgentEvent, BlobStore } from '@lobechat/agent-runtime';
 import { ToolNameResolver } from '@lobechat/context-engine';
 import type { ChatMethodOptions, ModelRuntime } from '@lobechat/model-runtime';
 import { ModelEmptyError } from '@lobechat/model-runtime';
+import { RequestTrigger } from '@lobechat/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RuntimeExecutorContext } from '../context';
@@ -46,6 +47,7 @@ const resolved = {
 const createAttempt = (
   runCallbacks: (options: ChatMethodOptions) => Promise<void>,
   blobStore?: BlobStore,
+  trigger: unknown = 'user',
 ) => {
   const publishStreamChunk = vi.fn().mockResolvedValue('event-1');
   const streamManager = {
@@ -87,7 +89,7 @@ const createAttempt = (
     provider: 'test-provider',
     resolved,
     topicId: 'topic-1',
-    trigger: 'user',
+    trigger,
   });
 
   return { attempt, chat, events, onFirstChunk, publishStreamChunk };
@@ -199,9 +201,40 @@ describe('ServerCallLlmAttempt', () => {
     const pending = attempt.execute();
     const expectation = expect(pending).rejects.toMatchObject({
       kind: 'first_chunk',
+      message: 'LLM_FIRST_CHUNK_TIMEOUT: no first byte after 90000ms',
       name: 'LLMStreamTimeoutError',
     });
     await vi.advanceTimersByTimeAsync(90_000);
+    await expectation;
+    expect(chat).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('allows bot operations more time to receive the first model chunk', async () => {
+    vi.useFakeTimers();
+    const { attempt, chat } = createAttempt(
+      async () => {
+        await new Promise(() => {});
+      },
+      undefined,
+      RequestTrigger.Bot,
+    );
+
+    let settled = false;
+    const pending = attempt.execute().catch((error: unknown) => {
+      settled = true;
+      throw error;
+    });
+    const expectation = expect(pending).rejects.toMatchObject({
+      kind: 'first_chunk',
+      message: 'LLM_FIRST_CHUNK_TIMEOUT: no first byte after 150000ms',
+      name: 'LLMStreamTimeoutError',
+    });
+
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(60_000);
     await expectation;
     expect(chat).toHaveBeenCalledTimes(1);
     vi.useRealTimers();

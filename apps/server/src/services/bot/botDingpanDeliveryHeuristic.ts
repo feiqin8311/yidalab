@@ -20,7 +20,7 @@ export const shouldEnsureDingpanForBotReply = (reply: string): boolean => {
 };
 
 const PURE_PROGRESS_FALLBACK =
-  '本轮模型陷入重复进度/规划文案（未完成工具调用或未上传报告）。请重试，或到 Web 打开同一话题查看中间结果。';
+  '本轮模型陷入重复进度/规划文案，未完成工具调用或报告上传。请缩小问题范围后重新发送。';
 
 /** Upload fake progress */
 const UPLOAD_PROGRESS_RE = /正在上传|上传中|正在生成 HTML|上传钉盘|uploadHtml/i;

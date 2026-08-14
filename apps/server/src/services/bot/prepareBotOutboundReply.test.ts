@@ -171,7 +171,10 @@ describe('prepareBotOutboundReply operation isolation', () => {
       userId: 'user_1',
     });
 
-    expect(out).toMatch(/未能上传钉盘报告/);
+    expect(out).toMatch(/钉盘报告上传失败/);
+    expect(out).toMatch(/分析结果已在当前会话完整返回/);
+    expect(out).not.toMatch(/重试上传/);
+    expect(out).not.toMatch(/Web/);
     expect(out).not.toMatch(/qr\.dingtalk\.com/);
   });
 

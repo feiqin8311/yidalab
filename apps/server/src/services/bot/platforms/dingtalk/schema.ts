@@ -9,6 +9,7 @@ import {
   watchKeywordsField,
 } from '../const';
 import type { FieldSchema } from '../types';
+import { DINGTALK_MARKDOWN_CHAR_LIMIT } from './const';
 
 export const schema: FieldSchema[] = [
   {
@@ -38,6 +39,15 @@ export const schema: FieldSchema[] = [
     type: 'object',
     properties: [
       makeUserIdField('dingtalk'),
+      {
+        key: 'charLimit',
+        default: DINGTALK_MARKDOWN_CHAR_LIMIT,
+        description: 'channel.charLimitHint',
+        label: 'channel.charLimit',
+        maximum: DINGTALK_MARKDOWN_CHAR_LIMIT,
+        minimum: 100,
+        type: 'number',
+      },
       {
         key: 'concurrency',
         default: 'queue',
