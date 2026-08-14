@@ -10,6 +10,7 @@ vi.mock('./api', async (importOriginal) => {
 
 const { createDingTalkAICard, resolveDingTalkAICardTemplateId, updateDingTalkAICard } =
   await import('./aiCard');
+const { DINGTALK_REQUEST_TIMEOUT_MS } = await import('./const');
 
 const config = {
   clientId: 'robot-app',
@@ -27,6 +28,7 @@ describe('DingTalk AI Card API', () => {
   });
 
   it('creates and delivers a streaming card to the invoking user', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
     const fetch = vi.fn().mockResolvedValue(new Response('{}'));
     vi.stubGlobal('fetch', fetch);
 
@@ -56,6 +58,7 @@ describe('DingTalk AI Card API', () => {
     expect(fetch.mock.calls[0][1].headers).toEqual(
       expect.objectContaining({ 'x-acs-dingtalk-access-token': 'access-token' }),
     );
+    expect(timeout).toHaveBeenCalledWith(DINGTALK_REQUEST_TIMEOUT_MS);
   });
 
   it('finalizes streaming content and marks the card flow finished', async () => {

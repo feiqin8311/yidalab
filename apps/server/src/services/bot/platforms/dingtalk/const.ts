@@ -1,6 +1,9 @@
 /** Conservative per-message limit for DingTalk Markdown robot messages. */
 export const DINGTALK_MARKDOWN_CHAR_LIMIT = 3500;
 
+/** Bound every DingTalk control-plane or delivery HTTP request. */
+export const DINGTALK_REQUEST_TIMEOUT_MS = 30_000;
+
 /** Keep proactive DM routing metadata long enough to outlive session webhooks. */
 export const DINGTALK_DELIVERY_TARGET_TTL_SECONDS = 30 * 24 * 60 * 60;
 

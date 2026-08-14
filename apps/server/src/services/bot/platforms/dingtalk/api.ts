@@ -1,6 +1,8 @@
 import { pickTrimmedString, toRecord } from '@lobechat/utils/object';
 import debug from 'debug';
 
+import { DINGTALK_REQUEST_TIMEOUT_MS } from './const';
+
 const log = debug('bot-platform:dingtalk:api');
 
 const TOKEN_URL = 'https://api.dingtalk.com/v1.0/oauth2/accessToken';
@@ -71,6 +73,7 @@ export async function getDingTalkAccessToken(
         body: JSON.stringify({ appKey: clientId, appSecret: clientSecret }),
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
+        signal: AbortSignal.timeout(DINGTALK_REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
       if (attempt === TOKEN_FETCH_MAX_ATTEMPTS) throw error;
@@ -150,6 +153,7 @@ export async function sendDingTalkRobotMarkdown(params: {
       'x-acs-dingtalk-access-token': token,
     },
     method: 'POST',
+    signal: AbortSignal.timeout(DINGTALK_REQUEST_TIMEOUT_MS),
   });
   const detail = await response.text().catch(() => '');
   if (!response.ok) {
@@ -232,6 +236,7 @@ export async function dingTalkMessageEmotion(params: {
       'x-acs-dingtalk-access-token': token,
     },
     method: 'POST',
+    signal: AbortSignal.timeout(DINGTALK_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {

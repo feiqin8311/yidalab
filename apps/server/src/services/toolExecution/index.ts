@@ -1,9 +1,10 @@
-import { type ChatToolPayload } from '@lobechat/types';
+import type { ChatToolPayload } from '@lobechat/types';
 import { safeParseJSON } from '@lobechat/utils';
+import { toRecord } from '@lobechat/utils/object';
 import debug from 'debug';
 
 import { ConnectorToolPermission } from '@/database/schemas';
-import { type CloudMCPParams, type StdioMCPParams, type ToolCallContent } from '@/libs/mcp';
+import type { CloudMCPParams, StdioMCPParams, ToolCallContent } from '@/libs/mcp';
 import {
   buildBlockedToolResponse,
   getConnectorToolPermission,
@@ -16,8 +17,8 @@ import {
 } from '@/server/utils/truncateToolResult';
 
 import { DiscoverService } from '../discover';
-import { type MCPService } from '../mcp';
-import { type BuiltinToolsExecutor } from './builtin';
+import type { MCPService } from '../mcp';
+import type { BuiltinToolsExecutor } from './builtin';
 import { classifyToolError } from './errorClassification';
 import {
   type ToolExecutionContext,
@@ -26,6 +27,8 @@ import {
 } from './types';
 
 const log = debug('lobe-server:tool-execution-service');
+
+const isMcpErrorResult = (result: unknown): boolean => toRecord(result)?.isError === true;
 
 interface ToolExecutionServiceDeps {
   builtinToolsExecutor: BuiltinToolsExecutor;
@@ -262,14 +265,14 @@ export class ToolExecutionService {
         return {
           content,
           state: envelope.state && typeof envelope.state === 'object' ? envelope.state : undefined,
-          success: envelope.success !== false,
+          success: envelope.success !== false && !isMcpErrorResult(envelope.state),
         };
       }
 
       return {
         content: typeof result === 'string' ? result : JSON.stringify(result),
-        state: typeof result === 'object' ? (result as Record<string, any>) : undefined,
-        success: true,
+        state: typeof result === 'object' ? (result as Record<string, unknown>) : undefined,
+        success: !isMcpErrorResult(result),
       };
     } catch (error) {
       log('MCP tool execution failed for %s:%s: %O', identifier, apiName, error);
@@ -322,7 +325,7 @@ export class ToolExecutionService {
       context.executionTimeoutMs,
     );
 
-    if (!result.success) {
+    if (!result.success || isMcpErrorResult(result.state)) {
       return {
         content: result.content,
         error: {
@@ -378,7 +381,7 @@ export class ToolExecutionService {
       return {
         content,
         state,
-        success: !cloudResult?.isError,
+        success: !isMcpErrorResult(cloudResult),
       };
     } catch (error) {
       log('Cloud MCP tool execution failed for %s:%s: %O', identifier, apiName, error);

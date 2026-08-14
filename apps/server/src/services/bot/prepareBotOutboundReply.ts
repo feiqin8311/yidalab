@@ -11,7 +11,8 @@
  * Never fall back to topic history (cross-turn report contamination).
  */
 
-import { type DeliveryClaimMessage, extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
+import type { DeliveryClaimMessage } from '@lobechat/agent-runtime';
+import { extractDingpanUploadOutcomes } from '@lobechat/agent-runtime';
 
 import { AgentOperationModel } from '@/database/models/agentOperation';
 import { MessageModel } from '@/database/models/message';
@@ -53,6 +54,16 @@ const scrubUntrustedDingpanUrls = (text: string, allowed?: string): string => {
     .replaceAll(/钉盘报告：\s*$/gm, '')
     .trim();
 };
+
+/** Remove a model-authored upload failure claim once the system fallback succeeds. */
+const scrubSupersededDingpanFailure = (text: string): string =>
+  text
+    .replaceAll(/本轮未能成功生成并上传[^。！？\n]*(?:[。！？]|$)/g, '')
+    .replaceAll(/本轮钉盘报告上传失败[^。！？\n]*(?:[。！？]|$)/g, '')
+    .replaceAll(/(?:因此|所以)?没有可用的钉盘链接[^。！？\n]*(?:[。！？]|$)/g, '')
+    .replaceAll(/无法提供钉盘链接[^。！？\n]*(?:[。！？]|$)/g, '')
+    .replaceAll(/\n{3,}/g, '\n\n')
+    .trim();
 
 /**
  * Keep a short plain-text relay for channels that cannot carry the full answer.
@@ -206,7 +217,7 @@ export async function prepareBotOutboundReply(params: {
         workspaceId,
       });
       if (ensured.previewUrl) {
-        reply = `${reply.trim()}\n\n钉盘报告：\n${ensured.previewUrl}`;
+        reply = `${scrubSupersededDingpanFailure(reply)}\n\n钉盘报告：\n${ensured.previewUrl}`;
         return prepareRelayText(reply);
       }
       if (

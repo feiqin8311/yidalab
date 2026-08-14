@@ -155,6 +155,23 @@ describe('prepareBotOutboundReply operation isolation', () => {
     expect(out).toContain(urlA);
   });
 
+  it('removes a superseded upload failure claim when system fallback succeeds', async () => {
+    shouldEnsureDingpanForBotReply.mockReturnValue(true);
+    ensureDingpanDeliverable.mockResolvedValue({ previewUrl: urlA, uploaded: true });
+
+    const out = await prepareBotOutboundReply({
+      db,
+      operationId: 'op_fallback_success',
+      reply: '结论：销量上涨。\n本轮未能成功生成并上传 HTML 文件，因此没有可用的钉盘链接。',
+      topicId: 'tpc_1',
+      userId: 'user_1',
+    });
+
+    expect(out).toContain('结论：销量上涨。');
+    expect(out).toContain(urlA);
+    expect(out).not.toMatch(/未能成功生成并上传|没有可用的钉盘链接/);
+  });
+
   it('never falls back to history when ensure fails', async () => {
     shouldEnsureDingpanForBotReply.mockReturnValue(true);
     findDingpanUploadsByOperation.mockResolvedValue([]);
