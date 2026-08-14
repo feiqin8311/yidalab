@@ -91,9 +91,18 @@ export const isMessageListServerVerified = (context: MessageListQueryContext, no
   return false;
 };
 
-export const getMessageListFetchPolicy = (context: MessageListQueryContext) => ({
+/**
+ * Keep a settled transcript warm across route remounts.
+ *
+ * The SWR cache is persisted to IndexedDB, but SWR considers every restored
+ * entry stale by default. Revalidating it on each conversation mount makes a
+ * user who leaves an agent and immediately comes back wait for the same
+ * transcript again. Missing cache entries still fetch normally; freshness is
+ * instead checked on focus/reconnect and by explicit refresh operations.
+ */
+export const getMessageListFetchPolicy = (_context: MessageListQueryContext) => ({
   dedupingInterval: MESSAGE_LIST_VERIFICATION_INTERVAL,
-  revalidateIfStale: !isMessageListServerVerified(context),
+  revalidateIfStale: false,
 });
 
 type MessageListQuery = (context: CanonicalMessageListContext) => Promise<UIChatMessage[]>;

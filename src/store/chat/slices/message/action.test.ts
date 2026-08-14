@@ -1475,7 +1475,7 @@ describe('chatMessage actions', () => {
       expect(options).toEqual(
         expect.objectContaining({
           dedupingInterval: expect.any(Number),
-          revalidateIfStale: true,
+          revalidateIfStale: false,
           revalidateOnFocus: false,
         }),
       );

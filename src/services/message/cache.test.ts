@@ -67,7 +67,7 @@ describe('message list client cache', () => {
     ]);
   });
 
-  it('marks only a successful server query verified for thirty seconds', async () => {
+  it('keeps a cached transcript from revalidating on route remount', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1000);
     const query = vi.fn().mockResolvedValue(messages);
     await expect(runMessageListQuery(context, query)).resolves.toBe(messages);
@@ -83,6 +83,7 @@ describe('message list client cache', () => {
     expect(
       isMessageListServerVerified(context, verifiedAt + MESSAGE_LIST_VERIFICATION_INTERVAL),
     ).toBe(false);
+    expect(getMessageListFetchPolicy(context).revalidateIfStale).toBe(false);
   });
 
   it('treats a successful empty server result as verified', async () => {
@@ -101,7 +102,7 @@ describe('message list client cache', () => {
     ).rejects.toThrow('offline');
 
     expect(isMessageListServerVerified(context)).toBe(false);
-    expect(getMessageListFetchPolicy(context).revalidateIfStale).toBe(true);
+    expect(getMessageListFetchPolicy(context).revalidateIfStale).toBe(false);
   });
 
   it('isolates verification and in-flight requests by identity cache scope', async () => {
@@ -155,7 +156,7 @@ describe('message list client cache', () => {
     invalidateMessageListClientState((candidate) => candidate.topicId === 'topic-1');
 
     expect(isMessageListServerVerified(context)).toBe(false);
-    expect(getMessageListFetchPolicy(context).revalidateIfStale).toBe(true);
+    expect(getMessageListFetchPolicy(context).revalidateIfStale).toBe(false);
   });
 
   it('routes an invalidated in-flight caller through the current generation', async () => {
