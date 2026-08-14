@@ -19,6 +19,7 @@ import type {
 } from '../types';
 import { applyDingpanDeliveryClaimGuard } from '../utils/deliveryClaimGuard';
 import { applyMcpAvailabilityClaimGuard } from '../utils/mcpAvailabilityClaimGuard';
+import { ACTIVE_MODEL_CANDIDATE_METADATA_KEY } from '../utils/modelFailover';
 import { applyMaxTotalTokensBrake } from '../utils/runBrakes';
 
 export const VISIBLE_OUTPUT_END_PUBLISHED_STEP_INDEX_METADATA_KEY =
@@ -139,9 +140,14 @@ const resolveGuardedPlainContent = ({
 const persistFinalMessage = async ({
   assistantMessageId,
   host,
+  model,
   output,
+  provider,
   state,
-}: Pick<FinalizeCallLlmTurnInput, 'assistantMessageId' | 'host' | 'output' | 'state'>) => {
+}: Pick<
+  FinalizeCallLlmTurnInput,
+  'assistantMessageId' | 'host' | 'model' | 'output' | 'provider' | 'state'
+>) => {
   const guardedPlain = resolveGuardedPlainContent({ output, state });
   const persistedContent = output.hasContentImages
     ? serializePartsForStorage(output.contentParts)
@@ -159,6 +165,8 @@ const persistFinalMessage = async ({
       content: persistedContent,
       imageList: output.imageList.length > 0 ? output.imageList : undefined,
       metadata,
+      model,
+      provider,
       reasoning: finalReasoning,
       search: output.grounding,
       tools: sanitizePersistedTools(output.toolsCalling),
@@ -188,6 +196,10 @@ const buildFinalState = ({
   visibleOutputEndPublishedStepIndex?: number;
 }): AgentState => {
   const newState = structuredClone(state);
+  newState.metadata = {
+    ...newState.metadata,
+    [ACTIVE_MODEL_CANDIDATE_METADATA_KEY]: { model, provider },
+  };
   newState.messages.push({
     content: finalContent,
     id: assistantMessageId,
@@ -286,7 +298,9 @@ export const finalizeCallLlmTurn = async ({
   const { finalContent, finalReasoning } = await persistFinalMessage({
     assistantMessageId,
     host,
+    model,
     output: { ...output, content: guardedPlain },
+    provider,
     state,
   });
   const newState = buildFinalState({

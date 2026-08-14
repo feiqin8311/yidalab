@@ -50,6 +50,7 @@ import {
 
 import type { RuntimeExecutorContext } from '../context';
 import { buildPostProcessUrl, log, resolveRuntimeHistoryCount } from '../executorHelpers';
+import { getOperationCached } from '../operationCache';
 import {
   resolveServerCallLlmContextHints,
   type ServerCallLlmContextHints,
@@ -110,16 +111,16 @@ export const buildServerCallLlmContext = async ({
   // Extract <refer_topic> tags from messages and fetch summaries.
   // Skip if messages already contain injected topic_reference_context
   // (e.g., from client-side contextEngineering preprocessing) to avoid double injection.
-  let topicReferences;
   const alreadyHasTopicRefs = (messagesForContext as Array<{ content: string | unknown }>).some(
     (message) =>
       typeof message.content === 'string' && message.content.includes('topic_reference_context'),
   );
 
-  if (!alreadyHasTopicRefs && ctx.serverDB && ctx.userId) {
+  const topicReferencesPromise = (async () => {
+    if (alreadyHasTopicRefs || !ctx.serverDB || !ctx.userId) return;
     const topicModel = new TopicModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
     const messageModel = new MessageModelClass(ctx.serverDB, ctx.userId, ctx.workspaceId);
-    topicReferences = await resolveTopicReferences(
+    return resolveTopicReferences(
       messagesForContext as Array<{ content: string | unknown }>,
       async (topicId) => topicModel.findById(topicId),
       async (topicId) => {
@@ -134,12 +135,17 @@ export const buildServerCallLlmContext = async ({
         );
       },
     );
-  }
+  })();
 
   // Fetch agent documents for context injection.
-  let agentDocuments: AgentContextDocument[] | undefined;
   const agentId = state.metadata?.agentId;
-  if (agentId && ctx.serverDB && ctx.userId) {
+  let allPluginsPromise: ReturnType<PluginModel['query']> | undefined;
+  const loadAllPlugins = () => {
+    allPluginsPromise ??= new PluginModel(ctx.serverDB, ctx.userId!, ctx.workspaceId).query();
+    return allPluginsPromise;
+  };
+  const agentDocumentsPromise = (async (): Promise<AgentContextDocument[] | undefined> => {
+    if (!agentId || !ctx.serverDB || !ctx.userId) return;
     try {
       const agentDocService = new AgentDocumentsService(
         ctx.serverDB,
@@ -148,19 +154,17 @@ export const buildServerCallLlmContext = async ({
       );
       const docs = await agentDocService.getAgentContextDocuments(agentId);
       if (docs.length > 0) {
-        agentDocuments = filterAgentContextDocumentsBySelection(
+        return filterAgentContextDocumentsBySelection(
           toAgentContextDocuments(docs),
           agentConfig?.chatConfig?.enabledAgentDocumentIds,
         );
-        log('Resolved %d agent documents for agent %s', agentDocuments.length, agentId);
       }
     } catch (error) {
       log('Failed to resolve agent documents for agent %s: %O', agentId, error);
     }
-  }
+  })();
 
   // Detect onboarding agent and build context injection.
-  let onboardingContext: OnboardingContext | undefined;
   const isOnboardingAgent =
     agentConfig?.slug === 'web-onboarding' ||
     resolved.enabledToolIds.includes('lobe-web-onboarding');
@@ -176,7 +180,8 @@ export const buildServerCallLlmContext = async ({
     );
   });
 
-  if (isOnboardingAgent && !alreadyHasOnboardingContext && ctx.serverDB && ctx.userId) {
+  const onboardingContextPromise = (async (): Promise<OnboardingContext | undefined> => {
+    if (!isOnboardingAgent || alreadyHasOnboardingContext || !ctx.serverDB || !ctx.userId) return;
     try {
       const { formatWebOnboardingStateMessage } =
         await import('@lobechat/builtin-tool-web-onboarding/utils');
@@ -209,7 +214,7 @@ export const buildServerCallLlmContext = async ({
         }),
       ]);
 
-      onboardingContext = {
+      const onboardingContext = {
         discoveryUserMessageCount: onboardingState.discoveryUserMessageCount,
         personaContent: persona?.persona ?? null,
         phaseGuidance: formatWebOnboardingStateMessage(onboardingState),
@@ -218,10 +223,11 @@ export const buildServerCallLlmContext = async ({
         userInfo,
       };
       log('Built onboarding context for agent %s, phase: %s', agentId, onboardingState.phase);
+      return onboardingContext;
     } catch (error) {
       log('Failed to build onboarding context: %O', error);
     }
-  }
+  })();
 
   // Build additional placeholder variables for the lobehub builtin skill
   // (`packages/builtin-skills/src/lobehub/content.ts`) so it can render
@@ -232,52 +238,51 @@ export const buildServerCallLlmContext = async ({
   const lobehubSkillAgentMeta = state.metadata?.agentConfig as
     { description?: string | null; title?: string | null } | undefined;
 
-  let lobehubSkillTopicTitle = '';
-  if (lobehubSkillTopicId && ctx.serverDB && ctx.userId) {
+  const lobehubSkillTopicTitlePromise = (async () => {
+    if (!lobehubSkillTopicId || !ctx.serverDB || !ctx.userId) return '';
     try {
       const topicModelForLobehub = new TopicModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
-      const topicRecord = await topicModelForLobehub.findById(lobehubSkillTopicId);
-      lobehubSkillTopicTitle = topicRecord?.title ?? '';
+      const topicRecord = await getOperationCached(ctx, `topic:${lobehubSkillTopicId}`, () =>
+        topicModelForLobehub.findById(lobehubSkillTopicId),
+      );
+      return topicRecord?.title ?? '';
     } catch (error) {
       log('Failed to load topic title for lobehub skill placeholders: %O', error);
+      return '';
     }
-  }
-
-  const lobehubSkillVariables: Record<string, string> = {
-    agent_description: lobehubSkillAgentMeta?.description ?? '',
-    agent_id: lobehubSkillAgentId ?? '',
-    agent_title: lobehubSkillAgentMeta?.title ?? '',
-    topic_id: lobehubSkillTopicId ?? '',
-    topic_title: lobehubSkillTopicTitle,
-  };
+  })();
 
   // Tool-specific template variable resolution. The client-side
   // contextEngineering.ts resolves these via Zustand stores and lambdaClient.
   // In execAgent (server/bot) mode we must fetch from DB directly.
-  let serverUsername = '';
-  let serverLanguage = '';
-  if (ctx.serverDB && ctx.userId) {
+  const serverUserInfoPromise = (async () => {
+    if (!ctx.serverDB || !ctx.userId) return { language: '', username: '' };
     try {
-      const userInfo = await UserModel.getInfoForAIGeneration(ctx.serverDB, ctx.userId);
-      serverUsername = userInfo.userName;
-      serverLanguage = userInfo.responseLanguage;
+      const userInfo = await getOperationCached(ctx, 'user:generation-info', () =>
+        UserModel.getInfoForAIGeneration(ctx.serverDB, ctx.userId!),
+      );
+      return { language: userInfo.responseLanguage, username: userInfo.userName };
     } catch (error) {
       log('Failed to fetch user info for {{username}}/{{language}} substitution: %O', error);
+      return { language: '', username: '' };
     }
-  }
+  })();
 
   const sandboxEnabled = String(resolved.enabledToolIds.includes('lobe-cloud-sandbox'));
-  let sandboxUploadedFiles = '';
-  if (sandboxEnabled === 'true' && ctx.serverDB && ctx.userId && lobehubSkillTopicId) {
+  const sandboxUploadedFilesPromise = (async () => {
+    if (sandboxEnabled !== 'true' || !ctx.serverDB || !ctx.userId || !lobehubSkillTopicId) {
+      return '';
+    }
     try {
       const { formatUploadedFilesPrompt } = await import('@lobechat/builtin-tool-cloud-sandbox');
       const fileModel = new FileModel(ctx.serverDB, ctx.userId);
       const uploadedFiles = await fileModel.findFilesToInitInSandbox(lobehubSkillTopicId);
-      sandboxUploadedFiles = formatUploadedFilesPrompt(uploadedFiles);
+      return formatUploadedFilesPrompt(uploadedFiles);
     } catch (error) {
       log('Failed to resolve files for {{sandbox_uploaded_files}} substitution: %O', error);
+      return '';
     }
-  }
+  })();
 
   const sessionDate = new Intl.DateTimeFormat('en-US', {
     day: 'numeric',
@@ -291,8 +296,8 @@ export const buildServerCallLlmContext = async ({
     (state.metadata?.agentConfig as any)?.chatConfig?.memory?.effort ?? '',
   );
 
-  let credsListStr = '';
-  if (ctx.userId) {
+  const credsListPromise = (async () => {
+    if (!ctx.userId) return '';
     try {
       const marketService = new MarketService({ userInfo: { userId: ctx.userId } });
       // Inside a workspace, the agent must only see the workspace's shared
@@ -301,7 +306,7 @@ export const buildServerCallLlmContext = async ({
         ? await marketService.market.organizations.creds({ workspaceId: ctx.workspaceId }).list()
         : await marketService.market.creds.list();
       const userCreds = (credsResult as any)?.data ?? [];
-      credsListStr = generateCredsList(
+      const credsList = generateCredsList(
         userCreds.map((cred: any): CredSummary => ({
           description: cred.description,
           key: cred.key,
@@ -312,16 +317,17 @@ export const buildServerCallLlmContext = async ({
         })),
       );
       log('Fetched %d creds for {{CREDS_LIST}} substitution', userCreds.length);
+      return credsList;
     } catch (error) {
       log('Failed to fetch creds for {{CREDS_LIST}} substitution: %O', error);
+      return '';
     }
-  }
+  })();
 
-  let composioServicesListStr = '';
-  if (ctx.serverDB && ctx.userId && !!composioEnv.COMPOSIO_API_KEY) {
+  const composioServicesListPromise = (async () => {
+    if (!ctx.serverDB || !ctx.userId || !composioEnv.COMPOSIO_API_KEY) return '';
     try {
-      const pluginModel = new PluginModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
-      const allPlugins = await pluginModel.query();
+      const allPlugins = await loadAllPlugins();
       const validComposioIds = new Set(COMPOSIO_APP_TYPES.map((tool) => tool.identifier));
       const connectedIds = new Set(
         allPlugins
@@ -349,23 +355,25 @@ export const buildServerCallLlmContext = async ({
         connectedIds,
         disabledIdSet,
       );
-      composioServicesListStr = generateComposioServicesList(connected, available);
+      const composioServicesList = generateComposioServicesList(connected, available);
       log(
         'Fetched Composio services for {{COMPOSIO_SERVICES_LIST}}: connected=%d, available=%d',
         connected.length,
         available.length,
       );
+      return composioServicesList;
     } catch (error) {
       log(
         'Failed to fetch Composio services for {{COMPOSIO_SERVICES_LIST}} substitution: %O',
         error,
       );
+      return '';
     }
-  }
+  })();
 
-  let agentBuilderContext: AgentBuilderContext | undefined;
   const editingAgentId = state.metadata?.editingAgentId;
-  if (editingAgentId && ctx.serverDB && ctx.userId) {
+  const agentBuilderContextPromise = (async (): Promise<AgentBuilderContext | undefined> => {
+    if (!editingAgentId || !ctx.serverDB || !ctx.userId) return;
     try {
       const editingAgentModel = new AgentModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
       const editingConfig = (await editingAgentModel.getAgentConfigById(editingAgentId)) as Record<
@@ -394,8 +402,7 @@ export const buildServerCallLlmContext = async ({
 
         if (composioEnv.COMPOSIO_API_KEY) {
           try {
-            const pluginModel = new PluginModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
-            const allPlugins = await pluginModel.query();
+            const allPlugins = await loadAllPlugins();
             const connectedComposioIds = new Set(
               allPlugins
                 .filter(
@@ -420,7 +427,7 @@ export const buildServerCallLlmContext = async ({
           }
         }
 
-        agentBuilderContext = {
+        return {
           config: {
             chatConfig: editingConfig.chatConfig ?? undefined,
             model: editingConfig.model ?? undefined,
@@ -444,7 +451,38 @@ export const buildServerCallLlmContext = async ({
     } catch (error) {
       log('Failed to build agentBuilderContext for editing agent %s: %O', editingAgentId, error);
     }
-  }
+  })();
+
+  const [
+    topicReferences,
+    agentDocuments,
+    onboardingContext,
+    lobehubSkillTopicTitle,
+    serverUserInfo,
+    sandboxUploadedFiles,
+    credsListStr,
+    composioServicesListStr,
+    agentBuilderContext,
+  ] = await Promise.all([
+    topicReferencesPromise,
+    agentDocumentsPromise,
+    onboardingContextPromise,
+    lobehubSkillTopicTitlePromise,
+    serverUserInfoPromise,
+    sandboxUploadedFilesPromise,
+    credsListPromise,
+    composioServicesListPromise,
+    agentBuilderContextPromise,
+  ]);
+  const lobehubSkillVariables: Record<string, string> = {
+    agent_description: lobehubSkillAgentMeta?.description ?? '',
+    agent_id: lobehubSkillAgentId ?? '',
+    agent_title: lobehubSkillAgentMeta?.title ?? '',
+    topic_id: lobehubSkillTopicId ?? '',
+    topic_title: lobehubSkillTopicTitle,
+  };
+  const serverLanguage = serverUserInfo.language;
+  const serverUsername = serverUserInfo.username;
 
   const contextEngineInput = {
     agentDocuments,

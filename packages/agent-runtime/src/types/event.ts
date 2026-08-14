@@ -32,6 +32,19 @@ export interface AgentEventStreamRetry {
   type: 'stream_retry';
 }
 
+export interface AgentEventModelFailover {
+  data: {
+    attempt: number;
+    candidateIndex: number;
+    errorType?: string;
+    from: { model: string; provider: string };
+    reason: string;
+    to: { model: string; provider: string };
+    totalCandidates: number;
+  };
+  type: 'model_failover';
+}
+
 export interface AgentEventToolPending {
   toolCalls: ToolsCalling[];
   type: 'tool_pending';
@@ -132,6 +145,7 @@ export type AgentEvent =
   | AgentEventLlmStream
   | AgentEventLlmResult
   | AgentEventStreamRetry
+  | AgentEventModelFailover
   // Tool invocation
   | AgentEventToolPending
   | AgentEventToolResult

@@ -146,6 +146,26 @@ describe('createGatewayEventHandler', () => {
     expect(store.replaceMessages).toHaveBeenCalledWith([], { context });
   });
 
+  it('refreshes an adjusted tool result after its initial incremental completion', async () => {
+    const getMessages = vi
+      .spyOn(messageService, 'getMessages')
+      .mockResolvedValue([] as unknown as UIChatMessage[]);
+    const store = createStore();
+    const handler = createGatewayEventHandler(() => store, {
+      assistantMessageId: 'seed-msg',
+      context,
+      operationId: 'op-1',
+    });
+
+    handler(makeEvent('tool_end', { isSuccess: true }));
+    await flush();
+    expect(getMessages).toHaveBeenCalledTimes(1);
+
+    handler(makeEvent('tool_result_committed', { toolCallId: 'call-1' }));
+    await flush();
+    expect(getMessages).toHaveBeenCalledTimes(2);
+  });
+
   it('skips hetero execution_complete DB refetch when frontend state is the snapshot', async () => {
     const getMessages = vi
       .spyOn(messageService, 'getMessages')
@@ -398,5 +418,49 @@ describe('createGatewayEventHandler', () => {
     await flush();
 
     expect(lifecycle.afterRunComplete).not.toHaveBeenCalled();
+  });
+
+  it('resets partial output and exposes the active candidate during model failover', async () => {
+    const store = createStore();
+    const handler = createGatewayEventHandler(() => store, {
+      assistantMessageId: 'answer-msg',
+      context,
+      operationId: 'op-1',
+    });
+
+    handler(makeEvent('stream_chunk', { chunkType: 'text', content: 'partial answer' }));
+    handler(
+      makeEvent('model_failover', {
+        attempt: 1,
+        candidateIndex: 1,
+        from: { model: 'gpt-5', provider: 'openai' },
+        reason: 'rate limit exceeded',
+        to: { model: 'claude-sonnet-4', provider: 'anthropic' },
+        totalCandidates: 2,
+      }),
+    );
+    await flush();
+
+    expect(store.updateOperationMetadata).toHaveBeenCalledWith('op-1', {
+      modelFailover: {
+        from: { model: 'gpt-5', provider: 'openai' },
+        reason: 'rate limit exceeded',
+        to: { model: 'claude-sonnet-4', provider: 'anthropic' },
+      },
+    });
+    expect(store.internal_dispatchMessage).toHaveBeenLastCalledWith(
+      {
+        id: 'answer-msg',
+        type: 'updateMessage',
+        value: {
+          content: '',
+          model: 'claude-sonnet-4',
+          provider: 'anthropic',
+          reasoning: undefined,
+          tools: undefined,
+        },
+      },
+      { operationId: 'op-1' },
+    );
   });
 });

@@ -17,6 +17,8 @@ export interface ContextBuildInput {
 }
 
 export interface ContextBuildOutput {
+  /** Wall-clock time spent preparing the provider context for this turn. */
+  buildDurationMs?: number;
   /** Adapter-native prepared messages; kept in-memory and out of serialized state. */
   messages: unknown[];
   /** Adapter-native model extension parameters consumed by the LLM transport. */

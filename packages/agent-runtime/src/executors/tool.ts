@@ -562,11 +562,14 @@ export const callToolsBatch =
       executionResult: ToolRunResult;
       runContext: ToolRunContext;
       tool: ChatToolPayload;
+      toolMessageId: string;
     };
-    const pending: PendingBatch[] = [];
+    const pendingSlots: Array<PendingBatch | undefined> = Array.from({
+      length: toolsToExecute.length,
+    });
 
     await Promise.all(
-      toolsToExecute.map(async (rawTool) => {
+      toolsToExecute.map(async (rawTool, index) => {
         const tool = scrubDingpanHtmlToolArgs(rawTool, state);
         const runContext = createRunContext({ host, mode: 'batch', parentMessageId, state, tool });
 
@@ -584,11 +587,33 @@ export const callToolsBatch =
             return;
           }
 
-          pending.push({
+          const toolMessage = await createToolMessage({
+            host,
+            parentMessageId,
+            result: execution.result,
+            state,
+            tool,
+          });
+          pendingSlots[index] = {
             attempts: execution.attempts,
             executionResult: execution.result,
             runContext,
             tool,
+            toolMessageId: toolMessage.id,
+          };
+
+          await host.transports.stream.publishEvent({
+            data: {
+              attempts: execution.attempts,
+              executionTime: execution.result.executionTime ?? 0,
+              isSuccess: execution.result.success,
+              maxAttempts: (tools.maxRetries ?? DEFAULT_TOOL_MAX_RETRIES) + 1,
+              payload: { parentMessageId, toolCalling: tool },
+              phase: TOOL_EXECUTION_PHASE,
+              result: execution.result,
+            },
+            stepIndex: host.operation.stepIndex,
+            type: 'tool_end',
           });
         } catch (error) {
           if (isPersistFatal(error)) throw error;
@@ -600,6 +625,7 @@ export const callToolsBatch =
         }
       }),
     );
+    const pending = pendingSlots.filter((item): item is PendingBatch => item !== undefined);
 
     // Round budget: only when run has an explicit contextPolicy (context_budget_v2 /
     // ops). Flag-off paths must not reshape all agents via default 20k.
@@ -623,7 +649,7 @@ export const callToolsBatch =
           }));
 
     for (let i = 0; i < pending.length; i++) {
-      const { attempts, executionResult, runContext, tool } = pending[i];
+      const { executionResult, runContext, tool, toolMessageId } = pending[i];
       const adjusted = reshaped[i];
       const finalResult: ToolRunResult =
         adjusted.reshaped && adjusted.content !== executionResult.content
@@ -633,28 +659,22 @@ export const callToolsBatch =
       const executionTime = finalResult.executionTime ?? 0;
       const isSuccess = finalResult.success;
 
-      await host.transports.stream.publishEvent({
-        data: {
-          attempts,
-          executionTime,
-          isSuccess,
-          maxAttempts: (tools.maxRetries ?? DEFAULT_TOOL_MAX_RETRIES) + 1,
-          payload: { parentMessageId, toolCalling: tool },
-          phase: TOOL_EXECUTION_PHASE,
-          result: finalResult,
-        },
-        stepIndex: host.operation.stepIndex,
-        type: 'tool_end',
-      });
+      toolMessageIds.push(toolMessageId);
 
-      const toolMessage = await createToolMessage({
-        host,
-        parentMessageId,
-        result: finalResult,
-        state,
-        tool,
-      });
-      toolMessageIds.push(toolMessage.id);
+      if (finalResult !== executionResult) {
+        await updateExistingToolMessage({ host, result: finalResult, tool, toolMessageId });
+        await host.transports.stream.publishEvent({
+          data: {
+            isSuccess,
+            payload: { parentMessageId, toolCalling: tool },
+            result: finalResult,
+            toolCallId: tool.id,
+            toolMessageId,
+          },
+          stepIndex: host.operation.stepIndex,
+          type: 'tool_result_committed',
+        });
+      }
 
       const resultEntry: ToolResultEntry = {
         data: finalResult,

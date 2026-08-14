@@ -235,6 +235,13 @@ export const ENGINE_EVENT_MAPPING: readonly MappingNote[] = [
   },
   {
     fidelity: 'lossy',
+    lossyFields: ['turnId', 'stepId', 'itemId', 'sequence'],
+    notes: 'Maps to item_delta with model failover metadata.',
+    source: 'model_failover',
+    target: ['item_delta'],
+  },
+  {
+    fidelity: 'lossy',
     lossyFields: ['turnId', 'stepId', 'itemId', 'sequence', 'per-call item split'],
     notes: 'One item_started(kind=tool_call) per batch; not split per tool call.',
     source: 'tool_pending',
@@ -359,6 +366,14 @@ export function mapEngineEvent(event: AgentEvent, ctx: LegacyMappingContext): Ag
         type: 'item_delta',
         meta: itemMeta(ctx, turnId, stepId),
         payload: { kind: 'unknown', delta: { retry: event.data } },
+      };
+      return [out];
+    }
+    case 'model_failover': {
+      const out: ItemDeltaEvent = {
+        type: 'item_delta',
+        meta: itemMeta(ctx, turnId, stepId),
+        payload: { kind: 'unknown', delta: { modelFailover: event.data } },
       };
       return [out];
     }
@@ -520,8 +535,10 @@ export const KNOWN_WIRE_EVENT_TYPES = [
   'stream_end',
   'visible_output_end',
   'stream_retry',
+  'model_failover',
   'tool_start',
   'tool_end',
+  'tool_result_committed',
   'tool_execute',
   'tool_result',
   'agent_intervention_request',
@@ -588,6 +605,12 @@ export const WIRE_EVENT_MAPPING: readonly MappingNote[] = [
   },
   {
     fidelity: 'unmapped',
+    notes: 'tool_result_committed is a UI persistence barrier, not an agent lifecycle event.',
+    source: 'tool_result_committed',
+    target: [],
+  },
+  {
+    fidelity: 'unmapped',
     notes:
       'visible_output_end is a producer boundary with no v1 target counterpart; drop until protocol grows a visibility event.',
     source: 'visible_output_end',
@@ -598,6 +621,13 @@ export const WIRE_EVENT_MAPPING: readonly MappingNote[] = [
     lossyFields: ['sequence', 'turnId', 'stepId'],
     notes: 'Folded into item_delta retry metadata.',
     source: 'stream_retry',
+    target: ['item_delta'],
+  },
+  {
+    fidelity: 'lossy',
+    lossyFields: ['sequence', 'turnId', 'stepId'],
+    notes: 'Folded into item_delta model failover metadata.',
+    source: 'model_failover',
     target: ['item_delta'],
   },
   {
@@ -762,6 +792,14 @@ export function mapWireEvent(
       };
       return [out];
     }
+    case 'model_failover': {
+      const out: ItemDeltaEvent = {
+        type: 'item_delta',
+        meta: itemMeta(timedCtx, turnId, stepId),
+        payload: { kind: 'unknown', delta: { modelFailover: event.data } },
+      };
+      return [out];
+    }
     case 'tool_start': {
       const out: ItemStartedEvent = {
         type: 'item_started',
@@ -839,6 +877,7 @@ export function mapWireEvent(
       return [out];
     }
     case 'visible_output_end':
+    case 'tool_result_committed':
     case 'tool_execute':
     case 'agent_intervention_response':
     case 'notify_update': {

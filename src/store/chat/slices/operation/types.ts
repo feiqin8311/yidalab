@@ -143,12 +143,15 @@ export interface OperationMetadata {
   inputEditorTempState?: any | null; // Editor state snapshot for cancel restoration
 
   inputSendErrorMsg?: string; // Error message to display in UI
+  /** The server switched this turn to a configured disaster-recovery model. */
+  modelFailover?: ModelFailoverMetadata;
   // Progress information
   progress?: {
     current: number;
     total: number;
     percentage?: number;
   };
+
   // Runtime hooks (collected during execution, executed after completion)
   runtimeHooks?: RuntimeHooks;
 
@@ -177,6 +180,12 @@ export interface StreamRetryMetadata {
   errorStatus?: number;
   maxAttempts?: number;
   provider?: string;
+}
+
+export interface ModelFailoverMetadata {
+  from: { model: string; provider: string };
+  reason?: string;
+  to: { model: string; provider: string };
 }
 
 /**

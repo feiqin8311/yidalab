@@ -7,6 +7,7 @@ export type {
   AgentStreamEvent,
   AgentStreamEventType,
   ConnectionStatus,
+  ModelFailoverData,
   StepCompleteData,
   StreamChunkData,
   StreamChunkType,

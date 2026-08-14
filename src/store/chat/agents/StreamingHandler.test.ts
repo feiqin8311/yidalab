@@ -24,7 +24,7 @@ const mockContext: StreamingContext = {
 
 describe('StreamingHandler', () => {
   describe('handleChunk - text', () => {
-    it('should accumulate text output', () => {
+    it('should publish the first text immediately and coalesce later chunks', async () => {
       const callbacks = createMockCallbacks();
       const handler = new StreamingHandler(mockContext, callbacks);
 
@@ -32,7 +32,12 @@ describe('StreamingHandler', () => {
       handler.handleChunk({ type: 'text', text: 'World' });
 
       expect(handler.getOutput()).toBe('Hello World');
+      expect(callbacks.onContentUpdate).toHaveBeenCalledTimes(1);
+
+      await handler.handleFinish({ type: 'stop' });
+
       expect(callbacks.onContentUpdate).toHaveBeenCalledTimes(2);
+      expect(callbacks.onContentUpdate).toHaveBeenLastCalledWith('Hello World', undefined);
     });
 
     it('should clean speaker tag from output', () => {
@@ -78,12 +83,16 @@ describe('StreamingHandler', () => {
       expect(callbacks.onReasoningUpdate).toHaveBeenCalledWith({ content: 'Thinking...' });
     });
 
-    it('should accumulate reasoning content', () => {
+    it('should publish the first reasoning chunk immediately and coalesce the rest', async () => {
       const callbacks = createMockCallbacks();
       const handler = new StreamingHandler(mockContext, callbacks);
 
       handler.handleChunk({ type: 'reasoning', text: 'Step 1. ' });
       handler.handleChunk({ type: 'reasoning', text: 'Step 2.' });
+
+      expect(callbacks.onReasoningUpdate).toHaveBeenCalledTimes(1);
+
+      await handler.handleFinish({ type: 'stop' });
 
       expect(callbacks.onReasoningUpdate).toHaveBeenLastCalledWith({
         content: 'Step 1. Step 2.',

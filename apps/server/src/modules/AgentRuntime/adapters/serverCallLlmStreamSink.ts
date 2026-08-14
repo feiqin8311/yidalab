@@ -13,10 +13,11 @@ interface CreateServerCallLlmStreamSinkInput {
   blobStore?: BlobStore;
   ctx: RuntimeExecutorContext;
   events: AgentEvent[];
+  onFirstPublish?: () => void;
   operationLogId: string;
 }
 
-const BUFFER_INTERVAL = 300;
+const STREAM_BATCH_INTERVAL = 32;
 
 const appendTextPart = (parts: ServerCallLlmContentPart[], text: string) => {
   const last = parts.at(-1);
@@ -42,17 +43,28 @@ export class ServerCallLlmStreamSink {
   private readonly imageUploadDate = new Date().toISOString().split('T')[0];
   private readonly operationId: string;
   private readonly operationLogId: string;
+  private readonly onFirstPublish?: () => void;
+  private hasPublishedReasoning = false;
+  private hasPublishedText = false;
+  private hasReportedFirstPublish = false;
   private reasoningBuffer = '';
   private reasoningBufferTimer: NodeJS.Timeout | null = null;
   private readonly stepIndex: number;
   private textBuffer = '';
   private textBufferTimer: NodeJS.Timeout | null = null;
 
-  constructor({ blobStore, ctx, events, operationLogId }: CreateServerCallLlmStreamSinkInput) {
+  constructor({
+    blobStore,
+    ctx,
+    events,
+    onFirstPublish,
+    operationLogId,
+  }: CreateServerCallLlmStreamSinkInput) {
     this.blobStore = blobStore;
     this.events = events;
     this.operationId = ctx.operationId;
     this.operationLogId = operationLogId;
+    this.onFirstPublish = onFirstPublish;
     this.stepIndex = ctx.stepIndex;
     this.streamManager = ctx.streamManager;
   }
@@ -75,7 +87,7 @@ export class ServerCallLlmStreamSink {
 
     this.content += part.content;
     appendTextPart(this.contentParts, part.content);
-    this.queueText(part.content);
+    await this.queueText(part.content);
   }
 
   async appendReasoningPart(part: ContentPartData) {
@@ -94,17 +106,17 @@ export class ServerCallLlmStreamSink {
 
     this.thinkingContent += part.content;
     appendTextPart(this.reasoningParts, part.content);
-    this.queueReasoning(part.content);
+    await this.queueReasoning(part.content);
   }
 
   async appendText(text: string) {
     this.content += text;
-    this.queueText(text);
+    await this.queueText(text);
   }
 
   async appendThinking(reasoning: string) {
     this.thinkingContent += reasoning;
-    this.queueReasoning(reasoning);
+    await this.queueReasoning(reasoning);
   }
 
   async appendBase64Image(image: Base64ImageData) {
@@ -151,6 +163,7 @@ export class ServerCallLlmStreamSink {
         chunkType: 'reasoning',
         reasoning: delta,
       });
+      this.reportFirstPublish();
       timing(
         '[%s] flushReasoningBuffer published at %d, took %dms, length: %d',
         this.operationLogId,
@@ -179,6 +192,7 @@ export class ServerCallLlmStreamSink {
         chunkType: 'text',
         content: delta,
       });
+      this.reportFirstPublish();
       timing(
         '[%s] flushTextBuffer published at %d, took %dms, length: %d',
         this.operationLogId,
@@ -195,26 +209,48 @@ export class ServerCallLlmStreamSink {
     }
   }
 
-  private queueReasoning(reasoning: string) {
+  private async queueReasoning(reasoning: string) {
     this.reasoningBuffer += reasoning;
 
+    if (!this.hasPublishedReasoning) {
+      this.hasPublishedReasoning = true;
+      await this.flushReasoningBuffer();
+      return;
+    }
+
     if (!this.reasoningBufferTimer) {
-      this.reasoningBufferTimer = setTimeout(async () => {
-        await this.flushReasoningBuffer();
+      this.reasoningBufferTimer = setTimeout(() => {
         this.reasoningBufferTimer = null;
-      }, BUFFER_INTERVAL);
+        void this.flushReasoningBuffer().catch((error) => {
+          console.error(`[${this.operationLogId}][reasoning_stream_publish]`, error);
+        });
+      }, STREAM_BATCH_INTERVAL);
     }
   }
 
-  private queueText(text: string) {
+  private async queueText(text: string) {
     this.textBuffer += text;
 
-    if (!this.textBufferTimer) {
-      this.textBufferTimer = setTimeout(async () => {
-        await this.flushTextBuffer();
-        this.textBufferTimer = null;
-      }, BUFFER_INTERVAL);
+    if (!this.hasPublishedText) {
+      this.hasPublishedText = true;
+      await this.flushTextBuffer();
+      return;
     }
+
+    if (!this.textBufferTimer) {
+      this.textBufferTimer = setTimeout(() => {
+        this.textBufferTimer = null;
+        void this.flushTextBuffer().catch((error) => {
+          console.error(`[${this.operationLogId}][text_stream_publish]`, error);
+        });
+      }, STREAM_BATCH_INTERVAL);
+    }
+  }
+
+  private reportFirstPublish() {
+    if (this.hasReportedFirstPublish) return;
+    this.hasReportedFirstPublish = true;
+    this.onFirstPublish?.();
   }
 
   private uploadPartImage(

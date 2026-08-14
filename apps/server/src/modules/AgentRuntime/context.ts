@@ -48,6 +48,8 @@ export interface RuntimeExecutorContext {
   hookDispatcher?: HookDispatcher;
   loadAgentState?: (operationId: string) => Promise<AgentState | null>;
   messageModel: MessageModel;
+  /** In-memory promise cache scoped to one runtime operation. */
+  operationCache?: Map<string, Promise<unknown>>;
   operationId: string;
   serverDB: LobeChatDatabase;
   stepIndex: number;

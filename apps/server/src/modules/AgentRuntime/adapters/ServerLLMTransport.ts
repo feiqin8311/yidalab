@@ -1,5 +1,6 @@
 import type {
   BlobStore,
+  ContextBuilder,
   LLMAttemptExecution,
   LLMAttemptInput,
   LLMStreamPayload,
@@ -9,14 +10,23 @@ import type {
   LLMTurnSession,
 } from '@lobechat/agent-runtime';
 import {
+  ACTIVE_MODEL_CANDIDATE_METADATA_KEY,
+  resolveModelFailoverCandidates,
+} from '@lobechat/agent-runtime';
+import {
   type ChatStreamPayload,
   consumeStreamUntilDone,
   LLMStreamTimeoutError,
   type ModelRuntime,
 } from '@lobechat/model-runtime';
+import type { WorkingModel } from '@lobechat/types';
 
+import { isModelAllowed } from '@/database/models/companyMemberQuota';
+import { AiInfraRepos } from '@/database/repositories/aiInfra';
+import { getServerGlobalConfig } from '@/server/globalConfig';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import { CompanyQuotaService } from '@/server/services/companyQuota';
+import type { ProviderConfig } from '@/types/user/settings';
 
 import type { RuntimeExecutorContext } from '../context';
 import {
@@ -26,6 +36,8 @@ import {
   remainingDeadlineMs,
   withDeadline,
 } from '../executorHelpers';
+import { buildModelFailoverPool } from '../modelFailoverPool';
+import { sortToolsForStablePrompt } from '../promptCache';
 import { createServerCallLlmAttempt } from './serverCallLlmAttempt';
 import { openServerCallLlmTurn } from './serverCallLlmExecutor';
 
@@ -44,23 +56,84 @@ const getErrorMessage = (error: unknown): string => {
  * returns the aggregated content/usage that package executors need.
  */
 export class ServerLLMTransport implements LLMTransport {
+  private readonly automaticFailoverPoolPromises = new Map<string, Promise<WorkingModel[]>>();
+  private readonly modelRuntimePromises = new Map<string, Promise<ModelRuntime>>();
+  private readonly preparedQuotaChecks = new Map<string, Promise<void>>();
+
   constructor(
     private readonly ctx: RuntimeExecutorContext,
     private readonly blobStore?: BlobStore,
+    private readonly contextBuilder?: ContextBuilder,
   ) {}
 
-  openTurn(input: LLMTurnInput): LLMTurnSession {
-    let modelRuntimePromise: ReturnType<ServerLLMTransport['createModelRuntime']> | undefined;
+  async prepare({ model, provider }: { model: string; provider: string }): Promise<void> {
+    await Promise.all([this.prepareQuotaCheck(provider, model), this.getModelRuntime(provider)]);
+  }
+
+  async openTurn(input: LLMTurnInput): Promise<LLMTurnSession> {
+    const activeCandidate = input.state.metadata?.[ACTIVE_MODEL_CANDIDATE_METADATA_KEY] as
+      WorkingModel | undefined;
+    const primary = { model: input.model, provider: input.provider };
+    const initialCandidate =
+      activeCandidate?.model?.trim() && activeCandidate.provider?.trim()
+        ? { model: activeCandidate.model.trim(), provider: activeCandidate.provider.trim() }
+        : primary;
+    const prepareCandidate = async ({ model, provider }: WorkingModel) => {
+      if (!this.contextBuilder) {
+        throw new Error('ContextBuilder is required to prepare a model failover candidate');
+      }
+
+      const startedAt = Date.now();
+      const [context] = await Promise.all([
+        this.contextBuilder.build({
+          model,
+          payload: input.payload,
+          provider,
+          state: input.state,
+        }),
+        this.prepare({ model, provider }),
+      ]);
+      context.buildDurationMs = Date.now() - startedAt;
+      return context;
+    };
+    const initialContext =
+      initialCandidate.model === input.model && initialCandidate.provider === input.provider
+        ? input.context
+        : await prepareCandidate(initialCandidate);
+    const loadCandidates = async () => {
+      const automaticPool = await this.getAutomaticFailoverPool(
+        primary,
+        Boolean(input.context.resolvedTools?.tools.length),
+      );
+      const fallbacks =
+        initialCandidate.model === primary.model && initialCandidate.provider === primary.provider
+          ? automaticPool
+          : [
+              initialCandidate,
+              ...automaticPool.filter(
+                (candidate) =>
+                  candidate.model !== initialCandidate.model ||
+                  candidate.provider !== initialCandidate.provider,
+              ),
+            ];
+
+      return resolveModelFailoverCandidates(primary, fallbacks, initialCandidate);
+    };
 
     return openServerCallLlmTurn(this.ctx, {
       assistantMessage: input.assistantMessage,
-      context: input.context,
+      candidates: [initialCandidate],
+      context: initialContext,
+      loadCandidates,
       model: input.model,
+      prepareCandidate,
       provider: input.provider,
       runAttempt: async (attemptInput) => {
-        await this.assertQuota(input.provider, input.model);
-        modelRuntimePromise ??= this.createModelRuntime(input.provider);
-        return this.runAttemptWithRuntime(attemptInput, await modelRuntimePromise);
+        await this.assertQuota(attemptInput.provider, attemptInput.model);
+        return this.runAttemptWithRuntime(
+          attemptInput,
+          await this.getModelRuntime(attemptInput.provider),
+        );
       },
       state: input.state,
     });
@@ -68,7 +141,7 @@ export class ServerLLMTransport implements LLMTransport {
 
   async runAttempt(input: LLMAttemptInput): Promise<LLMAttemptExecution> {
     await this.assertQuota(input.provider, input.model);
-    const modelRuntime = await this.createModelRuntime(input.provider);
+    const modelRuntime = await this.getModelRuntime(input.provider);
     return this.runAttemptWithRuntime(input, modelRuntime);
   }
 
@@ -77,7 +150,7 @@ export class ServerLLMTransport implements LLMTransport {
     handlers?: Parameters<LLMTransport['stream']>[1],
   ): Promise<LLMStreamResult> {
     await this.assertQuota(payload.provider, payload.model);
-    const runtime = await this.createModelRuntime(payload.provider);
+    const runtime = await this.getModelRuntime(payload.provider);
     const { provider: _provider, ...runtimePayload } = payload;
     let content = '';
     let usage: LLMStreamResult['usage'];
@@ -135,21 +208,105 @@ export class ServerLLMTransport implements LLMTransport {
     return result;
   }
 
-  private createModelRuntime(provider: string) {
-    return initModelRuntimeFromDB(
+  private getModelRuntime(provider: string) {
+    const existing = this.modelRuntimePromises.get(provider);
+    if (existing) return existing;
+
+    const runtimePromise = initModelRuntimeFromDB(
       this.ctx.serverDB,
       this.ctx.userId!,
       provider,
       this.ctx.workspaceId,
-    );
+    ).catch((error) => {
+      this.modelRuntimePromises.delete(provider);
+      throw error;
+    });
+    this.modelRuntimePromises.set(provider, runtimePromise);
+    return runtimePromise;
   }
 
   private assertQuota(provider: string, model: string) {
+    if (!this.ctx.userId) return Promise.resolve();
+
+    const cacheKey = `${provider}:${model}`;
+    const prepared = this.preparedQuotaChecks.get(cacheKey);
+    if (prepared) {
+      this.preparedQuotaChecks.delete(cacheKey);
+      return prepared;
+    }
+
+    return this.createQuotaCheck(provider, model);
+  }
+
+  private createQuotaCheck(provider: string, model: string) {
     if (!this.ctx.userId) return Promise.resolve();
     return new CompanyQuotaService(this.ctx.serverDB, this.ctx.userId).assertCanUseModel({
       model,
       provider,
       userId: this.ctx.userId,
+    });
+  }
+
+  private prepareQuotaCheck(provider: string, model: string) {
+    if (!this.ctx.userId) return Promise.resolve();
+
+    const cacheKey = `${provider}:${model}`;
+    const existing = this.preparedQuotaChecks.get(cacheKey);
+    if (existing) return existing;
+
+    const quotaPromise = this.createQuotaCheck(provider, model).catch((error) => {
+      this.preparedQuotaChecks.delete(cacheKey);
+      throw error;
+    });
+    this.preparedQuotaChecks.set(cacheKey, quotaPromise);
+    return quotaPromise;
+  }
+
+  private getAutomaticFailoverPool(primary: WorkingModel, requiresFunctionCall: boolean) {
+    const cacheKey = `${primary.provider}\0${primary.model}\0${requiresFunctionCall}`;
+    const existing = this.automaticFailoverPoolPromises.get(cacheKey);
+    if (existing) return existing;
+
+    const poolPromise = this.loadAutomaticFailoverPool(primary, requiresFunctionCall).catch(
+      (error) => {
+        this.automaticFailoverPoolPromises.delete(cacheKey);
+        console.error('[ServerLLMTransport] Failed to load automatic model failover pool:', error);
+        return [];
+      },
+    );
+    this.automaticFailoverPoolPromises.set(cacheKey, poolPromise);
+    return poolPromise;
+  }
+
+  private async loadAutomaticFailoverPool(
+    primary: WorkingModel,
+    requiresFunctionCall: boolean,
+  ): Promise<WorkingModel[]> {
+    if (!this.ctx.userId) return [];
+
+    const { aiProvider } = await getServerGlobalConfig();
+    const repository = new AiInfraRepos(
+      this.ctx.serverDB,
+      this.ctx.userId,
+      aiProvider as Record<string, ProviderConfig>,
+      this.ctx.workspaceId,
+    );
+    const quotaService = new CompanyQuotaService(this.ctx.serverDB, this.ctx.userId);
+    const [enabledModels, enabledProviders, quotaSnapshot] = await Promise.all([
+      repository.getEnabledModels(),
+      repository.getUserEnabledProviderList(),
+      quotaService.getSnapshot(),
+    ]);
+
+    if (quotaSnapshot?.remainingCost === 0 && !quotaSnapshot.unlimited) return [];
+
+    return buildModelFailoverPool({
+      enabledModels,
+      enabledProviderIds: enabledProviders.map(({ id }) => id),
+      isAllowed: (candidate) =>
+        isModelAllowed(quotaSnapshot?.allowedModels, candidate.provider, candidate.model),
+      primary,
+      requiresFunctionCall,
     });
   }
 
@@ -160,7 +317,7 @@ export class ServerLLMTransport implements LLMTransport {
     const resolved = input.context.resolvedTools;
     if (!resolved) throw new Error('Resolved tools are required for a server LLM attempt');
 
-    const tools = resolved.tools.length > 0 ? resolved.tools : undefined;
+    const tools = resolved.tools.length > 0 ? sortToolsForStablePrompt(resolved.tools) : undefined;
     const chatPayload = {
       messages: input.context.messages as ChatStreamPayload['messages'],
       model: input.model,
@@ -183,6 +340,7 @@ export class ServerLLMTransport implements LLMTransport {
       model: input.model,
       modelRuntime,
       onFirstChunk: input.onFirstChunk ?? (() => {}),
+      onFirstPublish: input.onFirstPublish ?? (() => {}),
       operationLogId,
       provider: input.provider,
       resolved,
