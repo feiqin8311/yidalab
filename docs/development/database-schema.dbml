@@ -570,7 +570,7 @@ table ai_models {
 
   indexes {
     (id, provider_id, user_id) [name: 'ai_models_id_provider_id_user_id_unique', unique]
-    (id, provider_id, user_id, workspace_id) [name: 'ai_models_id_provider_id_user_id_workspace_id_unique', unique]
+    (id, provider_id, workspace_id) [name: 'ai_models_id_provider_id_workspace_id_unique', unique]
     user_id [name: 'ai_models_user_id_idx']
     workspace_id [name: 'ai_models_workspace_id_idx']
   }
@@ -598,7 +598,7 @@ table ai_providers {
 
   indexes {
     (id, user_id) [name: 'ai_providers_id_user_id_unique', unique]
-    (id, user_id, workspace_id) [name: 'ai_providers_id_user_id_workspace_id_unique', unique]
+    (id, workspace_id) [name: 'ai_providers_id_workspace_id_unique', unique]
     user_id [name: 'ai_providers_user_id_idx']
     workspace_id [name: 'ai_providers_workspace_id_idx']
   }
