@@ -11,6 +11,8 @@ import NavItem from '@/features/NavPanel/components/NavItem';
 import { type AiProviderListItem } from '@/types/aiProvider';
 import { AiProviderSourceEnum } from '@/types/aiProvider';
 
+import { getProviderDisplayName } from '../features/getProviderDisplayName';
+
 interface ProviderItemProps extends AiProviderListItem {
   onClick: (id: string) => void;
 }
@@ -18,6 +20,7 @@ interface ProviderItemProps extends AiProviderListItem {
 const ProviderItem = memo<ProviderItemProps>(
   ({ id, name, source, enabled, logo, onClick = () => {} }) => {
     const location = useLocation();
+    const displayName = getProviderDisplayName({ id, name });
 
     // Extract providerId from pathname: /settings/provider/xxx -> xxx
     const activeKey = useMemo(() => {
@@ -33,7 +36,7 @@ const ProviderItem = memo<ProviderItemProps>(
     const providerIcon =
       isCustom && logo ? (
         <Avatar
-          alt={name || id}
+          alt={displayName}
           avatar={logo}
           shape={'square'}
           size={22}
@@ -55,7 +58,7 @@ const ProviderItem = memo<ProviderItemProps>(
       <NavItem
         active={activeKey === id}
         icon={() => providerIcon}
-        title={name}
+        title={displayName}
         extra={
           enabled ? (
             <Center width={24}>
