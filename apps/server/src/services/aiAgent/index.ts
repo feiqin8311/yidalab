@@ -156,6 +156,7 @@ import {
   isDeviceToolIdentifier,
   REMOTE_DEVICE_TOOL_IDENTIFIERS,
 } from './deviceToolRegistry';
+import type { AttachmentSource } from './ingestAttachment';
 import { ingestAttachment } from './ingestAttachment';
 import { pruneRegeneratedBranch } from './pruneRegeneratedBranch';
 import {
@@ -348,15 +349,7 @@ interface InternalExecAgentParams extends ExecAgentParams {
   /** Eval context for injecting environment prompts into system message */
   evalContext?: EvalContext;
   /** External files to upload to S3 and attach to the user message */
-  files?: Array<{
-    /** Pre-downloaded buffer (from adapter/platform layer) */
-    buffer?: Buffer;
-    mimeType?: string;
-    name?: string;
-    size?: number;
-    /** External URL — fetched if no buffer provided */
-    url?: string;
-  }>;
+  files?: AttachmentSource[];
   /** Client-side function tools from Response API — injected into LLM with source='client' */
   functionTools?: Array<{ description?: string; name: string; parameters?: Record<string, any> }>;
   /** External lifecycle hooks (auto-adapt to local/production mode) */

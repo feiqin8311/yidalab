@@ -9,6 +9,7 @@ import { AgentDocumentsManifest } from '@lobechat/builtin-tool-agent-documents';
 import { AgentManagementManifest } from '@lobechat/builtin-tool-agent-management';
 import { BriefManifest } from '@lobechat/builtin-tool-brief';
 import { CalculatorManifest } from '@lobechat/builtin-tool-calculator';
+import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { CredsManifest } from '@lobechat/builtin-tool-creds';
 import { DingpanManifest } from '@lobechat/builtin-tool-dingpan';
 import { FbaAlertManifest } from '@lobechat/builtin-tool-fba-alert';
@@ -40,6 +41,7 @@ export const defaultToolIds = [
   KnowledgeBaseManifest.identifier,
   MemoryManifest.identifier,
   LocalSystemManifest.identifier,
+  CloudSandboxManifest.identifier,
   TopicReferenceManifest.identifier,
   AgentDocumentsManifest.identifier,
   TaskManifest.identifier,
@@ -77,6 +79,7 @@ export const chatModeAllowedToolIds = [
 export const groupSupervisorToolIds = [GroupManagementManifest.identifier];
 
 export const runtimeManagedToolIds = [
+  CloudSandboxManifest.identifier,
   KnowledgeBaseManifest.identifier,
   LocalSystemManifest.identifier,
   MemoryManifest.identifier,
@@ -130,6 +133,12 @@ const builtinToolRegistry: LobeBuiltinTool[] = [
     hidden: true,
     identifier: WebBrowsingManifest.identifier,
     manifest: WebBrowsingManifest,
+    type: 'builtin',
+  },
+  {
+    hidden: true,
+    identifier: CloudSandboxManifest.identifier,
+    manifest: CloudSandboxManifest,
     type: 'builtin',
   },
   {

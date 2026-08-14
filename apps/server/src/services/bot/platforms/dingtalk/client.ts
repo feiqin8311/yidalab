@@ -284,6 +284,9 @@ export class DingTalkClient implements PlatformClient {
           buffer,
           mimeType: item.mimeType,
           name: item.name,
+          // DingTalk users expect files sent to the bot to remain manageable
+          // from the web Resource page, not only on the originating message.
+          persistToResourceLibrary: true,
           size: buffer.length,
         });
         log(

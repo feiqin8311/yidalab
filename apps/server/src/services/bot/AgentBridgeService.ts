@@ -11,6 +11,7 @@ import { UserModel } from '@/database/models/user';
 import type { LobeChatDatabase } from '@/database/type';
 import { createAbortError, isAbortError } from '@/server/services/agentRuntime/abort';
 import { AiAgentService } from '@/server/services/aiAgent';
+import type { AttachmentSource } from '@/server/services/aiAgent/ingestAttachment';
 import { botContextPolicy } from '@/server/services/bot/botContextPolicy';
 import { GatewayService } from '@/server/services/gateway';
 import { getMessageGatewayClient } from '@/server/services/gateway/MessageGatewayClient';
@@ -1791,13 +1792,7 @@ export class AgentBridgeService {
     message: Message,
     client?: PlatformClient,
   ): Promise<{
-    files?: Array<{
-      buffer?: Buffer;
-      mimeType?: string;
-      name?: string;
-      size?: number;
-      url?: string;
-    }>;
+    files?: AttachmentSource[];
     warnings?: string[];
   }> {
     const result = await client?.extractFiles?.(message);

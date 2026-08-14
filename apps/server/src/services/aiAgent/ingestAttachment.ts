@@ -31,6 +31,8 @@ export interface AttachmentSource {
   buffer?: Buffer;
   mimeType?: string;
   name?: string;
+  /** Keep the attachment as a manageable resource in addition to the chat message. */
+  persistToResourceLibrary?: boolean;
   size?: number;
   /** External URL (e.g. Discord CDN) — fetched if no buffer */
   url?: string;
@@ -104,7 +106,8 @@ const assertWithinSizeCap = (bytes: number, label: string) => {
  * Unified file ingestion: normalize → compress → upload → create record.
  *
  * Accepts both buffer (bot adapter) and URL (external platforms) inputs.
- * Only persists storage + file row (processingPolicy=on_demand). Content
+ * Persists storage + a file row. Chat-only attachments default to on-demand;
+ * platform adapters may request a persistent resource-library row. Content
  * extraction happens later via resolveAttachmentsByFileIds.
  */
 export async function ingestAttachment(
@@ -218,12 +221,16 @@ export async function ingestAttachment(
     buffer.length,
   );
 
-  // 4. Upload + create on_demand file record (chat/bot attachment lifecycle).
+  // 4. Upload + create the file record. DingTalk asks to retain inbound files in
+  // the resource library; other chat/bot attachments keep the on-demand lifecycle.
   const ext = source.name?.split('.').pop() || 'bin';
   const { nanoid } = await import('@lobechat/utils');
   const pathname = `files/${userId}/${nanoid()}/${source.name || `file.${ext}`}`;
+  const lifecycle = source.persistToResourceLibrary
+    ? ({ processingPolicy: 'persistent', visibility: 'private' } as const)
+    : ({ processingPolicy: 'on_demand' } as const);
   const { fileId, key } = await fileService.uploadFromBuffer(buffer, mimeType, pathname, {
-    processingPolicy: 'on_demand',
+    ...lifecycle,
   });
 
   // 5. Resolve access URL for images, videos and audio.

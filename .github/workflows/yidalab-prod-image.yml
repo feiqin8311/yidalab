@@ -6,7 +6,7 @@
 #   2. After first push, Packages → yidalab → Package settings → connect to repo
 #   3. Secrets: PROD_SSH_HOST / PROD_SSH_USER / PROD_SSH_PASSWORD (or PROD_SSH_KEY)
 #
-# Trigger: manual, or push to main / codex/yidalab-custom
+# Trigger: manual, or push to main / codex/yidalab-custom / feat/cloud-sandbox
 name: YidaLab Production Image
 
 on:
@@ -25,6 +25,7 @@ on:
     branches:
       - main
       - codex/yidalab-custom
+      - feat/cloud-sandbox
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -123,6 +124,7 @@ jobs:
           build-args: |
             USE_CN_MIRROR=false
             NEXT_PUBLIC_BASE_PATH=
+            NEXT_PUBLIC_ENABLE_CLOUD_SANDBOX=1
           # Inline cache only. Registry buildcache repeatedly hung this monorepo build
           # (60–90m stuck on "Build and push" with no log export). ignore-error kept.
           cache-from: type=gha

@@ -429,6 +429,25 @@ describe('FileService', () => {
       );
     });
 
+    it('should create persistent uploads as private resource-library records', async () => {
+      const content = Buffer.from('dingtalk resource attachment');
+
+      await service.uploadFromBuffer(content, 'text/plain', 'files/test-user/abc/report.txt', {
+        processingPolicy: 'persistent',
+        visibility: 'private',
+      });
+
+      expect(mockFileModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          persistReason: 'resource_upload',
+          processingPolicy: 'persistent',
+          processingRequestedAt: expect.any(Date),
+          visibility: 'private',
+        }),
+        expect.any(Boolean),
+      );
+    });
+
     it('should compute hash for deduplication', async () => {
       const content = Buffer.from('test content');
 

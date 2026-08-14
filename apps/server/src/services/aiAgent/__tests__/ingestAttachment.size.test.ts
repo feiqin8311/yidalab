@@ -85,4 +85,26 @@ describe('ingestAttachment size caps', () => {
       { processingPolicy: 'on_demand' },
     );
   });
+
+  it('persists resource-library attachments privately', async () => {
+    const buffer = Buffer.from('dingtalk attachment');
+
+    await ingestAttachment(
+      {
+        buffer,
+        mimeType: 'text/plain',
+        name: 'report.txt',
+        persistToResourceLibrary: true,
+      },
+      fileService,
+      'u1',
+    );
+
+    expect(fileService.uploadFromBuffer).toHaveBeenCalledWith(
+      buffer,
+      'text/plain',
+      expect.stringContaining('report.txt'),
+      { processingPolicy: 'persistent', visibility: 'private' },
+    );
+  });
 });
