@@ -160,6 +160,7 @@ COPY --from=builder /app/packages/file-loaders/src/loaders/excel/workbookParseWo
 # Fail the image build if office parsers cannot resolve at runtime.
 RUN set -e && \
     cd /app && \
+    node -e "const { createRequire } = require('node:module'); const fromNext = createRequire(require.resolve('next/package.json')); fromNext.resolve('@swc/helpers/esm/_interop_require_default.js')" && \
     node -e "require.resolve('xlsx')" && \
     node -e "require.resolve('mammoth')" && \
     node -e "require.resolve('word-extractor')" && \
