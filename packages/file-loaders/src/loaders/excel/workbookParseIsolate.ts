@@ -125,11 +125,17 @@ export async function buildWorkbookAssetsIsolated(
     const raw = await new Promise<WorkerResult>((resolve, reject) => {
       let child: ChildProcess;
       try {
-        child = fork(workerPath, [filePath, outDir], {
-          execArgv: [`--max-old-space-size=${heapMb}`],
-          serialization: 'json',
-          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-        });
+        // Turbopack treats a direct `fork(workerPath)` call as a module import
+        // during production tracing. The path is intentionally runtime-only.
+        child = Reflect.apply(fork, undefined, [
+          workerPath,
+          [filePath, outDir],
+          {
+            execArgv: [`--max-old-space-size=${heapMb}`],
+            serialization: 'json',
+            stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+          },
+        ]) as ChildProcess;
       } catch (err) {
         reject(
           new Error(
