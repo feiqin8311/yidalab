@@ -5,8 +5,12 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import utc from 'dayjs/plugin/utc';
 import { enableMapSet, enablePatches } from 'immer';
 
+import { installPromiseWithResolversPolyfill } from '@/polyfills/promiseWithResolvers';
+import { installUrlParsePolyfill } from '@/polyfills/urlParse';
 import { isChunkLoadError, notifyChunkError } from '@/utils/chunkError';
 
+installPromiseWithResolversPolyfill();
+installUrlParsePolyfill();
 enablePatches();
 enableMapSet();
 

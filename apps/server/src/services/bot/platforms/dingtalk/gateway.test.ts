@@ -138,6 +138,44 @@ describe('DingTalkStreamConnection', () => {
     connection.stop();
   });
 
+  it('acknowledges DingTalk SYSTEM ping with the original messageId and opaque data', async () => {
+    const fetch = vi.fn().mockImplementation(async () => gatewayResponse());
+    vi.stubGlobal('fetch', fetch);
+    const connection = new DingTalkStreamConnection(
+      'app-system-ping',
+      'secret',
+      'https://local.example/webhook',
+      createSocket,
+    );
+
+    const startPromise = connection.start();
+    await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    socket.open();
+    await startPromise;
+
+    const pingData = JSON.stringify({ opaque: 'opaque-1' });
+    socket.emit(
+      'message',
+      JSON.stringify({
+        data: pingData,
+        headers: { messageId: 'ping-1', topic: 'ping' },
+        type: 'SYSTEM',
+      }),
+    );
+
+    expect(socket.send).toHaveBeenCalledOnce();
+    expect(JSON.parse(socket.send.mock.calls[0][0] as string)).toEqual({
+      code: 200,
+      data: pingData,
+      headers: { contentType: 'application/json', messageId: 'ping-1' },
+      message: 'OK',
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(socket.close).not.toHaveBeenCalled();
+    connection.stop();
+  });
+
   it('forces a reconnect after twenty seconds without a pong', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn().mockImplementation(async () => gatewayResponse());

@@ -210,6 +210,14 @@ export class DingTalkStreamConnection {
     } catch {
       return;
     }
+    if (message.type === 'SYSTEM' && message.headers.topic === 'ping') {
+      if (this.socket !== sourceSocket || this.stopped) return;
+
+      // DingTalk Stream uses an application-level heartbeat in addition to WebSocket ping/pong.
+      // Its opaque payload must be echoed with the originating messageId.
+      this.sendAcknowledgement(sourceSocket, message.headers.messageId, message.data);
+      return;
+    }
     if (message.type === 'SYSTEM' && message.headers.topic === 'disconnect') {
       if (this.socket !== sourceSocket || this.stopped) return;
       log('DingTalk Stream server requested disconnect for appId=%s', this.clientId);
@@ -229,16 +237,24 @@ export class DingTalkStreamConnection {
     } catch (error) {
       console.error('[DingTalk] Failed to forward bot event:', error);
     } finally {
-      if (sourceSocket.readyState === WebSocket.OPEN) {
-        sourceSocket.send(
-          JSON.stringify({
-            code: 200,
-            data: JSON.stringify({ status: 'SUCCESS' }),
-            headers: { contentType: 'application/json', messageId: message.headers.messageId },
-            message: 'OK',
-          }),
-        );
-      }
+      this.sendAcknowledgement(
+        sourceSocket,
+        message.headers.messageId,
+        JSON.stringify({ status: 'SUCCESS' }),
+      );
     }
+  }
+
+  private sendAcknowledgement(socket: WebSocket, messageId: string, data: string): void {
+    if (socket.readyState !== WebSocket.OPEN) return;
+
+    socket.send(
+      JSON.stringify({
+        code: 200,
+        data,
+        headers: { contentType: 'application/json', messageId },
+        message: 'OK',
+      }),
+    );
   }
 }
