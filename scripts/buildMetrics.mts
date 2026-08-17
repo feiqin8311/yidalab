@@ -209,7 +209,9 @@ if (profile === 'internal') {
   )!;
   assertEntry(spaEntryMeta, 'internal');
   const spa = fs.readFileSync(spaInternal, 'utf8');
-  for (const banned of ['community', 'image', 'video', 'eval', 'fleet', 'billing'] as const) {
+  if (!spa.includes(`path: 'community'`)) fail(`SPA internal missing path 'community'`);
+  else ok(`SPA internal has path 'community'`);
+  for (const banned of ['image', 'video', 'eval', 'fleet', 'billing'] as const) {
     if (spa.includes(`path: '${banned}'`)) fail(`SPA internal still has path '${banned}'`);
     else ok(`SPA internal no path '${banned}'`);
   }
