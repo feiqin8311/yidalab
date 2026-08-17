@@ -1,15 +1,11 @@
 import { usePathname, useSearchParams } from '@/libs/router/navigation';
-import { type SidebarTabKey } from '@/store/global/initialState';
 import { ProfileTabs, SettingsTabs } from '@/store/global/initialState';
 
 /**
  * Returns the active tab key (chat/discover/settings/...)
  * Uses React Router via @/libs/router
  */
-export const useActiveTabKey = () => {
-  const pathname = usePathname();
-  return pathname.split('/').find(Boolean) as SidebarTabKey;
-};
+export { resolveActiveTabKey, useActiveTabKey } from '@/hooks/useActiveTabKey';
 
 /**
  * Returns the active setting page key (?active=common/sync/agent/...)

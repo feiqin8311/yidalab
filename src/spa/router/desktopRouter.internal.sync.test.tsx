@@ -20,10 +20,13 @@ describe('desktopRouter internal config', () => {
       ),
     ]);
 
-    for (const banned of ['community', 'image', 'video', 'eval', 'fleet', 'billing'] as const) {
+    for (const banned of ['image', 'video', 'eval', 'fleet', 'billing'] as const) {
       expect(web.includes(`path: '${banned}'`)).toBe(false);
       expect(electron.includes(`path: '${banned}'`)).toBe(false);
     }
+
+    expect(web.includes(`path: 'community'`)).toBe(true);
+    expect(electron.includes(`path: 'community'`)).toBe(true);
 
     // Devices stay — chat device switcher + settings need lambda.device
     expect(web.includes(`path: 'devices'`)).toBe(true);
@@ -34,6 +37,7 @@ describe('desktopRouter internal config', () => {
     expect(electron.includes('@/routes/(main)/(create)/video')).toBe(false);
     expect(electron.includes('@/routes/(main)/eval')).toBe(false);
     expect(electron.includes('@/routes/(main)/fleet')).toBe(false);
+    expect(electron.includes('@/routes/(main)/community')).toBe(true);
   });
 
   it('web and electron internal share the same path set (excluding known divergences)', async () => {

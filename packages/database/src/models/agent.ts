@@ -1255,24 +1255,6 @@ export class AgentModel {
     });
 
     if (existing) {
-      if (slug === INBOX_SESSION_ID) {
-        const inboxUser = await this.db.query.users.findFirst({
-          columns: { username: true },
-          where: eq(users.id, this.userId),
-        });
-        const inboxTitle = inboxUser?.username?.trim();
-
-        if (inboxTitle && existing.title !== inboxTitle) {
-          const [updatedAgent] = await this.db
-            .update(agents)
-            .set({ title: inboxTitle, updatedAt: new Date() })
-            .where(eq(agents.id, existing.id))
-            .returning();
-
-          return normalizeInboxAgentMeta(updatedAgent, { slug: updatedAgent.slug });
-        }
-      }
-
       return normalizeInboxAgentMeta(existing, { slug: existing.slug });
     }
 

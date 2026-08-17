@@ -5,11 +5,16 @@ import { ArrowUpIcon, PlusIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useCreateNewModal } from '@/features/LibraryModal';
-import { useTopLevelFileUpload } from '@/features/ResourceManager/hooks/useTopLevelFileUpload';
+import {
+  useTopLevelFileUpload,
+  useTopLevelUploadVisibility,
+} from '@/features/ResourceManager/hooks/useTopLevelFileUpload';
 import { usePermission } from '@/hooks/usePermission';
 import { useCurrentFolderId } from '@/routes/(main)/resource/features/hooks/useCurrentFolderId';
 import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
 import { useFileStore } from '@/store/file';
+
+import useUploadFolder from '../Header/hooks/useUploadFolder';
 
 const ICON_SIZE = 80;
 
@@ -65,12 +70,21 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
 
 const EmptyPlaceholder = () => {
   const { t } = useTranslation('components');
+  const { t: tFile } = useTranslation('file');
 
-  const pushDockFileList = useFileStore((s) => s.pushDockFileList);
+  const uploadFolderWithStructure = useFileStore((s) => s.uploadFolderWithStructure);
   const uploadTopLevel = useTopLevelFileUpload();
+  const uploadVisibility = useTopLevelUploadVisibility();
 
   const libraryId = useResourceManagerStore((s) => s.libraryId);
   const currentFolderId = useCurrentFolderId();
+  const { handleFolderUpload } = useUploadFolder({
+    currentFolderId,
+    libraryId,
+    t: tFile,
+    uploadFolderWithStructure,
+    visibility: uploadVisibility,
+  });
 
   const { open } = useCreateNewModal();
   const { allowed: canCreate } = usePermission('create_content');
@@ -130,19 +144,7 @@ const EmptyPlaceholder = () => {
             />
           </Flexbox>
         </Upload>
-        <Upload
-          directory
-          multiple={true}
-          showUploadList={false}
-          beforeUpload={async (file) => {
-            // Directory upload keeps its own path — the whole tree inherits
-            // its root's visibility, so we skip the mode-driven default and
-            // let the server infer from the parent chain.
-            await pushDockFileList([file], libraryId, currentFolderId ?? undefined);
-
-            return false;
-          }}
-        >
+        <label htmlFor="empty-folder-upload-input">
           <Flexbox className={styles.card} padding={16}>
             <span className={styles.actionTitle}>
               {t('FileManager.emptyStatus.actions.folder')}
@@ -156,7 +158,16 @@ const EmptyPlaceholder = () => {
               type={'folder'}
             />
           </Flexbox>
-        </Upload>
+        </label>
+        <input
+          multiple
+          id="empty-folder-upload-input"
+          style={{ display: 'none' }}
+          type="file"
+          // @ts-expect-error - webkitdirectory is not in the React types
+          webkitdirectory=""
+          onChange={handleFolderUpload}
+        />
       </Flexbox>
     </Center>
   );

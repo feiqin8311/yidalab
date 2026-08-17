@@ -185,8 +185,6 @@ export class CommonActionImpl {
               false,
               n('initUserState'),
             );
-            this.#syncInboxAgentTitle(data.username);
-
             const autoDetectedGeneralConfig: Partial<UserGeneralConfig> = {};
             const currentGeneralSettings = data.settings?.general;
 

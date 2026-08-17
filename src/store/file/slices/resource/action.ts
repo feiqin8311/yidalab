@@ -123,6 +123,7 @@ export class ResourceActionImpl {
           editorData: params.editorData ?? {},
           slug: params.slug,
           title: params.title,
+          ...(params.visibility !== undefined ? { visibility: params.visibility } : {}),
         }),
   });
 

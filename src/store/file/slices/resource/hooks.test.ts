@@ -77,6 +77,20 @@ describe('revalidateResources', () => {
     expect(matcher(['OTHER_KEY', mocks.queryParams, 'workspace-1'])).toBe(false);
     expect(getActiveWorkspaceId).toHaveBeenCalled();
   });
+
+  it('revalidates all workspace resource lists when queryParams are unset', async () => {
+    mocks.activeWorkspaceId = 'workspace-1';
+    mocks.fileState.queryParams = undefined;
+
+    await revalidateResources();
+
+    const [matcher] = vi.mocked(mutate).mock.calls[0] as [(key: unknown) => boolean];
+
+    expect(matcher(['resource:list', mocks.queryParams, 'workspace-1'])).toBe(true);
+    expect(matcher(['resource:list', { parentId: 'other' }, 'workspace-1'])).toBe(true);
+    expect(matcher(['resource:list', mocks.queryParams, 'workspace-2'])).toBe(false);
+    expect(matcher(['OTHER_KEY', mocks.queryParams, 'workspace-1'])).toBe(false);
+  });
 });
 
 describe('useFetchResources', () => {

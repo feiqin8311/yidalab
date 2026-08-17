@@ -15,7 +15,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { message } from '@/components/AntdStaticMethods';
-import { useTopLevelFileUpload } from '@/features/ResourceManager/hooks/useTopLevelFileUpload';
+import {
+  useTopLevelFileUpload,
+  useTopLevelUploadVisibility,
+} from '@/features/ResourceManager/hooks/useTopLevelFileUpload';
 import { usePermission } from '@/hooks/usePermission';
 import { useCurrentFolderId } from '@/routes/(main)/resource/features/hooks/useCurrentFolderId';
 import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
@@ -70,6 +73,7 @@ const AddButton = () => {
   const currentFolderId = useCurrentFolderId();
   const { allowed: canCreate, reason } = usePermission('create_content');
   const uploadTopLevel = useTopLevelFileUpload();
+  const uploadVisibility = useTopLevelUploadVisibility();
 
   // TODO: Migrate Notion import to use createResource
   // Keep old functions temporarily for components not yet migrated
@@ -191,6 +195,7 @@ const AddButton = () => {
     libraryId,
     t,
     uploadFolderWithStructure,
+    visibility: uploadVisibility,
   });
   const handleFolderUploadWithClose = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {

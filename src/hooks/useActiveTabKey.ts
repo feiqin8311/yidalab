@@ -1,13 +1,19 @@
 import { usePathname, useSearchParams } from '@/libs/router/navigation';
 import { ProfileTabs, SettingsTabs, SidebarTabKey } from '@/store/global/initialState';
 
+const SIDEBAR_TAB_KEYS = new Set<string>(Object.values(SidebarTabKey));
+
+export const resolveActiveTabKey = (pathname: string): SidebarTabKey =>
+  (pathname.split('/').find((segment) => SIDEBAR_TAB_KEYS.has(segment)) as SidebarTabKey) ||
+  SidebarTabKey.Home;
+
 /**
  * Returns the active tab key (chat/market/settings/...)
  * React Router version for SPA
  */
 export const useActiveTabKey = () => {
   const pathname = usePathname();
-  return (pathname.split('/').find(Boolean)! as SidebarTabKey) || SidebarTabKey.Home;
+  return resolveActiveTabKey(pathname);
 };
 
 /**

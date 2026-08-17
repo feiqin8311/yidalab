@@ -3,7 +3,9 @@ import { type TFunction } from 'i18next';
 import { type ChangeEvent } from 'react';
 import { useCallback } from 'react';
 
+import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
 import { type FileManageAction } from '@/store/file/slices/fileManager/action';
+import { FilesTabs } from '@/types/files';
 import {
   filterFilesByBuiltInBlockList,
   filterFilesByGitignore,
@@ -16,6 +18,7 @@ interface UseUploadFolderOptions {
   libraryId?: string | null;
   t: TFunction<'file'>;
   uploadFolderWithStructure: FileManageAction['uploadFolderWithStructure'];
+  visibility?: 'private' | 'public';
 }
 
 const useUploadFolder = ({
@@ -23,16 +26,23 @@ const useUploadFolder = ({
   libraryId,
   t,
   uploadFolderWithStructure,
+  visibility,
 }: UseUploadFolderOptions) => {
+  const [category, setCategory] = useResourceManagerStore((s) => [s.category, s.setCategory]);
+
   const handleFolderUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       let files = Array.from(event.target.files || []);
       if (files.length === 0) return;
 
+      if (category !== FilesTabs.All) {
+        setCategory(FilesTabs.All);
+      }
+
       const targetFolderId = currentFolderId ?? undefined;
       const targetLibraryId = libraryId ?? undefined;
       const upload = async (fileList: File[]) =>
-        uploadFolderWithStructure(fileList, targetLibraryId, targetFolderId);
+        uploadFolderWithStructure(fileList, targetLibraryId, targetFolderId, visibility);
 
       // Apply built-in block list first
       const originalCount = files.length;
@@ -94,7 +104,7 @@ const useUploadFolder = ({
 
       event.target.value = '';
     },
-    [currentFolderId, libraryId, t, uploadFolderWithStructure],
+    [category, currentFolderId, libraryId, setCategory, t, uploadFolderWithStructure, visibility],
   );
 
   return { handleFolderUpload };

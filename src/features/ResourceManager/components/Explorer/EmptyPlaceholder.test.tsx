@@ -31,9 +31,26 @@ vi.mock('@/routes/(main)/resource/features/store', () => ({
     selector({ libraryId }),
 }));
 
+vi.mock('@/features/ResourceManager/hooks/useTopLevelFileUpload', () => ({
+  useTopLevelFileUpload: () => vi.fn(),
+  useTopLevelUploadVisibility: () => undefined,
+}));
+
+vi.mock('../Header/hooks/useUploadFolder', () => ({
+  default: () => ({ handleFolderUpload: vi.fn() }),
+}));
+
 vi.mock('@/store/file', () => ({
-  useFileStore: (selector: (state: { pushDockFileList: typeof mockPushDockFileList }) => unknown) =>
-    selector({ pushDockFileList: mockPushDockFileList }),
+  useFileStore: (
+    selector: (state: {
+      pushDockFileList: typeof mockPushDockFileList;
+      uploadFolderWithStructure: () => void;
+    }) => unknown,
+  ) =>
+    selector({
+      pushDockFileList: mockPushDockFileList,
+      uploadFolderWithStructure: vi.fn(),
+    }),
 }));
 
 describe('EmptyPlaceholder', () => {

@@ -2,8 +2,8 @@
 
 /**
  * YidaLab internal desktop routes.
- * Stripped paths: community, image, video, eval, fleet, billing.
- * Kept: devices (lambda device router required for chat device switcher).
+ * Stripped paths: image, video, eval, fleet, billing.
+ * Kept: community (company skill / MCP market) and devices.
  */
 
 import {
@@ -14,6 +14,7 @@ import {
   LibraryBigIcon,
   MessageSquarePlus,
   Settings,
+  ShapesIcon,
 } from 'lucide-react';
 import { type RouteObject } from 'react-router';
 
@@ -198,6 +199,160 @@ export const sharedMainAreaChildren: RouteObject[] = [
   },
 
   // Discover routes with nested structure
+  {
+    children: [
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/community/(detail)/workspace/settings'),
+          'Desktop > Discover > Workspace > Settings',
+        ),
+        path: 'workspace/settings',
+      },
+      {
+        children: [
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(list)/home'),
+              'Desktop > Discover > List > Home',
+            ),
+            handle: {
+              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
+            },
+            path: 'home',
+          },
+          {
+            children: [
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/agent'),
+                  'Desktop > Discover > List > Agent',
+                ),
+                handle: {
+                  meta: routeMeta({
+                    icon: ShapesIcon,
+                    titleKey: 'navigation.discoverAssistants',
+                  }),
+                },
+                index: true,
+              },
+            ],
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(list)/agent/_layout'),
+              'Desktop > Discover > List > Agent > Layout',
+            ),
+            path: 'agent',
+          },
+          {
+            children: [
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/skill'),
+                  'Desktop > Discover > List > Skill',
+                ),
+                handle: {
+                  meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
+                },
+                index: true,
+              },
+            ],
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(list)/skill/_layout'),
+              'Desktop > Discover > List > Skill > Layout',
+            ),
+            path: 'skill',
+          },
+          {
+            children: [
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/community/(list)/mcp'),
+                  'Desktop > Discover > List > MCP',
+                ),
+                handle: {
+                  meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discoverMcp' }),
+                },
+                index: true,
+              },
+            ],
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(list)/mcp/_layout'),
+              'Desktop > Discover > List > MCP > Layout',
+            ),
+            path: 'mcp',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/workspace'),
+              'Desktop > Discover > List > Workspace',
+            ),
+            path: 'workspace',
+          },
+          { element: redirectElement('home'), index: true },
+        ],
+        element: dynamicElement(
+          () => import('@/routes/(main)/community/(list)/_layout'),
+          'Desktop > Discover > List > Layout',
+        ),
+      },
+      {
+        children: [
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/agent'),
+              'Desktop > Discover > Detail > Agent',
+            ),
+            path: 'agent/:slug',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/group_agent'),
+              'Desktop > Discover > Detail > Group Agent',
+            ),
+            path: 'group_agent/:slug',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/skill'),
+              'Desktop > Discover > Detail > Skill',
+            ),
+            path: 'skill/:slug',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/mcp'),
+              'Desktop > Discover > Detail > MCP',
+            ),
+            path: 'mcp/:slug',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/user'),
+              'Desktop > Discover > Detail > User',
+            ),
+            path: 'user/:slug',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/community/(detail)/organization'),
+              'Desktop > Discover > Detail > Organization',
+            ),
+            path: 'org/:slug',
+          },
+        ],
+        element: dynamicElement(
+          () => import('@/routes/(main)/community/(detail)/_layout'),
+          'Desktop > Discover > Detail > Layout',
+        ),
+      },
+    ],
+    element: dynamicElement(
+      () => import('@/routes/(main)/community/_layout'),
+      'Desktop > Discover > Layout',
+    ),
+    errorElement: <ErrorBoundary />,
+    path: 'community',
+  },
+
   // Resource routes
   {
     children: [
