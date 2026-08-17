@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FILE_UPLOAD_BLACKLIST, MAX_UPLOAD_FILE_COUNT } from '@/const/file';
 import { mutate } from '@/libs/swr';
 import { lambdaClient } from '@/libs/trpc/client';
+import { documentService } from '@/services/document';
 import { fileService } from '@/services/file';
 import { ragService } from '@/services/rag';
 import { type FileListItem } from '@/types/files';
@@ -30,7 +31,9 @@ vi.mock('i18next', () => ({
 // Mock message
 vi.mock('@/components/AntdStaticMethods', () => ({
   message: {
+    destroy: vi.fn(),
     info: vi.fn(),
+    loading: vi.fn(),
     warning: vi.fn(),
   },
 }));
@@ -881,6 +884,64 @@ describe('FileManagerActions', () => {
         revalidate: true,
       });
       expect(revalidateResourcesSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('uploadFolderWithStructure', () => {
+    const fileWithPath = (name: string, relativePath: string) => {
+      const file = new File(['content'], name, { type: 'text/plain' });
+      Object.defineProperty(file, 'webkitRelativePath', { value: relativePath });
+      return file;
+    };
+
+    it('creates folders with visibility and inserts the root folder into the list', async () => {
+      const { result } = renderHook(() => useStore());
+      const nestedFile = fileWithPath('notes.txt', 'Docs/notes.txt');
+
+      vi.spyOn(documentService, 'createDocuments').mockResolvedValue([
+        {
+          id: 'folder-1',
+          slug: 'docs',
+          title: 'Docs',
+        } as any,
+      ]);
+      vi.spyOn(result.current, 'refreshFileList').mockResolvedValue();
+      vi.spyOn(result.current, 'uploadWithProgress').mockResolvedValue({
+        id: 'file-1',
+        url: 'http://example.com/file-1',
+      });
+
+      await act(async () => {
+        await result.current.uploadFolderWithStructure(
+          [nestedFile],
+          undefined,
+          undefined,
+          'public',
+        );
+      });
+
+      expect(documentService.createDocuments).toHaveBeenCalledWith([
+        expect.objectContaining({
+          fileType: 'custom/folder',
+          title: 'Docs',
+          visibility: 'public',
+        }),
+      ]);
+      expect(result.current.resourceList).toEqual([
+        expect.objectContaining({
+          fileType: 'custom/folder',
+          id: 'folder-1',
+          name: 'Docs',
+          visibility: 'public',
+        }),
+      ]);
+      expect(result.current.uploadWithProgress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: nestedFile,
+          parentId: 'folder-1',
+          visibility: 'public',
+        }),
+      );
     });
   });
 

@@ -194,6 +194,7 @@ export class ResourceService {
         parentId: params.parentId,
         slug: params.slug,
         title: params.title,
+        visibility: params.visibility,
       };
 
       const created = await documentService.createDocument(documentParams);
@@ -217,6 +218,7 @@ export class ResourceService {
         title: created.title || undefined,
         updatedAt: created.updatedAt ? new Date(created.updatedAt) : new Date(),
         url: created.source || '',
+        visibility: created.visibility,
       };
     }
   }

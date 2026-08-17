@@ -2,8 +2,8 @@
 
 /**
  * YidaLab internal desktop routes.
- * Stripped paths: community, image, video, eval, fleet, billing.
- * Kept: devices (lambda device router required for chat device switcher).
+ * Stripped paths: image, video, eval, fleet, billing.
+ * Kept: community (company skill / MCP market) and devices.
  */
 
 import {
@@ -14,6 +14,7 @@ import {
   LibraryBigIcon,
   MessageSquarePlus,
   Settings,
+  ShapesIcon,
 } from 'lucide-react';
 import type { RouteObject } from 'react-router';
 
@@ -73,6 +74,24 @@ import AgentStatsPage from '@/routes/(main)/agent/stats';
 import AgentTaskDetailRoute from '@/routes/(main)/agent/task/[taskId]';
 import AgentScopedTasksRoute from '@/routes/(main)/agent/tasks';
 import AgentTopicsPage from '@/routes/(main)/agent/topics';
+import CommunityLayout from '@/routes/(main)/community/_layout';
+import CommunityDetailLayout from '@/routes/(main)/community/(detail)/_layout';
+import CommunityDetailAgentPage from '@/routes/(main)/community/(detail)/agent';
+import CommunityDetailGroupAgentPage from '@/routes/(main)/community/(detail)/group_agent';
+import CommunityDetailMcpPage from '@/routes/(main)/community/(detail)/mcp';
+import CommunityDetailOrganizationPage from '@/routes/(main)/community/(detail)/organization';
+import CommunityDetailSkillPage from '@/routes/(main)/community/(detail)/skill';
+import CommunityDetailUserPage from '@/routes/(main)/community/(detail)/user';
+import CommunityDetailWorkspacePage from '@/routes/(main)/community/(detail)/workspace';
+import CommunityDetailWorkspaceSettingsPage from '@/routes/(main)/community/(detail)/workspace/settings';
+import CommunityListLayout from '@/routes/(main)/community/(list)/_layout';
+import CommunityListAgentPage from '@/routes/(main)/community/(list)/agent';
+import CommunityListAgentLayout from '@/routes/(main)/community/(list)/agent/_layout';
+import CommunityListHomePage from '@/routes/(main)/community/(list)/home';
+import CommunityListMcpPage from '@/routes/(main)/community/(list)/mcp';
+import CommunityListMcpLayout from '@/routes/(main)/community/(list)/mcp/_layout';
+import CommunityListSkillPage from '@/routes/(main)/community/(list)/skill';
+import CommunityListSkillLayout from '@/routes/(main)/community/(list)/skill/_layout';
 import CompanyInvitationPage from '@/routes/(main)/company/invite/[token]';
 import DevtoolsIndexPage from '@/routes/(main)/devtools';
 import DevtoolsLayout from '@/routes/(main)/devtools/_layout';
@@ -233,6 +252,106 @@ export const sharedMainAreaChildren: RouteObject[] = [
   },
 
   // Discover routes with nested structure
+  {
+    children: [
+      {
+        element: <CommunityDetailWorkspaceSettingsPage />,
+        path: 'workspace/settings',
+      },
+      {
+        children: [
+          {
+            element: <CommunityListHomePage />,
+            handle: {
+              meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
+            },
+            path: 'home',
+          },
+          {
+            children: [
+              {
+                element: <CommunityListAgentPage />,
+                handle: {
+                  meta: routeMeta({
+                    icon: ShapesIcon,
+                    titleKey: 'navigation.discoverAssistants',
+                  }),
+                },
+                index: true,
+              },
+            ],
+            element: <CommunityListAgentLayout />,
+            path: 'agent',
+          },
+          {
+            children: [
+              {
+                element: <CommunityListSkillPage />,
+                handle: {
+                  meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discover' }),
+                },
+                index: true,
+              },
+            ],
+            element: <CommunityListSkillLayout />,
+            path: 'skill',
+          },
+          {
+            children: [
+              {
+                element: <CommunityListMcpPage />,
+                handle: {
+                  meta: routeMeta({ icon: ShapesIcon, titleKey: 'navigation.discoverMcp' }),
+                },
+                index: true,
+              },
+            ],
+            element: <CommunityListMcpLayout />,
+            path: 'mcp',
+          },
+          {
+            element: <CommunityDetailWorkspacePage />,
+            path: 'workspace',
+          },
+          { element: redirectElement('home'), index: true },
+        ],
+        element: <CommunityListLayout />,
+      },
+      {
+        children: [
+          {
+            element: <CommunityDetailAgentPage />,
+            path: 'agent/:slug',
+          },
+          {
+            element: <CommunityDetailGroupAgentPage />,
+            path: 'group_agent/:slug',
+          },
+          {
+            element: <CommunityDetailSkillPage />,
+            path: 'skill/:slug',
+          },
+          {
+            element: <CommunityDetailMcpPage />,
+            path: 'mcp/:slug',
+          },
+          {
+            element: <CommunityDetailUserPage />,
+            path: 'user/:slug',
+          },
+          {
+            element: <CommunityDetailOrganizationPage />,
+            path: 'org/:slug',
+          },
+        ],
+        element: <CommunityDetailLayout />,
+      },
+    ],
+    element: <CommunityLayout />,
+    errorElement: <ErrorBoundary />,
+    path: 'community',
+  },
+
   // Resource routes
   {
     children: [

@@ -509,6 +509,7 @@ export class FileManageActionImpl {
     files: File[],
     knowledgeBaseId?: string,
     currentFolderId?: string,
+    visibility?: 'private' | 'public',
   ): Promise<void> => {
     const { dispatchDockFileList } = this.#get();
     const generateUploadId = createNanoId(12);
@@ -567,6 +568,7 @@ export class FileManageActionImpl {
             parentId,
             slug,
             title: sanitizedName,
+            visibility,
           };
         });
 
@@ -575,7 +577,29 @@ export class FileManageActionImpl {
 
         // Store folder ID mappings for the next level
         for (const [i, element] of foldersAtThisLevel.entries()) {
-          folderIdMap.set(element, createdFolders[i].id);
+          const folderPath = element;
+          const created = createdFolders[i];
+          folderIdMap.set(folderPath, created.id);
+
+          const parentId = folders[folderPath].parent
+            ? folderIdMap.get(folders[folderPath].parent!)
+            : currentFolderId;
+          if ((parentId ?? undefined) !== currentFolderId) continue;
+
+          this.#get().insertLocalResource(
+            {
+              content: '',
+              editorData: {},
+              fileType: 'custom/folder',
+              knowledgeBaseId,
+              parentId,
+              slug: created.slug ?? batchCreateData[i].slug,
+              sourceType: 'document',
+              title: batchCreateData[i].title,
+              visibility,
+            },
+            created.id,
+          );
         }
       }
 
@@ -635,6 +659,7 @@ export class FileManageActionImpl {
           uploadItem.file,
           knowledgeBaseId,
           uploadItem.parentId,
+          visibility,
         );
       }
 
@@ -652,6 +677,7 @@ export class FileManageActionImpl {
             placementType: knowledgeBaseId ? 'knowledge_base' : 'resource_library',
             processingPolicy: 'persistent',
             uploadId: id,
+            visibility,
           });
 
           if (shouldShowInCurrentList) {
@@ -660,7 +686,13 @@ export class FileManageActionImpl {
             } else {
               this.#get().replaceLocalResource(
                 id,
-                this.#buildOptimisticUploadResource(file, result, knowledgeBaseId, parentId),
+                this.#buildOptimisticUploadResource(
+                  file,
+                  result,
+                  knowledgeBaseId,
+                  parentId,
+                  visibility,
+                ),
               );
             }
           }

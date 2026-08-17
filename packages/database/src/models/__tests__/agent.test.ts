@@ -1508,7 +1508,7 @@ describe('AgentModel', () => {
         expect(result?.avatar).toBe(DEFAULT_INBOX_AVATAR);
       });
 
-      it('syncs existing inbox agent title to the user full name', async () => {
+      it('keeps a custom inbox agent title on reopen', async () => {
         await serverDB.update(users).set({ username: '柯鹏翔' }).where(eq(users.id, userId));
         await serverDB.insert(agents).values({
           id: 'existing-inbox-title-sync',
@@ -1519,7 +1519,7 @@ describe('AgentModel', () => {
 
         const result = await agentModel.getBuiltinAgent(INBOX_SESSION_ID);
 
-        expect(result?.title).toBe('柯鹏翔');
+        expect(result?.title).toBe('Ke Pengxiang');
       });
 
       it('should find inbox from legacy session and update agent slug', async () => {

@@ -117,6 +117,7 @@ export interface CreateDocumentParams {
   slug?: string;
   sourceType: 'document';
   title: string;
+  visibility?: 'private' | 'public';
 }
 
 /**

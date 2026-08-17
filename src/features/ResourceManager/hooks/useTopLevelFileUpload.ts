@@ -7,24 +7,28 @@ import { listVisibilityToUploadVisibility } from '@/routes/(main)/resource/featu
 import { useFileStore } from '@/store/file';
 
 /**
- * Shared driver for ResourceManager top-level file uploads.
- *
- * The Sidebar mode toggle (`listVisibility`) is the source of truth:
- * - top-level workspace: only the "company" tab uploads as public; others private
- * - inside library/folder: inherit parent on the server
- * - personal mode: no visibility column semantics
+ * Sidebar mode toggle is the source of truth for top-level workspace uploads:
+ * company tab → public; everything else → private. Inside a library/folder
+ * the server inherits the parent; personal mode has no visibility column.
  */
-export const useTopLevelFileUpload = () => {
+export const useTopLevelUploadVisibility = () => {
   const activeWorkspaceId = useActiveWorkspaceId();
   const currentFolderId = useCurrentFolderId();
   const libraryId = useResourceManagerStore((s) => s.libraryId);
   const listVisibility = useResourceManagerStore((s) => s.listVisibility);
-  const pushDockFileList = useFileStore((s) => s.pushDockFileList);
-
   const isTopLevelWorkspace = !!activeWorkspaceId && !libraryId && !currentFolderId;
-  const visibility: 'private' | 'public' | undefined = isTopLevelWorkspace
-    ? listVisibilityToUploadVisibility(listVisibility)
-    : undefined;
+
+  return isTopLevelWorkspace ? listVisibilityToUploadVisibility(listVisibility) : undefined;
+};
+
+/**
+ * Shared driver for ResourceManager top-level file uploads.
+ */
+export const useTopLevelFileUpload = () => {
+  const currentFolderId = useCurrentFolderId();
+  const libraryId = useResourceManagerStore((s) => s.libraryId);
+  const pushDockFileList = useFileStore((s) => s.pushDockFileList);
+  const visibility = useTopLevelUploadVisibility();
 
   return useCallback(
     async (files: File[]) => {

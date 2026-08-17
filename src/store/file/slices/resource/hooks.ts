@@ -35,15 +35,19 @@ const isResourceSWRKey = (
 export const revalidateResources = async (params?: ResourceQueryParams) => {
   const queryParams = params || useFileStore.getState().queryParams;
   const workspaceId = getActiveWorkspaceId();
-  if (queryParams) {
-    await mutate(
-      (key) => isResourceSWRKey(key, queryParams, workspaceId),
-      async (currentData) => currentData,
-      {
-        revalidate: true,
-      },
-    );
-  }
+  await mutate(
+    (key) => {
+      if (!queryParams) {
+        return Array.isArray(key) && key[0] === resourceKeys.list.root && key[2] === workspaceId;
+      }
+
+      return isResourceSWRKey(key, queryParams, workspaceId);
+    },
+    async (currentData) => currentData,
+    {
+      revalidate: true,
+    },
+  );
 };
 
 /**
@@ -63,11 +67,10 @@ export const useFetchResources = (params: ResourceQueryParams | null, enable: an
       return response;
     },
     {
-      // Skip background revalidation when a fresh fetch for the same key
-      // happened recently. Cache-hit display still works because the
-      // useEffect below syncs swr.data → store regardless of whether the
-      // fetcher actually ran.
-      dedupingInterval: 30 * 1000,
+      // Explicit refresh after upload must not be swallowed by a recent
+      // first-fetch. Cache-hit display still works because the useEffect
+      // below syncs swr.data → store regardless of whether the fetcher ran.
+      dedupingInterval: 0,
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
     },
