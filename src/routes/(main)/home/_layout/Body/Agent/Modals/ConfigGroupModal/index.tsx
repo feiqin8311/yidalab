@@ -1,10 +1,7 @@
-import { type ModalProps, SortableList } from '@lobehub/ui';
-import { Flexbox, Icon } from '@lobehub/ui';
-import { Button } from '@lobehub/ui/base-ui';
+import { Flexbox, type ModalProps, SortableList } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import isEqual from 'fast-deep-equal';
-import { Plus } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import ImperativeModal from '@/components/ImperativeModal';
@@ -48,8 +45,7 @@ const ConfigGroupModal = memo<ConfigGroupModalProps>(({ open, onCancel, scope = 
       })),
     isEqual,
   ) as SessionGroupItemBase[];
-  const [addGroup, updateGroupSort] = useHomeStore((s) => [s.addGroup, s.updateGroupSort]);
-  const [loading, setLoading] = useState(false);
+  const updateGroupSort = useHomeStore((s) => s.updateGroupSort);
 
   return (
     <ImperativeModal
@@ -81,21 +77,6 @@ const ConfigGroupModal = memo<ConfigGroupModalProps>(({ open, onCancel, scope = 
             updateGroupSort(items);
           }}
         />
-        <Button
-          block
-          disabled={!canEdit}
-          icon={<Icon icon={Plus} />}
-          loading={loading}
-          onClick={async () => {
-            if (!canEdit) return;
-
-            setLoading(true);
-            await addGroup(t('sessionGroup.newGroup'), scope === 'private' ? 'private' : undefined);
-            setLoading(false);
-          }}
-        >
-          {t('sessionGroup.createGroup')}
-        </Button>
       </Flexbox>
     </ImperativeModal>
   );

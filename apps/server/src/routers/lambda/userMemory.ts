@@ -293,6 +293,7 @@ export const userMemoryRouter = router({
               toDate: input.toDate,
               userIds: [ctx.userId],
               userInitiated: true,
+              workspaceId: ctx.workspaceId ?? undefined,
             }),
           ),
           { extraHeaders: upstashWorkflowExtraHeaders },

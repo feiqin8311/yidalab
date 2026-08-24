@@ -6,7 +6,6 @@ import React, { memo, useCallback, useMemo, useState } from 'react';
 
 import { useHomeStore } from '@/store/home';
 
-import { useCreateMenuItems } from '../../../../hooks';
 import { useAgentModal } from '../../ModalProvider';
 import SessionList from '../List';
 import Actions from './Actions';
@@ -24,9 +23,6 @@ const GroupItem = memo<SidebarGroup>(({ items, id, name, visibility }) => {
 
   // Modal management
   const { openConfigGroupModal } = useAgentModal();
-
-  // Create menu items
-  const { isLoading } = useCreateMenuItems();
 
   const handleOpenConfigGroupModal = useCallback(() => {
     openConfigGroupModal(visibility);
@@ -50,7 +46,7 @@ const GroupItem = memo<SidebarGroup>(({ items, id, name, visibility }) => {
 
   return (
     <AccordionItem
-      action={<Actions dropdownMenu={dropdownMenu} isLoading={isLoading} />}
+      action={<Actions dropdownMenu={dropdownMenu} />}
       disabled={isUpdating}
       itemKey={id}
       key={id}

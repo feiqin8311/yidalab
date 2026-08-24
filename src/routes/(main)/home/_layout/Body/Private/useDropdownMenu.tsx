@@ -45,10 +45,9 @@ export const usePrivateActionsDropdownMenu = ({
     [sidebarItems, updateSystemStatus],
   );
 
-  const { createSessionGroupMenuItem, configMenuItem } = useCreateMenuItems();
+  const { configMenuItem } = useCreateMenuItems();
 
   return useMemo(() => {
-    const createSessionGroupItem = createSessionGroupMenuItem({ visibility: 'private' });
     const configItem = configMenuItem(openConfigGroupModal);
 
     const pageSizeOptions = [5, 10, 15, 20];
@@ -62,7 +61,6 @@ export const usePrivateActionsDropdownMenu = ({
     }));
 
     return [
-      createSessionGroupItem,
       configItem,
       { type: 'divider' as const },
       {
@@ -97,7 +95,6 @@ export const usePrivateActionsDropdownMenu = ({
   }, [
     privateAgentPageSize,
     updateSystemStatus,
-    createSessionGroupMenuItem,
     configMenuItem,
     openConfigGroupModal,
     isFirst,

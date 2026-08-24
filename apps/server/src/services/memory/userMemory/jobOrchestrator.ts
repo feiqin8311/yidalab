@@ -2,7 +2,7 @@
  * Direct memory-extraction orchestration without Upstash Workflow.
  * Fan-out uses InternalJobQueue via MemoryExtractionWorkflowService triggers.
  */
-import { LayersEnum, MemorySourceType } from '@lobechat/types';
+import { AsyncTaskStatus, LayersEnum, MemorySourceType } from '@lobechat/types';
 import { chunk } from 'es-toolkit/compat';
 
 import { AsyncTaskModel } from '@/database/models/asyncTask';
@@ -116,6 +116,7 @@ export async function runMemoryProcessUserTopics(raw: MemoryExtractionPayloadInp
   }
 
   const executor = await MemoryExtractionExecutor.create();
+  let processedAny = false;
 
   for (const userId of params.userIds) {
     if (params.asyncTaskId) {
@@ -162,6 +163,7 @@ export async function runMemoryProcessUserTopics(raw: MemoryExtractionPayloadInp
 
     const ids = topicBatch.ids;
     if (!ids.length) continue;
+    processedAny = true;
 
     const cursor = 'cursor' in topicBatch ? topicBatch.cursor : undefined;
     const fanoutCount = params.topicFanoutCount ?? 0;
@@ -201,6 +203,21 @@ export async function runMemoryProcessUserTopics(raw: MemoryExtractionPayloadInp
         }),
       });
     }
+  }
+
+  // User-initiated tasks stay Pending until a topic increments progress.
+  if (
+    !processedAny &&
+    params.userInitiated &&
+    params.asyncTaskId &&
+    !params.topicCursor &&
+    params.userIds[0]
+  ) {
+    await getServerDB().then((db) =>
+      new AsyncTaskModel(db, params.userIds[0]!, params.workspaceId).update(params.asyncTaskId!, {
+        status: AsyncTaskStatus.Success,
+      }),
+    );
   }
 
   return { processedUsers: params.userIds.length };

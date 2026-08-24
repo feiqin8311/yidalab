@@ -1,7 +1,7 @@
 'use client';
 
 import { AccordionItem, ContextMenuTrigger, Flexbox, Text } from '@lobehub/ui';
-import React, { memo, Suspense, useCallback, useMemo } from 'react';
+import React, { memo, Suspense, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
@@ -9,8 +9,6 @@ import NeuralNetworkLoading from '@/components/NeuralNetworkLoading';
 import SkeletonList from '@/features/NavPanel/components/SkeletonList';
 import { useFetchAgentList } from '@/hooks/useFetchAgentList';
 
-import { useCreateMenuItems } from '../../hooks';
-import Actions from './Actions';
 import List from './List';
 import { useAgentModal } from './ModalProvider';
 import { useAgentActionsDropdownMenu } from './useDropdownMenu';
@@ -30,10 +28,6 @@ const Agent = memo<AgentProps>(({ itemKey }) => {
 
   const { openConfigGroupModal } = useAgentModal();
 
-  // Temporary product hold: agent creation is disabled for YidaLab.
-  const { isLoading } = useCreateMenuItems();
-  const addMenuItems = useMemo(() => [], []);
-
   const handleOpenConfigGroupModal = useCallback(() => {
     openConfigGroupModal();
   }, [openConfigGroupModal]);
@@ -47,9 +41,6 @@ const Agent = memo<AgentProps>(({ itemKey }) => {
       itemKey={itemKey}
       paddingBlock={4}
       paddingInline={'8px 4px'}
-      action={
-        <Actions addMenuItems={addMenuItems} dropdownMenu={dropdownMenu} isLoading={isLoading} />
-      }
       headerWrapper={(header) => (
         <ContextMenuTrigger items={dropdownMenu}>{header}</ContextMenuTrigger>
       )}
