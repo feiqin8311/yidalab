@@ -113,7 +113,7 @@ describe('userMemoryRouter.requestMemoryFromChatTopic', () => {
     mockCreate.mockResolvedValue('new-task');
     mockCountTopicsForMemoryExtractor.mockResolvedValue(2);
 
-    const caller = createCaller();
+    const caller = createCaller({ workspaceId: 'ws-1' });
     const result = await caller.requestMemoryFromChatTopic({
       fromDate: new Date('2024-01-01'),
       toDate: new Date('2024-02-01'),
@@ -140,6 +140,7 @@ describe('userMemoryRouter.requestMemoryFromChatTopic', () => {
         toDate: new Date('2024-02-01'),
         userIds: ['user-1'],
         userInitiated: true,
+        workspaceId: 'ws-1',
       }),
       { extraHeaders: { 'x-test': 'ok' } },
     );
