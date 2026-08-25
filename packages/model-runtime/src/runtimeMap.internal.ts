@@ -14,6 +14,7 @@ import { LobeMoonshotAI } from './providers/moonshot';
 import { LobeOllamaAI } from './providers/ollama';
 import { LobeOpenAI } from './providers/openai';
 import { LobeOpenRouterAI } from './providers/openrouter';
+import { LobeQianfanTokenPlanAI } from './providers/qianfanTokenPlan';
 import { LobeQwenAI } from './providers/qwen';
 import { LobeSiliconCloudAI } from './providers/siliconcloud';
 import { LobeVolcengineAI } from './providers/volcengine';
@@ -33,6 +34,7 @@ export const providerRuntimeMap = {
   ollama: LobeOllamaAI,
   openai: LobeOpenAI,
   openrouter: LobeOpenRouterAI,
+  qianfantokenplan: LobeQianfanTokenPlanAI,
   qwen: LobeQwenAI,
   siliconcloud: LobeSiliconCloudAI,
   volcengine: LobeVolcengineAI,

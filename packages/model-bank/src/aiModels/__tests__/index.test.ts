@@ -67,6 +67,14 @@ describe('knowledgeCutoff backfill', () => {
     );
     expect(minimaxM3?.enabled).toBe(true);
 
+    const qianfanAuto = LOBE_DEFAULT_MODEL_LIST.find(
+      (m) => m.providerId === 'qianfantokenplan' && m.id === 'qianfan-code-latest',
+    );
+    expect(qianfanAuto).toMatchObject({
+      displayName: 'Auto',
+      enabled: true,
+    });
+
     const glm52 = LOBE_DEFAULT_MODEL_LIST.find(
       (m) => m.providerId === 'glmcodingplan' && m.id === 'GLM-5.2',
     );
