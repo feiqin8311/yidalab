@@ -56,6 +56,7 @@ import OpenCodeZenProvider from './opencodeZen';
 import OpenRouterProvider from './openrouter';
 import PerplexityProvider from './perplexity';
 import PPIOProvider from './ppio';
+import QianfanTokenPlanProvider from './qianfanTokenPlan';
 import QiniuProvider from './qiniu';
 import QwenProvider from './qwen';
 import ReplicateProvider from './replicate';
@@ -154,6 +155,7 @@ export const DEFAULT_MODEL_PROVIDER_LIST = [
   MoonshotProvider,
   BedrockProvider,
   BailianCodingPlanProvider,
+  QianfanTokenPlanProvider,
   VertexAIProvider,
   { ...AzureProvider, chatModels: [] },
   AzureAIProvider,
@@ -293,6 +295,7 @@ export { default as OpenCodeZenProviderCard } from './opencodeZen';
 export { default as OpenRouterProviderCard } from './openrouter';
 export { default as PerplexityProviderCard } from './perplexity';
 export { default as PPIOProviderCard } from './ppio';
+export { default as QianfanTokenPlanProviderCard } from './qianfanTokenPlan';
 export { default as QiniuProviderCard } from './qiniu';
 export { default as QwenProviderCard } from './qwen';
 export { default as ReplicateProviderCard } from './replicate';

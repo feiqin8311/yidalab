@@ -16,6 +16,7 @@ import MoonshotProvider from './moonshot';
 import OllamaProvider from './ollama';
 import OpenAIProvider from './openai';
 import OpenRouterProvider from './openrouter';
+import QianfanTokenPlanProvider from './qianfanTokenPlan';
 import QwenProvider from './qwen';
 import SiliconCloudProvider from './siliconcloud';
 import VolcengineProvider from './volcengine';
@@ -54,6 +55,7 @@ export const DEFAULT_MODEL_PROVIDER_LIST = [
   AzureAIProvider,
   OpenRouterProvider,
   OllamaProvider,
+  QianfanTokenPlanProvider,
   QwenProvider,
   ZhiPuProvider,
   SiliconCloudProvider,
@@ -91,6 +93,7 @@ export { default as NewAPIProviderCard } from './newapi';
 export { default as OllamaProviderCard } from './ollama';
 export { default as OpenAIProviderCard } from './openai';
 export { default as OpenRouterProviderCard } from './openrouter';
+export { default as QianfanTokenPlanProviderCard } from './qianfanTokenPlan';
 export { default as QwenProviderCard } from './qwen';
 export { default as SiliconCloudProviderCard } from './siliconcloud';
 export { default as VertexAIProviderCard } from './vertexai';

@@ -66,6 +66,7 @@ export { LobeOpenAI } from './providers/openai';
 export * from './providers/openai/openaiModelId';
 export { LobeOpenRouterAI } from './providers/openrouter';
 export { LobePerplexityAI } from './providers/perplexity';
+export { LobeQianfanTokenPlanAI } from './providers/qianfanTokenPlan';
 export { LobeQwenAI } from './providers/qwen';
 export { LobeStepfunAI } from './providers/stepfun';
 export { LobeStraicoAI } from './providers/straico';

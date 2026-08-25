@@ -41,6 +41,9 @@ export const getLLMConfig = () => {
       ENABLED_GLMCODINGPLAN: z.boolean(),
       GLMCODINGPLAN_API_KEY: z.string().optional(),
 
+      ENABLED_QIANFANTOKENPLAN: z.boolean(),
+      QIANFANTOKENPLAN_API_KEY: z.string().optional(),
+
       ENABLED_MINIMAXCODINGPLAN: z.boolean(),
       MINIMAXCODINGPLAN_API_KEY: z.string().optional(),
 
@@ -317,6 +320,9 @@ export const getLLMConfig = () => {
 
       ENABLED_GLMCODINGPLAN: !!process.env.GLMCODINGPLAN_API_KEY,
       GLMCODINGPLAN_API_KEY: process.env.GLMCODINGPLAN_API_KEY,
+
+      ENABLED_QIANFANTOKENPLAN: !!process.env.QIANFANTOKENPLAN_API_KEY,
+      QIANFANTOKENPLAN_API_KEY: process.env.QIANFANTOKENPLAN_API_KEY,
 
       ENABLED_MINIMAXCODINGPLAN: !!process.env.MINIMAXCODINGPLAN_API_KEY,
       MINIMAXCODINGPLAN_API_KEY: process.env.MINIMAXCODINGPLAN_API_KEY,

@@ -56,6 +56,9 @@ export const getServerGlobalConfig = async () => {
     kimicodingplan: {
       withDeploymentName: true,
     },
+    qianfantokenplan: {
+      withDeploymentName: true,
+    },
     lmstudio: {
       fetchOnClient: isDesktop ? false : undefined,
     },
