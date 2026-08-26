@@ -107,6 +107,32 @@ const LAYER_LABEL_MAP: Record<LayersEnum, string> = {
   [LayersEnum.Preference]: 'preferences',
 };
 
+// Memory extraction runs in the web-server process. Keep its source material
+// bounded even when an operator has not configured per-model limits: a single
+// pasted document must not monopolize the event loop during tokenization.
+const DEFAULT_MEMORY_EXTRACTION_CONTEXT_TOKEN_LIMIT = 32_000;
+export const MAX_MEMORY_EXTRACTION_MESSAGE_CHARS = 64_000;
+const MEMORY_EXTRACTION_CONTENT_TRUNCATED =
+  '[Earlier content omitted because it exceeds the memory extraction safety limit.]\n';
+
+export const limitMemoryExtractionMessageContent = (content: OpenAIChatMessage['content']) => {
+  const limitText = (text: string) =>
+    text.length > MAX_MEMORY_EXTRACTION_MESSAGE_CHARS
+      ? `${MEMORY_EXTRACTION_CONTENT_TRUNCATED}${text.slice(-MAX_MEMORY_EXTRACTION_MESSAGE_CHARS)}`
+      : text;
+
+  if (typeof content === 'string') return limitText(content);
+
+  try {
+    const serialized = JSON.stringify(content);
+    if (typeof serialized !== 'string') return content;
+
+    return serialized.length > MAX_MEMORY_EXTRACTION_MESSAGE_CHARS ? limitText(serialized) : content;
+  } catch {
+    return limitText(String(content));
+  }
+};
+
 export interface MemoryExtractionWorkflowCursor {
   createdAt: string;
   id: string;
@@ -826,13 +852,21 @@ export class MemoryExtractionExecutor {
     conversations: (T & { createdAt: Date })[],
     tokenLimit?: number,
   ) {
-    if (!tokenLimit || tokenLimit <= 0) return conversations;
+    const boundedConversations = conversations.map((conversation) => {
+      const content = limitMemoryExtractionMessageContent(conversation.content);
+
+      return content === conversation.content
+        ? conversation
+        : ({ ...conversation, content } as T & { createdAt: Date });
+    });
+
+    if (!tokenLimit || tokenLimit <= 0) return boundedConversations;
 
     let remaining = tokenLimit;
     const trimmed: (T & { createdAt: Date })[] = [];
 
-    for (let i = conversations.length - 1; i >= 0 && remaining > 0; i -= 1) {
-      const conversation = conversations[i];
+    for (let i = boundedConversations.length - 1; i >= 0 && remaining > 0; i -= 1) {
+      const conversation = boundedConversations[i];
       // TODO: we might need to think about how to deal with non-string contents
       // as multi-modal models become more prevalent
       const content =
@@ -1650,7 +1684,9 @@ export class MemoryExtractionExecutor {
             };
           }
 
-          const extractorContextLimit = memoryServiceConfig.extractorContextLimit;
+          const extractorContextLimit =
+            memoryServiceConfig.extractorContextLimit ??
+            DEFAULT_MEMORY_EXTRACTION_CONTEXT_TOKEN_LIMIT;
           const embeddingContextLimit =
             memoryServiceConfig.embeddingContextLimit ?? extractorContextLimit;
           const extractorConversations = await this.trimConversationsToTokenLimit(

@@ -2,11 +2,33 @@ import { describe, expect, it } from 'vitest';
 
 import { LayersEnum, MemorySourceType } from '@/types/userMemory';
 
+import type { MemoryExtractionNormalizedPayload, MemoryExtractionPayloadInput } from '../extract';
 import {
-  type MemoryExtractionNormalizedPayload,
-  type MemoryExtractionPayloadInput,
+  MAX_MEMORY_EXTRACTION_MESSAGE_CHARS,
+  buildWorkflowPayloadInput,
+  limitMemoryExtractionMessageContent,
+  normalizeMemoryExtractionPayload,
 } from '../extract';
-import { buildWorkflowPayloadInput, normalizeMemoryExtractionPayload } from '../extract';
+
+describe('limitMemoryExtractionMessageContent', () => {
+  it('keeps the newest portion of an oversized message within a safe character bound', () => {
+    const suffix = 'newest content';
+    const content = `${'x'.repeat(MAX_MEMORY_EXTRACTION_MESSAGE_CHARS)}${suffix}`;
+
+    const limited = limitMemoryExtractionMessageContent(content);
+
+    expect(typeof limited).toBe('string');
+    expect(limited).toContain('memory extraction safety limit');
+    expect(limited).toEndWith(suffix);
+    expect(limited.length).toBeLessThanOrEqual(MAX_MEMORY_EXTRACTION_MESSAGE_CHARS + 100);
+  });
+
+  it('leaves a small structured message intact', () => {
+    const content = [{ text: 'small', type: 'text' }] as const;
+
+    expect(limitMemoryExtractionMessageContent(content)).toBe(content);
+  });
+});
 
 describe('normalizeMemoryExtractionPayload', () => {
   it('normalizes sources, layers, ids, and dates with fallback baseUrl', () => {
