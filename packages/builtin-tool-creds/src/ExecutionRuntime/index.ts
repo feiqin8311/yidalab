@@ -5,6 +5,7 @@ import type {
   ConnectComposioServiceParams,
   InitiateOAuthConnectParams,
   InjectCredsToSandboxParams,
+  RequestWithCredParams,
   SaveCredsParams,
 } from '../types';
 import { LOBEHUB_OAUTH_PROVIDER_LIST } from '../types';
@@ -55,6 +56,17 @@ export interface ICredsService {
   listCreds: () => Promise<{
     data?: Array<{ id: number; key: string }>;
   }>;
+
+  /**
+   * HTTPS request using a saved credential. Must not return secret values.
+   */
+  requestWithCred: (params: {
+    body?: string;
+    headers?: Record<string, string>;
+    key: string;
+    method?: string;
+    url: string;
+  }) => Promise<{ body: string; status: number; truncated: boolean }>;
 
   /**
    * Save KV credential
@@ -267,6 +279,41 @@ export class CredsExecutionRuntime {
         error: {
           message: error instanceof Error ? error.message : 'Failed to inject credentials',
           type: 'InjectCredentialsFailed',
+        },
+        success: false,
+      };
+    }
+  }
+
+  /**
+   * Call an HTTPS URL with a saved credential. Secrets stay on the server.
+   */
+  async requestWithCred(args: RequestWithCredParams): Promise<BuiltinServerRuntimeOutput> {
+    try {
+      const result = await this.credsService.requestWithCred({
+        body: args.body,
+        headers: args.headers,
+        key: args.key,
+        method: args.method,
+        url: args.url,
+      });
+
+      const truncatedNote = result.truncated ? '\n(truncated)' : '';
+      return {
+        content: `HTTP ${result.status}${truncatedNote}\n${result.body}`,
+        state: {
+          status: result.status,
+          success: result.status >= 200 && result.status < 300,
+          truncated: result.truncated,
+        },
+        success: result.status >= 200 && result.status < 300,
+      };
+    } catch (error) {
+      return {
+        content: `Failed to call URL with credential: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to call URL with credential',
+          type: 'RequestWithCredFailed',
         },
         success: false,
       };

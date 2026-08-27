@@ -15,6 +15,7 @@ import type {
   ConnectComposioServiceParams,
   InitiateOAuthConnectParams,
   InjectCredsToSandboxParams,
+  RequestWithCredParams,
   SaveCredsParams,
 } from '../types';
 import { CredsApiName, LOBEHUB_OAUTH_PROVIDER_LIST } from '../types';
@@ -378,6 +379,41 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
         error: {
           message: error instanceof Error ? error.message : 'Failed to inject credentials',
           type: 'InjectCredentialsFailed',
+        },
+        success: false,
+      };
+    }
+  };
+
+  requestWithCred = async (
+    params: RequestWithCredParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    try {
+      const result = await lambdaClient.localCreds.requestWithCred.mutate({
+        body: params.body,
+        headers: params.headers,
+        key: params.key,
+        method: params.method,
+        url: params.url,
+      });
+      const truncatedNote = result.truncated ? '\n(truncated)' : '';
+      return {
+        content: `HTTP ${result.status}${truncatedNote}\n${result.body}`,
+        state: {
+          status: result.status,
+          success: result.status >= 200 && result.status < 300,
+          truncated: result.truncated,
+        },
+        success: result.status >= 200 && result.status < 300,
+      };
+    } catch (error) {
+      log('[CredsExecutor] requestWithCred - error:', error);
+      return {
+        content: `Failed to call URL with credential: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to call URL with credential',
+          type: 'RequestWithCredFailed',
         },
         success: false,
       };

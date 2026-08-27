@@ -15,6 +15,7 @@ import { UserCredentialModel } from '@/database/models/userCredential';
 import { userInstalledPlugins } from '@/database/schemas';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
+import { requestWithVaultCred } from '@/server/utils/requestWithVaultCred';
 
 const DINGTALK_PERSONAL_NAME = 'DingTalk';
 const DINGTALK_PERSONAL_DESC =
@@ -559,6 +560,28 @@ export const localCredsRouter = router({
         success: notFound.length === 0,
         unsupportedInSandbox: [],
       };
+    }),
+
+  requestWithCred: localCredsProcedure
+    .input(
+      z.object({
+        body: z.string().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        key: z.string().min(1).max(100),
+        method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).optional(),
+        url: z.string().url(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return requestWithVaultCred({
+        body: input.body,
+        headers: input.headers,
+        key: input.key,
+        method: input.method,
+        serverDB: ctx.serverDB,
+        url: input.url,
+        userId: ctx.userId,
+      });
     }),
 
   injectForSkill: localCredsProcedure
