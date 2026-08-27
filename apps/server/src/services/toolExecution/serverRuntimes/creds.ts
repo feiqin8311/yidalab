@@ -3,37 +3,29 @@ import {
   CredsIdentifier,
   type ICredsService,
 } from '@lobechat/builtin-tool-creds';
+import type { LobeChatDatabase } from '@lobechat/database';
 import debug from 'debug';
 
+import { CompanyModel } from '@/database/models/company';
+import { UserCredentialModel } from '@/database/models/userCredential';
 import { MarketService } from '@/server/services/market';
+import { injectVaultCreds, listVaultCredSummaries } from '@/server/utils/withVaultCredEnv';
 
 import { type ServerRuntimeRegistration } from './types';
 
 const log = debug('lobe-server:creds-runtime');
 
 /**
- * Server-side Creds Service implementation
- * Wraps MarketService.market.creds to provide ICredsService interface
+ * Server-side Creds Service.
+ * KV list/inject/save hit the local `user_credentials` vault (Settings → Credentials).
+ * OAuth still goes through Market (local OAuth creds are not implemented).
  */
 class ServerCredsService implements ICredsService {
-  private marketService: MarketService;
-  private workspaceId?: string;
-
-  constructor(marketService: MarketService, workspaceId?: string) {
-    this.marketService = marketService;
-    this.workspaceId = workspaceId;
-  }
-
-  /**
-   * Inside a workspace, reads/writes must hit the workspace's shared organization
-   * credentials, never the operator's personal creds (LOBE-10978). Falls back to
-   * the personal `market.creds` namespace outside a workspace.
-   */
-  private credsAccessor() {
-    return this.workspaceId
-      ? this.marketService.market.organizations.creds({ workspaceId: this.workspaceId })
-      : this.marketService.market.creds;
-  }
+  constructor(
+    private readonly marketService: MarketService,
+    private readonly userId: string,
+    private readonly serverDB?: LobeChatDatabase,
+  ) {}
 
   async getByKey(
     key: string,
@@ -48,22 +40,24 @@ class ServerCredsService implements ICredsService {
   }> {
     log('getByKey: key=%s, decrypt=%s', key, options?.decrypt);
 
-    // First find the credential by key from the list
-    const listResult = await this.credsAccessor().list();
-    const cred = listResult.data?.find((c) => c.key === key);
+    if (!this.serverDB) throw new Error('Credential not found: ' + key);
 
-    if (!cred) {
-      throw new Error(`Credential not found: ${key}`);
+    const model = new UserCredentialModel(this.serverDB, this.userId);
+    const personal = await model.getPersonalByKey(key, { decrypt: options?.decrypt });
+    if (personal) {
+      return { ...personal, values: personal.plaintext };
     }
 
-    // Then get the full credential with optional decryption
-    const result = await this.credsAccessor().get(cred.id, {
-      decrypt: options?.decrypt,
-    });
+    const company = await new CompanyModel(this.serverDB, this.userId).getMyCompany();
+    if (company?.id) {
+      const row = await model.findCompanyByKey(company.id, key);
+      if (row) {
+        const full = await model.getCompany(company.id, row.id, { decrypt: options?.decrypt });
+        if (full) return { ...full, values: full.plaintext };
+      }
+    }
 
-    log('getByKey success: key=%s, id=%d', key, cred.id);
-
-    return result as any;
+    throw new Error(`Credential not found: ${key}`);
   }
 
   async getOAuthAuthorizeUrl(
@@ -111,20 +105,11 @@ class ServerCredsService implements ICredsService {
   }> {
     log('injectCreds: keys=%O, topicId=%s', params.keys, params.topicId);
 
-    // NOTE: stays on the personal `market.creds.inject` even inside a workspace.
-    // The Market SDK's org-scoped creds service has no `inject`/`injectForSkill`
-    // equivalent yet (see LOBE-10978) — sandbox injection cannot be routed to the
-    // workspace's organization credentials until Market adds that endpoint.
-    const result = await this.marketService.market.creds.inject({
-      keys: params.keys,
-      sandbox: params.sandbox,
-      topicId: params.topicId,
-      userId: params.userId,
-    });
+    const result = await injectVaultCreds(this.userId, this.serverDB, params.keys);
 
-    log('injectCreds success: notFound=%d', result.notFound?.length || 0);
+    log('injectCreds success: notFound=%d', result.notFound.length);
 
-    return result as any;
+    return result;
   }
 
   async listCreds(): Promise<{
@@ -132,11 +117,11 @@ class ServerCredsService implements ICredsService {
   }> {
     log('listCreds');
 
-    const result = await this.credsAccessor().list();
+    const data = await listVaultCredSummaries(this.userId, this.serverDB);
 
-    log('listCreds success: %d credentials', result.data?.length || 0);
+    log('listCreds success: %d credentials', data.length);
 
-    return result as any;
+    return { data };
   }
 
   async saveKVCred(params: {
@@ -148,11 +133,15 @@ class ServerCredsService implements ICredsService {
   }): Promise<{ id: number }> {
     log('saveKVCred: key=%s, name=%s, type=%s', params.key, params.name, params.type);
 
-    const result = await this.credsAccessor().createKV(params);
+    if (!this.serverDB) throw new Error('Database is required to save credentials');
+
+    const result = await new UserCredentialModel(this.serverDB, this.userId).upsertPersonalKV(
+      params,
+    );
 
     log('saveKVCred success: id=%d', result.id);
 
-    return result;
+    return { id: result.id };
   }
 }
 
@@ -174,7 +163,7 @@ export const credsRuntime: ServerRuntimeRegistration = {
     );
 
     const marketService = new MarketService({ userInfo: { userId: context.userId } });
-    const credsService = new ServerCredsService(marketService, context.workspaceId);
+    const credsService = new ServerCredsService(marketService, context.userId, context.serverDB);
 
     return new CredsExecutionRuntime(credsService, {
       topicId: context.topicId,
