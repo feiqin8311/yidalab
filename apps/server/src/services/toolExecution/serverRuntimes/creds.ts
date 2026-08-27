@@ -9,6 +9,7 @@ import debug from 'debug';
 import { CompanyModel } from '@/database/models/company';
 import { UserCredentialModel } from '@/database/models/userCredential';
 import { MarketService } from '@/server/services/market';
+import { requestWithVaultCred } from '@/server/utils/requestWithVaultCred';
 import { injectVaultCreds, listVaultCredSummaries } from '@/server/utils/withVaultCredEnv';
 
 import { type ServerRuntimeRegistration } from './types';
@@ -110,6 +111,28 @@ class ServerCredsService implements ICredsService {
     log('injectCreds success: notFound=%d', result.notFound.length);
 
     return result;
+  }
+
+  async requestWithCred(params: {
+    body?: string;
+    headers?: Record<string, string>;
+    key: string;
+    method?: string;
+    url: string;
+  }): Promise<{ body: string; status: number; truncated: boolean }> {
+    if (!this.serverDB) throw new Error('Database is required to call URLs with credentials');
+
+    log('requestWithCred: key=%s method=%s', params.key, params.method || 'GET');
+
+    return requestWithVaultCred({
+      body: params.body,
+      headers: params.headers,
+      key: params.key,
+      method: params.method,
+      serverDB: this.serverDB,
+      url: params.url,
+      userId: this.userId,
+    });
   }
 
   async listCreds(): Promise<{

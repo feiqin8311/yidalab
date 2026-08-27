@@ -44,6 +44,40 @@ export const CredsManifest: BuiltinToolManifest = {
     },
     {
       description:
+        'Call an HTTPS URL using a saved credential (kv-env or kv-header). The secret is attached server-side (Authorization: Bearer for token env vars, or stored headers) and never returned. Use this when sandbox is off, or whenever you need to hit an API with a vault key (e.g. Apify). Do NOT ask for plaintext keys.',
+      name: CredsApiName.requestWithCred,
+      parameters: {
+        additionalProperties: false,
+        properties: {
+          body: {
+            description: 'Optional request body as a string (JSON for POST APIs)',
+            type: 'string',
+          },
+          headers: {
+            additionalProperties: { type: 'string' },
+            description: 'Extra headers. Authorization is always taken from the credential.',
+            type: 'object',
+          },
+          key: {
+            description: 'Saved credential identifier (e.g. "apify")',
+            type: 'string',
+          },
+          method: {
+            description: 'HTTP method. Defaults to GET.',
+            enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'],
+            type: 'string',
+          },
+          url: {
+            description: 'HTTPS URL to call',
+            type: 'string',
+          },
+        },
+        required: ['key', 'url'],
+        type: 'object',
+      } satisfies JSONSchema7,
+    },
+    {
+      description:
         'Inject credentials into the sandbox environment as environment variables. Only available when sandbox mode is enabled — do NOT call this on desktop/local.',
       name: CredsApiName.injectCredsToSandbox,
       parameters: {

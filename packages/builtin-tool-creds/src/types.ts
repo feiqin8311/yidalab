@@ -20,6 +20,11 @@ export const CredsApiName = {
   injectCredsToSandbox: 'injectCredsToSandbox',
 
   /**
+   * Call an HTTPS URL using a saved credential. Token stays on the server.
+   */
+  requestWithCred: 'requestWithCred',
+
+  /**
    * Save a new credential
    * Use when user wants to store sensitive info securely
    */
@@ -88,6 +93,35 @@ export interface InjectCredsToSandboxState {
    * Whether injection was successful
    */
   success: boolean;
+}
+
+export interface RequestWithCredParams {
+  /**
+   * Optional JSON/text body (ignored for GET/HEAD)
+   */
+  body?: string;
+  /**
+   * Extra headers (Authorization is always taken from the credential)
+   */
+  headers?: Record<string, string>;
+  /**
+   * Saved credential key (e.g. "apify")
+   */
+  key: string;
+  /**
+   * HTTP method. Defaults to GET.
+   */
+  method?: string;
+  /**
+   * HTTPS URL to call
+   */
+  url: string;
+}
+
+export interface RequestWithCredState {
+  status?: number;
+  success: boolean;
+  truncated?: boolean;
 }
 
 export interface SaveCredsParams {

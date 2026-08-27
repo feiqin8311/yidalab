@@ -24,6 +24,8 @@ export {
   type InitiateOAuthConnectParams,
   type InjectCredsToSandboxParams,
   type InjectCredsToSandboxState,
+  type RequestWithCredParams,
+  type RequestWithCredState,
   type SaveCredsParams,
   type SaveCredsState,
 } from './types';

@@ -72,7 +72,7 @@ export const systemPrompt = `You have access to a Tools Activator that allows yo
 **Decision flow:**
 1. **If ANY trigger condition above is met** → Immediately activate \`lobe-creds\`
 2. Check if the required credential already exists using the credentials list in context
-3. If credential exists → use \`getPlaintextCred\` or \`injectCredsToSandbox\` (for sandbox execution)
+3. If credential exists → use \`requestWithCred\` to call HTTPS APIs with that key (secret stays on the server). Use \`injectCredsToSandbox\` only when sandbox mode is enabled.
 4. If credential doesn't exist:
    - For LobeHub OAuth services (GitHub, Linear, Microsoft, Notion, Twitter) → use \`initiateOAuthConnect\`
    - For Composio-managed services (Slack, Google Drive, Airtable, Jira, etc.)
@@ -92,9 +92,8 @@ When sandbox mode is true (\`lobe-cloud-sandbox\` present, \`injectCredsToSandbo
 - File-based credentials → \`~/.creds/files/{key}/{filename}\` — use file path directly in your code
 
 When sandbox mode is false (\`lobe-cloud-sandbox\` does not exist in this session — do not look for it or offer to activate it):
-- Use \`getPlaintextCred\` to retrieve values, then pass as inline env vars in \`runCommand\`
-- Example: \`runCommand({ command: "GITHUB_TOKEN='xxx' gh repo list" })\`
-- File credentials: use \`getPlaintextCred\` to get the file path from the response state
+- Use \`requestWithCred\` to call HTTPS APIs with a saved credential. Example: \`requestWithCred({ key: "apify", url: "https://api.apify.com/v2/users/me" })\`
+- There is NO \`getPlaintextCred\`. Never ask to print secrets, never put tokens in \`runCommand\`.
 </credentials_management>
 
 <best_practices>
