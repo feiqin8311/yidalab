@@ -326,7 +326,7 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
       log('[CredsExecutor] injectCredsToSandbox - keys:', params.keys, 'topicId:', topicId);
 
       // Call the inject API with keys, topicId and userId from context
-      const result = await lambdaClient.market.creds.inject.mutate({
+      const result = await lambdaClient.localCreds.inject.mutate({
         keys: params.keys,
         sandbox: true,
         topicId,
@@ -422,7 +422,7 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
 
       log('[CredsExecutor] saveCreds - key:', params.key, 'name:', name);
 
-      await lambdaClient.market.creds.createKV.mutate({
+      await lambdaClient.localCreds.createKV.mutate({
         description: params.description,
         key: params.key,
         name,

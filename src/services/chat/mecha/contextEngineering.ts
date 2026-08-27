@@ -442,14 +442,17 @@ export const contextEngineering = async ({
 
   if (isCredsEnabled) {
     try {
-      const credsResult = await lambdaClient.market.creds.list.query();
-      const userCreds = (credsResult as any)?.data ?? [];
-      credsList = userCreds.map((cred: any): CredSummary => ({
-        description: cred.description,
-        key: cred.key,
-        name: cred.name,
-        type: cred.type,
-      }));
+      const credsResult = await lambdaClient.localCreds.list.query();
+      const userCreds = credsResult.data ?? [];
+      credsList = userCreds.map(
+        (cred): CredSummary => ({
+          description: cred.description,
+          key: cred.key,
+          name: cred.name,
+          ownerType: cred.scope === 'company' ? 'organization' : undefined,
+          type: cred.type,
+        }),
+      );
       log('Creds context resolved: count=%d', credsList?.length ?? 0);
     } catch (error) {
       // Silently fail - creds context is optional

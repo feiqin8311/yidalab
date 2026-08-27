@@ -41,8 +41,8 @@ import { UserModel } from '@/database/models/user';
 import { UserPersonaModel } from '@/database/models/userMemory/persona';
 import { serverMessagesEngine } from '@/server/modules/Mecha/ContextEngineering';
 import { AgentDocumentsService } from '@/server/services/agentDocuments';
-import { MarketService } from '@/server/services/market';
 import { OnboardingService } from '@/server/services/onboarding';
+import { listVaultCredSummaries } from '@/server/utils/withVaultCredEnv';
 import {
   filterAgentContextDocumentsBySelection,
   toAgentContextDocuments,
@@ -299,22 +299,19 @@ export const buildServerCallLlmContext = async ({
   const credsListPromise = (async () => {
     if (!ctx.userId) return '';
     try {
-      const marketService = new MarketService({ userInfo: { userId: ctx.userId } });
-      // Inside a workspace, the agent must only see the workspace's shared
-      // organization credentials — personal creds are not visible here (LOBE-10978).
-      const credsResult = ctx.workspaceId
-        ? await marketService.market.organizations.creds({ workspaceId: ctx.workspaceId }).list()
-        : await marketService.market.creds.list();
-      const userCreds = (credsResult as any)?.data ?? [];
+      // Settings → Credentials writes `localCreds` (user_credentials). Market
+      // SDK is a different vault and is empty on this self-hosted path.
+      const userCreds = await listVaultCredSummaries(ctx.userId, ctx.serverDB);
       const credsList = generateCredsList(
-        userCreds.map((cred: any): CredSummary => ({
-          description: cred.description,
-          key: cred.key,
-          name: cred.name,
-          ownerDisplayName: cred.ownerDisplayName,
-          ownerType: cred.ownerType,
-          type: cred.type,
-        })),
+        userCreds.map(
+          (cred): CredSummary => ({
+            description: cred.description,
+            key: cred.key,
+            name: cred.name,
+            ownerType: cred.scope === 'company' ? 'organization' : undefined,
+            type: cred.type,
+          }),
+        ),
       );
       log('Fetched %d creds for {{CREDS_LIST}} substitution', userCreds.length);
       return credsList;
