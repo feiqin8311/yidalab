@@ -144,7 +144,9 @@ export class MarketSandboxProvider implements SandboxProvider {
 
 export const redactSandboxParams = (params: Record<string, unknown>) => {
   const hasCommand = typeof params.command === 'string';
-  if (!params.skillZipUrls && !params.zipUrl && !hasCommand) return params;
+  const writesCredentialFile =
+    typeof params.path === 'string' && /(?:^|\/)\.creds(?:\/|$)/.test(params.path);
+  if (!params.skillZipUrls && !params.zipUrl && !hasCommand && !writesCredentialFile) return params;
 
   const redacted = {
     ...params,
@@ -158,6 +160,7 @@ export const redactSandboxParams = (params: Record<string, unknown>) => {
       (_, name: string) => `${name}=${REDACTED_SANDBOX_PARAM}`,
     );
   }
+  if (writesCredentialFile) redacted.content = REDACTED_SANDBOX_PARAM;
 
   return redacted;
 };

@@ -334,13 +334,10 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
         userId,
       });
 
-      const credentials = (result as any).credentials || {};
       const notFound = (result as any).notFound || [];
       const unsupportedInSandbox = (result as any).unsupportedInSandbox || [];
 
       log('[CredsExecutor] injectCredsToSandbox - result:', {
-        envKeys: Object.keys(credentials.env || {}),
-        filesCount: credentials.files?.length || 0,
         notFound,
         unsupportedInSandbox,
       });
@@ -364,7 +361,6 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
       return {
         content: content.trim(),
         state: {
-          credentials,
           injected: injectedKeys,
           notFound,
           success: notFound.length === 0,

@@ -9,12 +9,23 @@ import debug from 'debug';
 import { CompanyModel } from '@/database/models/company';
 import { UserCredentialModel } from '@/database/models/userCredential';
 import { MarketService } from '@/server/services/market';
+import { createSandboxService } from '@/server/services/sandbox';
 import { requestWithVaultCred } from '@/server/utils/requestWithVaultCred';
 import { injectVaultCreds, listVaultCredSummaries } from '@/server/utils/withVaultCredEnv';
 
 import { type ServerRuntimeRegistration } from './types';
 
 const log = debug('lobe-server:creds-runtime');
+
+const SANDBOX_CREDENTIALS_PATH = '/home/user/.creds/env';
+const SHELL_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export const formatSandboxCredentials = (env: Record<string, string>): string =>
+  Object.entries(env)
+    .filter(([key]) => SHELL_ENV_KEY.test(key))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `export ${key}='${value.replaceAll("'", String.raw`'\''`)}'`)
+    .join('\n');
 
 /**
  * Server-side Creds Service.
@@ -26,6 +37,7 @@ class ServerCredsService implements ICredsService {
     private readonly marketService: MarketService,
     private readonly userId: string,
     private readonly serverDB?: LobeChatDatabase,
+    private readonly topicId?: string,
   ) {}
 
   async getByKey(
@@ -104,13 +116,48 @@ class ServerCredsService implements ICredsService {
     success: boolean;
     unsupportedInSandbox?: string[];
   }> {
-    log('injectCreds: keys=%O, topicId=%s', params.keys, params.topicId);
-
     const result = await injectVaultCreds(this.userId, this.serverDB, params.keys);
+    const content = formatSandboxCredentials(result.credentials.env);
+
+    if (!content) {
+      return {
+        notFound: result.notFound,
+        success: false,
+        unsupportedInSandbox: params.keys.filter((key) => !result.notFound.includes(key)),
+      };
+    }
+
+    if (!this.topicId) throw new Error('topicId is required to inject sandbox credentials');
+
+    const sandbox = createSandboxService({
+      marketService: this.marketService,
+      topicId: this.topicId,
+      userId: this.userId,
+    });
+    const writeResult = await sandbox.callTool('writeFile', {
+      content,
+      createDirectories: true,
+      path: SANDBOX_CREDENTIALS_PATH,
+    });
+
+    if (!writeResult.success) {
+      throw new Error(writeResult.error?.message || 'Failed to write sandbox credentials');
+    }
+
+    const chmodResult = await sandbox.callTool('runCommand', {
+      command: `chmod 600 ${SANDBOX_CREDENTIALS_PATH}`,
+    });
+    if (!chmodResult.success) {
+      throw new Error(chmodResult.error?.message || 'Failed to secure sandbox credentials');
+    }
 
     log('injectCreds success: notFound=%d', result.notFound.length);
 
-    return result;
+    return {
+      notFound: result.notFound,
+      success: result.success,
+      unsupportedInSandbox: result.unsupportedInSandbox,
+    };
   }
 
   async requestWithCred(params: {
@@ -186,7 +233,12 @@ export const credsRuntime: ServerRuntimeRegistration = {
     );
 
     const marketService = new MarketService({ userInfo: { userId: context.userId } });
-    const credsService = new ServerCredsService(marketService, context.userId, context.serverDB);
+    const credsService = new ServerCredsService(
+      marketService,
+      context.userId,
+      context.serverDB,
+      context.topicId,
+    );
 
     return new CredsExecutionRuntime(credsService, {
       topicId: context.topicId,

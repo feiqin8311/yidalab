@@ -242,12 +242,13 @@ export class CredsExecutionRuntime {
         userId,
       });
 
-      const credentials = result.credentials || {};
       const notFound = result.notFound || [];
       const unsupportedInSandbox = result.unsupportedInSandbox || [];
 
       // Build response content
-      const injectedKeys = args.keys.filter((k) => !notFound.includes(k));
+      const injectedKeys = args.keys.filter(
+        (key) => !notFound.includes(key) && !unsupportedInSandbox.includes(key),
+      );
       let content = '';
 
       if (injectedKeys.length > 0) {
@@ -265,13 +266,12 @@ export class CredsExecutionRuntime {
       return {
         content: content.trim(),
         state: {
-          credentials,
           injected: injectedKeys,
           notFound,
-          success: notFound.length === 0,
+          success: result.success && notFound.length === 0 && unsupportedInSandbox.length === 0,
           unsupportedInSandbox,
         },
-        success: true,
+        success: result.success && notFound.length === 0 && unsupportedInSandbox.length === 0,
       };
     } catch (error) {
       return {
