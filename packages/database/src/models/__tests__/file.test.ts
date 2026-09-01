@@ -60,6 +60,20 @@ describe('FileModel', () => {
       expect(file).toMatchObject({ ...params, userId });
     });
 
+    it('should treat empty parentId as null so files_parent_id_documents_id_fk is not violated', async () => {
+      const { id } = await fileModel.create({
+        fileType: 'custom/document',
+        knowledgeBaseId: 'kb1',
+        name: '产品主档案｜919002｜B0B6B3K8CY',
+        parentId: '',
+        size: 1839,
+        url: 'internal://document/placeholder',
+      });
+
+      const file = await serverDB.query.files.findFirst({ where: eq(files.id, id) });
+      expect(file?.parentId).toBeNull();
+    });
+
     it('should create a file with knowledgeBaseId', async () => {
       const params = {
         name: 'test-file.txt',
@@ -660,10 +674,17 @@ describe('FileModel', () => {
       await serverDB.insert(files).values([
         ...sharedFileList,
         {
-          name: 'big_document.pdf',
-          url: 'https://example.com/big_document.pdf',
+          name: 'big_document.docx',
+          url: 'https://example.com/big_document.docx',
           size: 5000,
-          fileType: 'application/pdf',
+          fileType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          userId,
+        },
+        {
+          name: 'document.md',
+          url: 'https://example.com/document.md',
+          size: 1000,
+          fileType: 'text/markdown',
           userId,
         },
       ]);
@@ -675,8 +696,8 @@ describe('FileModel', () => {
       });
 
       expect(filteredAndSortedFiles).toHaveLength(2);
-      expect(filteredAndSortedFiles[0].name).toBe('big_document.pdf');
-      expect(filteredAndSortedFiles[1].name).toBe('document.pdf');
+      expect(filteredAndSortedFiles[0].name).toBe('big_document.docx');
+      expect(filteredAndSortedFiles[1].name).toBe('document.md');
     });
 
     it('should return an empty array when no files match the query', async () => {

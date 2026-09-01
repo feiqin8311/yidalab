@@ -135,6 +135,21 @@ describe('DocumentModel', () => {
       expect(result.content).toBe('Test content');
       expect(result.fileId).toBe(file.id);
     });
+
+    it('should treat empty parentId as null so documents parent_id FK is not violated', async () => {
+      const result = await documentModel.create({
+        content: '产品主档案',
+        fileType: 'custom/document',
+        parentId: '',
+        source: 'document',
+        sourceType: 'api',
+        title: '产品主档案｜919002｜B0B6B3K8CY',
+        totalCharCount: 5,
+        totalLineCount: 1,
+      });
+
+      expect(result.parentId).toBeNull();
+    });
   });
 
   describe('delete', () => {
