@@ -87,10 +87,14 @@ export class DocumentModel {
     //     existing behavior is preserved — these don't have a Pages-style
     //     draft / publish lifecycle and were workspace-shared from day one
     // Personal mode leaves it to the schema default; the filter ignores it.
+    // Empty string is not a valid documents.id; the parent_id FK rejects it.
+    // Callers (and LLMs) omit parentId to mean "root" — treat "" the same.
+    const parentId = params.parentId?.trim() || null;
+
     let visibility = params.visibility;
     if (!visibility && this.workspaceId) {
-      if (params.parentId) {
-        const parent = await this.findById(params.parentId);
+      if (parentId) {
+        const parent = await this.findById(parentId);
         visibility = parent?.visibility ?? 'private';
       } else if (params.sourceType === 'api') {
         visibility = 'private';
@@ -102,7 +106,7 @@ export class DocumentModel {
       .values(
         buildWorkspacePayload(
           { userId: this.userId, workspaceId: this.workspaceId },
-          { ...params, ...(visibility ? { visibility } : {}) },
+          { ...params, parentId, ...(visibility ? { visibility } : {}) },
         ),
       )
       .returning()) as DocumentItem[];

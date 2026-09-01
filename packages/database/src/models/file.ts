@@ -103,12 +103,16 @@ export class FileModel {
           .onConflictDoNothing();
       }
 
+      // Empty string is not a valid documents.id; FK files_parent_id_documents_id_fk
+      // rejects it. Models omit parentId to mean "root".
+      const parentId = params.parentId?.trim() || null;
+
       const result = (await tx
         .insert(files)
         .values(
           buildWorkspacePayload(
             { userId: this.userId, workspaceId: this.workspaceId },
-            { ...params },
+            { ...params, parentId },
           ),
         )
         .returning()) as FileItem[];
