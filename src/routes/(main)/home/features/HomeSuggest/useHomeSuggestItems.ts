@@ -75,10 +75,8 @@ export const useHomeSuggestItems = (
   });
 
   const companyExamples = useMemo(() => {
-    // No company membership → no company-wide list (ops fallback may apply after load).
-    if (!company) return [] as string[];
-    return resolveCompanyRecommendedExamples(company.settings?.recommendedExamples);
-  }, [company, company?.settings?.recommendedExamples]);
+    return resolveCompanyRecommendedExamples(company?.settings?.recommendedExamples);
+  }, [company?.settings?.recommendedExamples]);
 
   const builtinTools = useToolStore((s) => s.builtinTools);
   const builtinSkills = useToolStore((s) => s.builtinSkills);
