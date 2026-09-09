@@ -246,7 +246,6 @@ describe('systemStatusSelectors', () => {
       const items = systemStatusSelectors.sidebarItems(null)(s);
       const spacerIdx = items.indexOf(SIDEBAR_SPACER_ID);
       // every known key is present
-      expect(items).toContain('pages');
       expect(items).toContain('tasks');
       expect(items).toContain('functions');
       expect(items).toContain('community');
@@ -258,7 +257,6 @@ describe('systemStatusSelectors', () => {
       expect(items[spacerIdx - 1]).toBe('recents');
       // missing top-group defaults slot in just before the accordion
       expect(items.indexOf('tasks')).toBeLessThan(spacerIdx - 2);
-      expect(items.indexOf('pages')).toBeLessThan(spacerIdx - 2);
       expect(items.indexOf('functions')).toBeLessThan(spacerIdx - 2);
       // missing bottom-group defaults sit after the spacer
       expect(items.indexOf('image')).toBeGreaterThan(spacerIdx);
@@ -274,7 +272,6 @@ describe('systemStatusSelectors', () => {
       expect(items).toEqual([
         'tasks',
         'functions',
-        'pages',
         'private',
         'agent',
         'recents',
@@ -297,9 +294,40 @@ describe('systemStatusSelectors', () => {
       expect(items).toEqual([
         'tasks',
         'functions',
-        'pages',
         'private',
         'recents',
+        'agent',
+        SIDEBAR_SPACER_ID,
+        'image',
+        'community',
+        'resource',
+        'memory',
+        'feedback',
+      ]);
+    });
+
+    it('should pin newly-backfilled tasks immediately before functions', () => {
+      const s: GlobalState = merge(initialState, {
+        status: {
+          sidebarItems: [
+            'functions',
+            'recents',
+            'private',
+            'agent',
+            SIDEBAR_SPACER_ID,
+            'image',
+            'community',
+            'resource',
+            'memory',
+            'feedback',
+          ],
+        },
+      });
+      expect(systemStatusSelectors.sidebarItems(null)(s)).toEqual([
+        'tasks',
+        'functions',
+        'recents',
+        'private',
         'agent',
         SIDEBAR_SPACER_ID,
         'image',

@@ -168,8 +168,9 @@ const sidebarExpandedKeys =
 export const SIDEBAR_SPACER_ID = '__spacer__';
 
 export const DEFAULT_SIDEBAR_ITEMS: string[] = [
-  // tasks / pages temporarily hidden (see useNavLayout hidden flags)
+  'tasks',
   'functions',
+  // pages temporarily hidden (see useNavLayout hidden flags)
   'recents',
   'private',
   'agent',
@@ -253,13 +254,21 @@ const withAllKnownKeys = (order: string[]): string[] => {
     ...withSpacer.slice(spacerIdx + 1),
   ];
 
-  // YidaLab: pin newly-backfilled `functions` immediately after `tasks` when
-  // both exist, so custom sidebars keep 任务 → 功能 without rewriting order.
+  // YidaLab: keep 任务 → 功能 when either is newly backfilled, without
+  // rewriting the rest of a custom sidebar.
   if (missingTop.includes('functions')) {
     const without = merged.filter((k) => k !== 'functions');
     const tasksIdx = without.indexOf('tasks');
     if (tasksIdx !== -1) {
       without.splice(tasksIdx + 1, 0, 'functions');
+      return without;
+    }
+  }
+  if (missingTop.includes('tasks')) {
+    const without = merged.filter((k) => k !== 'tasks');
+    const functionsIdx = without.indexOf('functions');
+    if (functionsIdx !== -1) {
+      without.splice(functionsIdx, 0, 'tasks');
       return without;
     }
   }

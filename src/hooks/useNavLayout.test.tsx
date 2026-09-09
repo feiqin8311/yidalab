@@ -55,6 +55,16 @@ describe('useNavLayout', () => {
     mocks.showMarket = true;
   });
 
+  it('shows the tasks sidebar entry', async () => {
+    const { useNavLayout } = await import('./useNavLayout');
+    const { result } = renderHook(() => useNavLayout());
+
+    const tasksItem = result.current.topNavItems.find((item) => item.key === 'tasks');
+
+    expect(tasksItem?.hidden).not.toBe(true);
+    expect(tasksItem?.url).toBe('/tasks');
+  });
+
   it('keeps Memory visible in personal mode', async () => {
     const { useNavLayout } = await import('./useNavLayout');
     const { result } = renderHook(() => useNavLayout());
