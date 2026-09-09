@@ -63,8 +63,6 @@ export const useNavLayout = (): NavLayout => {
           url: '/',
         },
         {
-          // Temporarily hide tasks entry; deep links /tasks still work.
-          hidden: true,
           icon: getRouteById('tasks')!.icon,
           key: SidebarTabKey.Tasks,
           title: t('tab.tasks'),

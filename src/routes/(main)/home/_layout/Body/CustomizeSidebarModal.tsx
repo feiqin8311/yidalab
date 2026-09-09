@@ -56,8 +56,9 @@ export interface SidebarItemConfig {
 }
 
 const ALL_SIDEBAR_ITEMS: SidebarItemConfig[] = [
-  // tasks / pages temporarily omitted from customize catalog while nav entries are hidden
+  { id: 'tasks', labelKey: 'tab.tasks', routeId: 'tasks' },
   { id: 'functions', labelKey: 'tab.functions', routeId: 'functions' },
+  // pages temporarily omitted from customize catalog while nav entry is hidden
   { id: 'recents', labelKey: 'recents' },
   { id: 'private', labelKey: 'navPanel.privateAgents' },
   { alwaysVisible: true, id: 'agent', labelKey: 'navPanel.agent' },

@@ -5,6 +5,11 @@ import { SIDEBAR_SPACER_ID } from '@/store/global/selectors/systemStatus';
 import { getAvailableSidebarItems, getSortableSidebarItemIds } from './CustomizeSidebarModal';
 
 describe('CustomizeSidebarModal', () => {
+  it('keeps Tasks available in the customize catalog', () => {
+    expect(getAvailableSidebarItems(false).some((item) => item.id === 'tasks')).toBe(true);
+    expect(getAvailableSidebarItems(true).some((item) => item.id === 'tasks')).toBe(true);
+  });
+
   it('keeps Memory available in personal mode', () => {
     const items = getAvailableSidebarItems(false);
 
