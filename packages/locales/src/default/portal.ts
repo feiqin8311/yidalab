@@ -4,6 +4,7 @@ export default {
   'Plugins': 'Skills',
   'artifacts.display.code': 'Code',
   'artifacts.display.preview': 'Preview',
+  'artifacts.download': 'Download',
   'artifacts.svg.copyAsImage': 'Copy as Image',
   'artifacts.svg.copyFail': 'Copy failed: {{error}}. Try again.',
   'artifacts.svg.copySuccess': 'Image copied successfully',
