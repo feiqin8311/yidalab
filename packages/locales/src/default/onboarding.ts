@@ -160,10 +160,11 @@ export default {
   'telemetry.title3': "Loooobe! Let's get started!",
   'title': 'Welcome to {{appName}}',
   'username.desc': 'Choose your username',
-  'username.hint': 'Use letters, numbers, or underscores',
+  'username.hint': 'Use letters, numbers, spaces, dots, dashes, underscores, or Chinese',
   'username.placeholder': 'Enter your username...',
   'username.required': 'Username cannot be empty',
-  'username.rule': 'Username can only contain letters, numbers, or underscores',
+  'username.rule':
+    'Username can contain letters, numbers, spaces, dots, dashes, underscores, and Chinese characters',
   'username.title': 'Choose your username',
   'username.title2': 'Let’s get to know each other first!',
   'username.title3': 'That way, we can chat more naturally from now on~',

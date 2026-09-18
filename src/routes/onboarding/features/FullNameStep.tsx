@@ -38,7 +38,7 @@ const FullNameStep = memo<FullNameStepProps>(({ onBack, onNext }) => {
       setError(t('username.tooLong'));
       return;
     }
-    if (!/^\w+$/.test(username)) {
+    if (!/^[\w\u4E00-\u9FA5\s\-.·]+$/.test(username)) {
       setError(t('username.rule'));
       return;
     }
