@@ -31,35 +31,24 @@ jobs:
     runs-on: [self-hosted, yidalab-prod]
     timeout-minutes: 30
     steps:
-      - name: Checkout apply script
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          sparse-checkout: |
-            scripts/ops/deploy/apply-ghcr-image.sh
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
+      # No actions/checkout: prod host cannot reliably reach github.com:443.
       - name: Pull image and restart
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           TAG: ${{ inputs.tag }}
           LOCAL_TAG: yidalab:v1
           DEPLOY_ROOT: /yida/yidalab
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
           REF="${IMAGE}:${TAG}"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
           echo "pull $REF"
           docker pull "$REF"
           docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
-          chmod +x scripts/ops/deploy/apply-ghcr-image.sh
-          scripts/ops/deploy/apply-ghcr-image.sh "$REF"
+          /opt/actions-runner/apply-ghcr-image.sh "$REF"
 
   verify:
     if: ${{ inputs.verify_only == true || inputs.verify_only == 'true' }}
