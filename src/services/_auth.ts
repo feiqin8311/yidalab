@@ -111,5 +111,10 @@ export const createPayloadWithKeyVaults = (provider: string) => {
 };
 
 export const createHeaderWithAuth = async (params?: AuthParams): Promise<HeadersInit> => {
-  return { ...params?.headers };
+  // Same workspace header tRPC / chat already send. Without it, /webapi/models
+  // and other raw fetches resolve the personal provider vault instead of the
+  // active company workspace (empty API key → "获取模型列表失败:").
+  const { getBusinessTrpcHeaders } = await import('@/business/client/trpc-headers');
+
+  return { ...params?.headers, ...(await getBusinessTrpcHeaders()) };
 };
