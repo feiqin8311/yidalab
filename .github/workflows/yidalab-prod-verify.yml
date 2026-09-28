@@ -23,11 +23,21 @@ jobs:
           HOST: ${{ secrets.PROD_SSH_HOST }}
           USER: ${{ secrets.PROD_SSH_USER }}
           PASS: ${{ secrets.PROD_SSH_PASSWORD }}
+          KEY: ${{ secrets.PROD_SSH_KEY }}
+          PORT: ${{ secrets.PROD_SSH_PORT }}
           EXPECT: ${{ inputs.expect_sha }}
         run: |
           set -euo pipefail
-          export SSHPASS="$PASS"
-          SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          PORT="${PORT:-22}"
+          if [[ -n "${KEY:-}" ]]; then
+            umask 077
+            KEYFILE="$RUNNER_TEMP/deploy_key"
+            printf '%s\n' "$KEY" > "$KEYFILE"
+            SSH=(ssh -i "$KEYFILE" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=15)
+          else
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=15)
+          fi
 
           "${SSH[@]}" "${USER}@${HOST}" "EXPECT='$EXPECT' bash -s" <<'REMOTE'
           set -euo pipefail

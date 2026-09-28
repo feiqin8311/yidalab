@@ -5,6 +5,8 @@
 #   1. GitHub → Settings → Actions → General → Workflow permissions: Read and write
 #   2. After first push, Packages → yidalab → Package settings → connect to repo
 #   3. Secrets: PROD_SSH_HOST / PROD_SSH_USER / PROD_SSH_PASSWORD (or PROD_SSH_KEY)
+#      PROD_SSH_PORT — optional, default 22. Huawei SG blocks overseas :22;
+#      GitHub runners use 443 (sshd also listens there, pubkey only).
 #
 # Trigger: manual, or push to main / codex/yidalab-custom / feat/cloud-sandbox
 name: YidaLab Production Image
@@ -190,6 +192,7 @@ jobs:
           USER: ${{ secrets.PROD_SSH_USER }}
           PASS: ${{ secrets.PROD_SSH_PASSWORD }}
           KEY: ${{ secrets.PROD_SSH_KEY }}
+          PORT: ${{ secrets.PROD_SSH_PORT }}
           REF: ${{ env.REF }}
           LOCAL_TAG: ${{ env.LOCAL_TAG }}
           DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
@@ -200,21 +203,22 @@ jobs:
             exit 1
           fi
 
-          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+          PORT="${PORT:-22}"
+          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=15)
           if [[ -n "${KEY:-}" ]]; then
             umask 077
             KEYFILE="$RUNNER_TEMP/deploy_key"
             printf '%s\n' "$KEY" > "$KEYFILE"
-            SSH=(ssh -i "$KEYFILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+            SSH=(ssh -i "$KEYFILE" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=15)
           elif [[ -n "${PASS:-}" ]]; then
             export SSHPASS="$PASS"
-            SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
+            SSH=(sshpass -e ssh -p "$PORT" "${SSH_OPTS[@]}")
           else
             echo "::error::Set PROD_SSH_PASSWORD or PROD_SSH_KEY"
             exit 1
           fi
 
-          echo "streaming $REF → ${USER}@${HOST} as $LOCAL_TAG"
+          echo "streaming $REF → ${USER}@${HOST}:$PORT as $LOCAL_TAG"
           # gzip -1: faster stream (image already compressed layers); pigz if present
           SAVE_CMD=(docker save "$REF")
           if command -v pigz >/dev/null 2>&1; then
