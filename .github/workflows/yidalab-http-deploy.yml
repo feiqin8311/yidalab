@@ -40,24 +40,20 @@ jobs:
           docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
           echo "REF=$REF" >> "$GITHUB_ENV"
 
-      - name: Upload image over public HTTP :3010
+      - name: Save image archive
         env:
-          TOKEN: ${{ secrets.DEPLOY_HTTP_TOKEN }}
           REF: ${{ env.REF }}
-          URL: http://116.205.229.31:3010/_yidalab_image_upload
         run: |
           set -euo pipefail
-          if [[ -z "${TOKEN:-}" ]]; then
-            echo "::error::Set DEPLOY_HTTP_TOKEN secret"
-            exit 1
-          fi
-          echo "uploading $REF → $URL"
-          TGZ="$RUNNER_TEMP/yidalab.tgz"
+          TGZ="$RUNNER_TEMP/yidalab-prod.tgz"
           docker save "$REF" | gzip -1 > "$TGZ"
           ls -lh "$TGZ"
-          curl --fail --show-error --http1.1 \
-            -T "$TGZ" "$URL" \
-            -H "X-Deploy-Token: $TOKEN" \
-            -H "Content-Type: application/gzip" \
-            --max-time 2400
-          echo "upload accepted"
+          echo "ARCHIVE=$TGZ" >> "$GITHUB_ENV"
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yidalab-prod-image
+          path: ${{ runner.temp }}/yidalab-prod.tgz
+          retention-days: 1
+          compression-level: 0
