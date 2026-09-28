@@ -1,0 +1,63 @@
+# Emergency deploy when GitHub-hosted runners cannot SSH to prod:22
+# (cloud SG often allows :3010 and blocks overseas :22).
+# Daily path remains: YidaLab Production Image (build + SSH stream).
+name: YidaLab HTTP Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GHCR tag to deploy
+        required: true
+        default: prod
+
+permissions:
+  packages: read
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          REF="${IMAGE}:${TAG}"
+          echo "pull $REF"
+          docker pull "$REF"
+          docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
+          echo "REF=$REF" >> "$GITHUB_ENV"
+
+      - name: Upload image over public HTTP :3010
+        env:
+          TOKEN: ${{ secrets.DEPLOY_HTTP_TOKEN }}
+          REF: ${{ env.REF }}
+          URL: http://116.205.229.31:3010/_yidalab_image_upload
+        run: |
+          set -euo pipefail
+          if [[ -z "${TOKEN:-}" ]]; then
+            echo "::error::Set DEPLOY_HTTP_TOKEN secret"
+            exit 1
+          fi
+          echo "uploading $REF → $URL"
+          TGZ="$RUNNER_TEMP/yidalab.tgz"
+          docker save "$REF" | gzip -1 > "$TGZ"
+          ls -lh "$TGZ"
+          curl --fail --show-error --http1.1 \
+            -T "$TGZ" "$URL" \
+            -H "X-Deploy-Token: $TOKEN" \
+            -H "Content-Type: application/gzip" \
+            --max-time 2400
+          echo "upload accepted"
