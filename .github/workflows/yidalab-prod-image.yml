@@ -1,12 +1,10 @@
-# Build linux/amd64 production image → GHCR, then auto-deploy to prod over SSH.
-# Server receives pre-built image (no compile). Target: warm rebuild ~8–15 min end-to-end.
+# Build linux/amd64 production image → GHCR, then deploy on the prod self-hosted runner.
+# GitHub-hosted job only builds. Prod runner docker-pulls GHCR locally (no US→CN SSH stream).
 #
 # First-time:
 #   1. GitHub → Settings → Actions → General → Workflow permissions: Read and write
 #   2. After first push, Packages → yidalab → Package settings → connect to repo
-#   3. Secrets: PROD_SSH_HOST / PROD_SSH_USER / PROD_SSH_PASSWORD (or PROD_SSH_KEY)
-#      PROD_SSH_PORT — optional, default 22. Huawei SG blocks overseas :22;
-#      GitHub runners use 443 (sshd also listens there, pubkey only).
+#   3. Self-hosted runner labeled `yidalab-prod` on the prod host (see scripts/ops/deploy)
 #
 # Trigger: manual, or push to main / codex/yidalab-custom / feat/cloud-sandbox
 name: YidaLab Production Image
@@ -162,9 +160,16 @@ jobs:
       always() &&
       needs.build-and-push.result == 'success' &&
       (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true)
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    runs-on: [self-hosted, yidalab-prod]
+    timeout-minutes: 30
     steps:
+      - name: Checkout apply script
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/ops/deploy/apply-ghcr-image.sh
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -172,113 +177,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull image
+      - name: Pull image and restart
         env:
           REF: ${{ needs.build-and-push.outputs.image_ref }}
+          LOCAL_TAG: ${{ env.LOCAL_TAG }}
+          DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
         run: |
           set -euo pipefail
           REF=$(echo "$REF" | tr '[:upper:]' '[:lower:]')
           echo "pull $REF"
           docker pull "$REF"
           docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
-          echo "REF=$REF" >> "$GITHUB_ENV"
-
-      - name: Install sshpass
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-
-      - name: Stream image to server and restart
-        env:
-          HOST: ${{ secrets.PROD_SSH_HOST }}
-          USER: ${{ secrets.PROD_SSH_USER }}
-          PASS: ${{ secrets.PROD_SSH_PASSWORD }}
-          KEY: ${{ secrets.PROD_SSH_KEY }}
-          PORT: ${{ secrets.PROD_SSH_PORT }}
-          REF: ${{ env.REF }}
-          LOCAL_TAG: ${{ env.LOCAL_TAG }}
-          DEPLOY_ROOT: ${{ env.DEPLOY_ROOT }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${HOST:-}" || -z "${USER:-}" ]]; then
-            echo "::error::Set PROD_SSH_HOST and PROD_SSH_USER secrets"
-            exit 1
-          fi
-
-          PORT="${PORT:-22}"
-          SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=15)
-          if [[ -n "${KEY:-}" ]]; then
-            umask 077
-            KEYFILE="$RUNNER_TEMP/deploy_key"
-            printf '%s\n' "$KEY" > "$KEYFILE"
-            SSH=(ssh -i "$KEYFILE" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -o ConnectTimeout=15)
-          elif [[ -n "${PASS:-}" ]]; then
-            export SSHPASS="$PASS"
-            SSH=(sshpass -e ssh -p "$PORT" "${SSH_OPTS[@]}")
-          else
-            echo "::error::Set PROD_SSH_PASSWORD or PROD_SSH_KEY"
-            exit 1
-          fi
-
-          echo "streaming $REF → ${USER}@${HOST}:$PORT as $LOCAL_TAG"
-          # gzip -1: faster stream (image already compressed layers); pigz if present
-          SAVE_CMD=(docker save "$REF")
-          if command -v pigz >/dev/null 2>&1; then
-            COMPRESS=(pigz -1)
-          else
-            COMPRESS=(gzip -1)
-          fi
-
-          # Capture previous running image id for automatic rollback on health fail
-          PREV_ID=$("${SSH[@]}" "${USER}@${HOST}" "
-            docker inspect --format '{{.Image}}' \$(docker compose -f '$DEPLOY_ROOT/docker-compose.yml' ps -q lobe 2>/dev/null | head -1) 2>/dev/null \
-              || docker inspect --format '{{.Image}}' \$(cd '$DEPLOY_ROOT' && docker compose ps -q lobe 2>/dev/null | head -1) 2>/dev/null \
-              || true
-          " || true)
-          echo "previous image id: ${PREV_ID:-none}"
-
-          "${SAVE_CMD[@]}" | "${COMPRESS[@]}" | "${SSH[@]}" "${USER}@${HOST}" "
-            set -euo pipefail
-            gunzip | docker load
-            docker tag '$REF' '$LOCAL_TAG'
-            cd '$DEPLOY_ROOT'
-            PREV_ID='$PREV_ID'
-            # image: only — do not re-build from compose build: context
-            docker compose up -d --no-build --force-recreate lobe
-            docker compose ps lobe
-            docker image inspect '$LOCAL_TAG' --format 'done id={{.Id}} created={{.Created}}'
-            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-              code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/ || true)
-              echo \"health try \$i: http \$code\"
-              case \"\$code\" in 200|301|302|307|308|401|403) break ;; esac
-              sleep 3
-            done
-            if [[ \"\${code:-}\" =~ ^(200|301|302|307|308|401|403)$ ]]; then
-              echo 'running database migrations'
-              docker compose exec -T lobe node /app/docker.cjs
-              echo 'database migrations completed'
-              exit 0
-            fi
-            echo '::error::health check exhausted without ready response — deploy failed'
-            docker compose ps lobe || true
-            docker compose logs --tail=80 lobe || true
-            if [[ -n \"\${PREV_ID:-}\" ]]; then
-              echo '::warning::rolling back to previous image id='\"\$PREV_ID\"
-              docker tag \"\$PREV_ID\" '$LOCAL_TAG' || true
-              docker compose up -d --no-build --force-recreate lobe || true
-              sleep 5
-              code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/ || true)
-              echo \"rollback health: http \$code\"
-            else
-              echo '::warning::no previous image id — cannot auto-rollback'
-            fi
-            exit 1
-          "
+          chmod +x scripts/ops/deploy/apply-ghcr-image.sh
+          scripts/ops/deploy/apply-ghcr-image.sh "$REF"
 
       - name: Summary
+        if: always()
+        env:
+          REF: ${{ needs.build-and-push.outputs.image_ref }}
         run: |
           {
-            echo "## Deployed to prod"
+            echo "## Deployed to prod (self-hosted runner)"
             echo ""
-            echo "- image: \`${{ env.REF }}\`"
-            echo "- host: \`${{ secrets.PROD_SSH_HOST }}\`"
+            echo "- image: \`${REF}\`"
             echo "- local tag: \`${{ env.LOCAL_TAG }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
