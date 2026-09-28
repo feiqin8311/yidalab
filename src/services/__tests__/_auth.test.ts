@@ -2,9 +2,10 @@ import { act } from '@testing-library/react';
 import { ModelProvider } from 'model-bank';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { useWorkspaceState } from '@/business/client/workspaceState';
 import { useUserStore } from '@/store/user';
 
-import { getProviderAuthPayload } from '../_auth';
+import { createHeaderWithAuth, getProviderAuthPayload } from '../_auth';
 
 // Mock data for different providers
 const mockZhiPuAPIKey = 'zhipu-api-key';
@@ -227,5 +228,30 @@ describe('getProviderAuthPayload', () => {
   it('should return an empty object or throw an error for an unknown provider', () => {
     const payload = getProviderAuthPayload('UnknownProvider', {});
     expect(payload).toEqual({});
+  });
+});
+
+describe('createHeaderWithAuth', () => {
+  afterEach(() => {
+    useWorkspaceState.setState({ activeWorkspaceId: null });
+  });
+
+  it('includes X-Workspace-Id when a company workspace is active', async () => {
+    useWorkspaceState.setState({ activeWorkspaceId: 'ws_company' });
+
+    await expect(
+      createHeaderWithAuth({ headers: { 'Content-Type': 'application/json' } }),
+    ).resolves.toEqual({
+      'Content-Type': 'application/json',
+      'X-Workspace-Id': 'ws_company',
+    });
+  });
+
+  it('omits X-Workspace-Id in the personal scope', async () => {
+    await expect(
+      createHeaderWithAuth({ headers: { 'Content-Type': 'application/json' } }),
+    ).resolves.toEqual({
+      'Content-Type': 'application/json',
+    });
   });
 });
