@@ -1,0 +1,41 @@
+# Probe which ports GitHub-hosted runners can reach on prod, then try SSH.
+name: YidaLab SSH Probe
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: TCP probe
+        env:
+          HOST: ${{ secrets.PROD_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          for p in 22 80 443 2222 3010 3210 8090; do
+            if timeout 8 bash -c "echo >/dev/tcp/$HOST/$p" 2>/dev/null; then
+              echo "open $p"
+            else
+              echo "closed $p"
+            fi
+          done
+
+      - name: SSH on PROD_SSH_PORT
+        env:
+          HOST: ${{ secrets.PROD_SSH_HOST }}
+          USER: ${{ secrets.PROD_SSH_USER }}
+          KEY: ${{ secrets.PROD_SSH_KEY }}
+          PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          PORT="${PORT:-443}"
+          umask 077
+          KEYFILE="$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$KEY" > "$KEYFILE"
+          echo "ssh ${USER}@${HOST}:$PORT"
+          ssh -i "$KEYFILE" -p "$PORT" \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            "${USER}@${HOST}" 'echo SSH_OK; hostname; date -u'
