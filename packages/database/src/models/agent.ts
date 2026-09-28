@@ -120,6 +120,17 @@ export class AgentModel {
       },
     );
 
+  /**
+   * Builtin agents (inbox, page-agent, …) are one row per user even inside a
+   * workspace. `ownership()` also matches colleagues' public rows, so
+   * `findFirst({ slug: 'inbox' })` can return someone else's public inbox.
+   */
+  private builtinOwnership = () =>
+    and(
+      eq(agents.userId, this.userId),
+      this.workspaceId ? eq(agents.workspaceId, this.workspaceId) : isNull(agents.workspaceId),
+    );
+
   /** Same predicate but for the `sessions` table (used in delete cascade). */
   private sessionsOwnership = () =>
     buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, sessions);
@@ -1251,7 +1262,7 @@ export class AgentModel {
   getBuiltinAgent = async (slug: string): Promise<AgentItem | null> => {
     // 1. First try to find existing agent by slug
     const existing = await this.db.query.agents.findFirst({
-      where: and(eq(agents.slug, slug), this.ownership()),
+      where: and(eq(agents.slug, slug), this.builtinOwnership()),
     });
 
     if (existing) {
@@ -1268,7 +1279,15 @@ export class AgentModel {
         .from(sessions)
         .innerJoin(agentsToSessions, eq(sessions.id, agentsToSessions.sessionId))
         .innerJoin(agents, eq(agentsToSessions.agentId, agents.id))
-        .where(and(eq(sessions.slug, INBOX_SESSION_ID), this.sessionsOwnership()))
+        .where(
+          and(
+            eq(sessions.slug, INBOX_SESSION_ID),
+            eq(sessions.userId, this.userId),
+            this.workspaceId
+              ? eq(sessions.workspaceId, this.workspaceId)
+              : isNull(sessions.workspaceId),
+          ),
+        )
         .limit(1);
 
       if (result.length > 0 && result[0].agent) {
@@ -1330,7 +1349,7 @@ export class AgentModel {
     if (result[0]) return normalizeInboxAgentMeta(result[0], { slug: result[0].slug });
 
     const agent = await this.db.query.agents.findFirst({
-      where: and(eq(agents.slug, slug), this.ownership()),
+      where: and(eq(agents.slug, slug), this.builtinOwnership()),
     });
 
     return agent ? normalizeInboxAgentMeta(agent, { slug: agent.slug }) : null;

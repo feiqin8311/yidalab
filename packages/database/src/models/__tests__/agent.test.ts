@@ -1690,6 +1690,33 @@ describe('AgentModel', () => {
 
         expect(first?.id).toBe(second?.id);
       });
+
+      it('does not return a colleague public inbox as this member inbox', async () => {
+        const [workspace] = await serverDB
+          .insert(workspaces)
+          .values({ name: 'ws-public-inbox', primaryOwnerId: userId, slug: 'ws-public-inbox' })
+          .returning();
+
+        const [colleagueInbox] = await serverDB
+          .insert(agents)
+          .values({
+            slug: INBOX_SESSION_ID,
+            title: '李栖',
+            userId: userId2,
+            virtual: true,
+            visibility: 'public',
+            workspaceId: workspace.id,
+          })
+          .returning();
+
+        const wsAgentModel = new AgentModel(serverDB, userId, workspace.id);
+        const result = await wsAgentModel.getBuiltinAgent(INBOX_SESSION_ID);
+
+        expect(result?.id).not.toBe(colleagueInbox.id);
+        if (result) {
+          expect(result.userId).toBe(userId);
+        }
+      });
     });
   });
 
