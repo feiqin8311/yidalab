@@ -637,7 +637,7 @@ describe('resolveExecutionPlan', () => {
       expect(
         resolveExecutionPlan({
           agencyConfig: cfg({ executionTarget: 'local' }),
-          chatConfig: { enableAgentMode: false },
+          chatConfig: { toolMode: 'chat' },
           clientExecutionAvailable: true,
           onlineDeviceIds: ONLINE_A,
           trigger: RequestTrigger.Bot,
@@ -681,7 +681,7 @@ describe('resolveExecutionPlan', () => {
       // local-system. The plan now honours chat mode at the source.
       for (const executionTarget of ['local', 'device'] as const) {
         // both ways of expressing chat mode degrade the plan
-        for (const chatConfig of [{ enableAgentMode: false }, { toolMode: 'chat' as const }]) {
+        for (const chatConfig of [{ toolMode: 'chat' as const }]) {
           expect(
             resolveExecutionPlan({
               agencyConfig: cfg({ boundDeviceId: 'device-a', executionTarget }),
@@ -698,7 +698,7 @@ describe('resolveExecutionPlan', () => {
       expect(
         resolveExecutionPlan({
           agencyConfig: undefined,
-          chatConfig: { enableAgentMode: false },
+          chatConfig: { toolMode: 'chat' },
           clientExecutionAvailable: true,
           onlineDeviceIds: ONLINE_A,
         }),
@@ -706,7 +706,7 @@ describe('resolveExecutionPlan', () => {
       expect(
         resolveExecutionPlan({
           agencyConfig: cfg({ executionTarget: 'sandbox' }),
-          chatConfig: { enableAgentMode: false },
+          chatConfig: { toolMode: 'chat' },
           clientExecutionAvailable: true,
           onlineDeviceIds: ONLINE_A,
         }),
@@ -732,7 +732,7 @@ describe('resolveExecutionPlan', () => {
       expect(
         resolveExecutionPlan({
           agencyConfig: cfg({ boundDeviceId: 'device-a', executionTarget: 'device' }),
-          chatConfig: { enableAgentMode: false },
+          chatConfig: { toolMode: 'chat' },
           clientExecutionAvailable: false,
           isHetero: true,
           onlineDeviceIds: ONLINE_A,

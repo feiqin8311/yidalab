@@ -10,7 +10,6 @@ import { useAgentId } from '../hooks/useAgentId';
 import { useEffectiveAgentMode } from '../hooks/useEffectiveAgentMode';
 import { useChatInputStore } from '../store';
 import ApprovalMode from './ApprovalMode';
-import ModeSelector from './ModeSelector';
 import PlanModeToggle from './PlanModeToggle';
 import WorkspaceControls from './WorkspaceControls';
 
@@ -61,9 +60,8 @@ const ControlBar = memo(() => {
 
   return (
     <Flexbox horizontal align={'center'} className={styles.bar} justify={'space-between'}>
-      {/* Left: chat-mode switcher + (agent-only) execution device + working directory */}
+      {/* Left: plan toggle + (agent-only) execution device + working directory */}
       <Flexbox horizontal align={'center'} className={styles.leftGroup} gap={4}>
-        <ModeSelector />
         <PlanModeToggle />
         {isAgentRuntimeMode && <WorkspaceControls agentId={agentId} />}
       </Flexbox>

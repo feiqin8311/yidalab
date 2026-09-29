@@ -113,6 +113,21 @@ describe('agentByIdSelectors', () => {
       expect(agentByIdSelectors.getAgentModeById('agent-1')(state)).toBe('auto');
       expect(agentByIdSelectors.getAgentEnableModeById('agent-1')(state)).toBe(true);
     });
+
+    it('ignores stored enableAgentMode false so the removed mode pill cannot leave chat mode', () => {
+      const state = createState({
+        agentMap: {
+          'agent-1': {
+            chatConfig: { enableAgentMode: false },
+            model: 'gpt-4o',
+            provider: 'openai',
+          },
+        },
+      });
+
+      expect(agentByIdSelectors.getAgentModeById('agent-1')(state)).toBe('auto');
+      expect(agentByIdSelectors.getAgentEnableModeById('agent-1')(state)).toBe(true);
+    });
   });
 
   describe('getAgentWorkingDirectoryById', () => {

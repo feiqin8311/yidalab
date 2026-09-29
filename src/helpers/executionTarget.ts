@@ -43,17 +43,14 @@ const coerceAwayFromSandbox = (
 };
 
 /**
- * The agent's tool mode — explicit `chatConfig.toolMode` wins; otherwise derive
- * from `enableAgentMode` (undefined = agent). `chat` = no execution
- * environment (plain chat); `custom` = toolset is exactly the agent's plugins.
- *
- * Single source of truth so client (selectors), server tools engine, and
- * `resolveExecutionPlan` all agree on what counts as chat mode.
+ * The agent's tool mode — explicit `chatConfig.toolMode` wins, otherwise agent.
+ * `chat` = no execution environment; `custom` = toolset is exactly the agent's
+ * plugins. Stored `enableAgentMode: false` is ignored (the mode pill is gone;
+ * product default is agent).
  */
 export const resolveToolMode = (
   chatConfig: LobeAgentChatConfig | undefined,
-): 'agent' | 'chat' | 'custom' =>
-  chatConfig?.toolMode ?? (chatConfig?.enableAgentMode === false ? 'chat' : 'agent');
+): 'agent' | 'chat' | 'custom' => chatConfig?.toolMode ?? 'agent';
 
 export interface ResolveExecutionTargetOptions {
   /**

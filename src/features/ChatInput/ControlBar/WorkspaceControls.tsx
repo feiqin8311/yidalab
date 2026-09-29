@@ -29,8 +29,8 @@ interface WorkspaceControlsProps {
  *
  * Both ControlBar (normal agents) and HeteroControlBar (heterogeneous agents)
  * compose this, so the Device / Branch / diff / PR cluster can't drift between
- * them. The bar-specific bits (ModeSelector, ApprovalMode, ContextWindow, the
- * full-access badge) stay in their respective bars.
+ * them. The bar-specific bits (ApprovalMode, ContextWindow, the full-access
+ * badge) stay in their respective bars.
  */
 const WorkspaceControls = memo<WorkspaceControlsProps>(
   ({ agentId, alwaysShowWorkspace = false }) => {
