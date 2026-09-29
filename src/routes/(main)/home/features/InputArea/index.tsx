@@ -14,7 +14,7 @@ import { stripMarkdownLinks } from './hintFormat';
 import InputDragUpload from './InputDragUpload';
 import { useSend } from './useSend';
 
-const leftActions: ActionKeys[] = ['agentMode', 'plus'];
+const leftActions: ActionKeys[] = ['plus'];
 const rightActions: ActionKeys[] = ['modelLabel'];
 
 const InputArea = () => {

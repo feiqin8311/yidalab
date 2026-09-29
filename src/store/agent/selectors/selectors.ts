@@ -253,13 +253,11 @@ const openingMessage = (s: AgentStoreState) => currentAgentConfig(s)?.openingMes
 
 /**
  * Get current agent's mode.
- * Agent mode is the default — only an explicit `chatConfig.enableAgentMode === false`
- * collapses the agent to chat mode.
+ * Agent is the default. Only explicit `chatConfig.toolMode === 'chat'` is chat.
  */
 const currentAgentMode = (s: AgentStoreState): AgentMode | undefined => {
   const config = currentAgentConfig(s);
-  const chatConfig = config?.chatConfig;
-  return chatConfig?.enableAgentMode === false ? undefined : 'auto';
+  return config?.chatConfig?.toolMode === 'chat' ? undefined : 'auto';
 };
 
 /**

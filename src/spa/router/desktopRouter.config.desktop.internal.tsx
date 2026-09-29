@@ -12,7 +12,6 @@ import {
   Home,
   LayoutGridIcon,
   LibraryBigIcon,
-  MessageSquarePlus,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -96,7 +95,6 @@ import CompanyInvitationPage from '@/routes/(main)/company/invite/[token]';
 import DevtoolsIndexPage from '@/routes/(main)/devtools';
 import DevtoolsLayout from '@/routes/(main)/devtools/_layout';
 import DevtoolsToolPage from '@/routes/(main)/devtools/[identifier]';
-import FeedbackPage from '@/routes/(main)/feedback';
 import FunctionsPage from '@/routes/(main)/functions';
 import OperationsFunctionPage from '@/routes/(main)/functions/[functionId]';
 import OperationsFunctionRunPage from '@/routes/(main)/functions/[functionId]/[runId]';
@@ -444,21 +442,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
     element: <DesktopMemoryLayout />,
     errorElement: <ErrorBoundary />,
     path: 'memory',
-  },
-
-  // Company feedback
-  {
-    children: [
-      {
-        element: <FeedbackPage />,
-        handle: {
-          meta: routeMeta({ icon: MessageSquarePlus, titleKey: 'navigation.feedback' }),
-        },
-        index: true,
-      },
-    ],
-    errorElement: <ErrorBoundary />,
-    path: 'feedback',
   },
 
   // Business functions center

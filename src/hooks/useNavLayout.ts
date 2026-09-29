@@ -116,16 +116,8 @@ export const useNavLayout = (): NavLayout => {
           title: t('tab.memory'),
           url: '/memory',
         },
-        {
-          // Company-scoped product feedback wall.
-          hidden: !activeWorkspaceSlug,
-          icon: getRouteById('feedback')!.icon,
-          key: SidebarTabKey.Feedback,
-          title: t('tab.feedback'),
-          url: '/feedback',
-        },
       ] as NavItem[],
-    [t, showAiImage, showMarket, activeWorkspaceSlug],
+    [t, showAiImage, showMarket],
   );
 
   const footer = useMemo(

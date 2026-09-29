@@ -7,7 +7,6 @@ import {
   Image,
   LayoutGridIcon,
   LibraryBigIcon,
-  MessageSquarePlus,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -105,7 +104,6 @@ import EvalBenchLayout from '@/routes/(main)/eval/bench/[benchmarkId]/_layout';
 import EvalDatasetDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/datasets/[datasetId]';
 import EvalRunDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/runs/[runId]';
 import EvalCaseDetailPage from '@/routes/(main)/eval/bench/[benchmarkId]/runs/[runId]/cases/[caseId]';
-import FeedbackPage from '@/routes/(main)/feedback';
 import FleetPage from '@/routes/(main)/fleet';
 import FunctionsPage from '@/routes/(main)/functions';
 import OperationsFunctionPage from '@/routes/(main)/functions/[functionId]';
@@ -463,21 +461,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
     element: <DesktopMemoryLayout />,
     errorElement: <ErrorBoundary />,
     path: 'memory',
-  },
-
-  // Company feedback
-  {
-    children: [
-      {
-        element: <FeedbackPage />,
-        handle: {
-          meta: routeMeta({ icon: MessageSquarePlus, titleKey: 'navigation.feedback' }),
-        },
-        index: true,
-      },
-    ],
-    errorElement: <ErrorBoundary />,
-    path: 'feedback',
   },
 
   // Business functions center

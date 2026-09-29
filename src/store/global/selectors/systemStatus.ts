@@ -179,8 +179,11 @@ export const DEFAULT_SIDEBAR_ITEMS: string[] = [
   'community',
   'resource',
   'memory',
-  'feedback',
 ];
+
+/** Keys retired from the sidebar. Dropped from stored orders so they don't
+ * linger after the nav entry is removed. */
+const RETIRED_SIDEBAR_KEYS = new Set(['feedback']);
 
 /** Items that must stay contiguous in the sidebar list (accordion block).
  * `private` sits above `agent` so workspace users see their personal items
@@ -225,7 +228,8 @@ const normalizeSpacerPosition = (order: string[]): string[] => {
 // bottom-group defaults go after the spacer. Without this split a new top-group
 // default added in a future version would silently appear in the bottom group
 // for existing users.
-const withAllKnownKeys = (order: string[]): string[] => {
+const withAllKnownKeys = (raw: string[]): string[] => {
+  const order = raw.filter((k) => !RETIRED_SIDEBAR_KEYS.has(k));
   const present = new Set(order);
   const missingTop: string[] = [];
   const missingBottom: string[] = [];

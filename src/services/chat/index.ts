@@ -177,7 +177,7 @@ class ChatService {
     const effectiveMemoryEffort =
       chatConfig.memory?.effort ?? userMemorySettings.effort ?? 'medium';
     const enableAgentMode =
-      chatConfig.enableAgentMode !== false && isCanUseFC(payload.model, payload.provider!);
+      chatConfig.toolMode !== 'chat' && isCanUseFC(payload.model, payload.provider!);
 
     // =================== 1.2 build agent builder context =================== //
 

@@ -226,7 +226,7 @@ export const createAgentToolsEngine = (
   const userPlugins = agentSelectors.currentAgentPlugins(agentState);
   const disabledPluginIds = agentSelectors.currentAgentDisabledPlugins(agentState);
   const isChatMode =
-    agentChatConfigSelectors.currentChatConfig(agentState).enableAgentMode === false ||
+    agentChatConfigSelectors.currentChatConfig(agentState).toolMode === 'chat' ||
     !isCanUseFC(workingModel.model, workingModel.provider);
 
   // Each entry below still respects its own runtime gate; in chat mode this

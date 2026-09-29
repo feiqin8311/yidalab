@@ -73,27 +73,24 @@ const isAgentConfigLoadingById = (agentId: string) => (s: AgentStoreState) =>
 
 /**
  * Get agent mode by agentId.
- * Agent mode is the default — only an explicit `chatConfig.enableAgentMode === false`
- * collapses the agent to chat mode.
+ * Agent is the default. Only explicit `chatConfig.toolMode === 'chat'` is chat.
  */
 const getAgentModeById =
   (agentId: string) =>
   (s: AgentStoreState): AgentMode | undefined => {
     const config = agentSelectors.getAgentConfigById(agentId)(s);
-    const chatConfig = config?.chatConfig;
-    return chatConfig?.enableAgentMode === false ? undefined : 'auto';
+    return config?.chatConfig?.toolMode === 'chat' ? undefined : 'auto';
   };
 
 /**
  * Check if agent mode is enabled by agentId.
- * Defaults to true; only explicit `chatConfig.enableAgentMode === false` returns false.
+ * Defaults to true; only explicit `chatConfig.toolMode === 'chat'` is false.
  */
 const getAgentEnableModeById =
   (agentId: string) =>
   (s: AgentStoreState): boolean => {
     const config = agentSelectors.getAgentConfigById(agentId)(s);
-    const chatConfig = config?.chatConfig;
-    return chatConfig?.enableAgentMode !== false;
+    return config?.chatConfig?.toolMode !== 'chat';
   };
 
 /**

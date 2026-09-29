@@ -7,7 +7,6 @@ import {
   Image,
   LayoutGridIcon,
   LibraryBigIcon,
-  MessageSquarePlus,
   Settings,
   ShapesIcon,
 } from 'lucide-react';
@@ -489,21 +488,6 @@ export const sharedMainAreaChildren: RouteObject[] = [
     ),
     errorElement: <ErrorBoundary />,
     path: 'memory',
-  },
-
-  // Company feedback
-  {
-    children: [
-      {
-        element: dynamicElement(() => import('@/routes/(main)/feedback'), 'Desktop > Feedback'),
-        handle: {
-          meta: routeMeta({ icon: MessageSquarePlus, titleKey: 'navigation.feedback' }),
-        },
-        index: true,
-      },
-    ],
-    errorElement: <ErrorBoundary />,
-    path: 'feedback',
   },
 
   // Business functions center
