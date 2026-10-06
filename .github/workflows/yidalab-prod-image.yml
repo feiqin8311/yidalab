@@ -61,24 +61,11 @@ jobs:
       image_ref: ${{ steps.out.outputs.image_ref }}
       short_sha: ${{ steps.out.outputs.short_sha }}
     steps:
-      - name: Free disk space + swap
-        # Monorepo docker build needs disk + RAM headroom. ubuntu-latest ~7GB free RAM;
-        # Next/Vite with 8G heap OOMs. Add swap so peak RSS can spill.
+      - name: Runner resources
+        # ubuntu-latest now ships ~86GB free disk, 16GB RAM and 3GB swap, which the
+        # build fits in. Deleting preinstalled SDKs took 1–8 min of disk IO for no gain.
+        # Logged so a future runner downsize is visible before a build OOMs.
         run: |
-          set -euo pipefail
-          echo "Before:"
-          df -h /
-          free -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
-            /usr/local/share/boost /usr/share/swift /usr/local/.ghcup 2>/dev/null || true
-          sudo docker system prune -af 2>/dev/null || true
-          if ! swapon --show | grep -q .; then
-            sudo fallocate -l 20G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=20480
-            sudo chmod 600 /swapfile
-            sudo mkswap /swapfile
-            sudo swapon /swapfile
-          fi
-          echo "After:"
           df -h /
           free -h
           swapon --show
@@ -88,6 +75,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          # Hosted runner is discarded after the job; `buildx rm` took up to 7 min.
+          cleanup: false
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
