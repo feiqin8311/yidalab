@@ -21,6 +21,11 @@ on:
         type: boolean
         required: false
         default: false
+      no_cache:
+        description: Ignore docker layer cache (cache mounts still used) to force a full rebuild
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - main
@@ -160,6 +165,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
+          no-cache: ${{ inputs.no_cache == true }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # GitHub-hosted runners are overseas — official npm is fine
