@@ -1,10 +1,13 @@
-lockfile: false
 packages:
   - packages/**
   - .
   - e2e
   - apps/desktop/src/main
   - apps/server
+
+# Only resolve versions published at least a day ago (minutes). Keeps freshly
+# published (possibly broken or malicious) releases out of new lockfile entries.
+minimumReleaseAge: 1440
 
 minimumReleaseAgeExclude:
   - '@lobehub/ui@5.20.2'

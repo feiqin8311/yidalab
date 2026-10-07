@@ -11,6 +11,7 @@ export default eslint(
     ignores: [
       // dependencies
       'node_modules',
+      'pnpm-lock.yaml',
       // ci
       'coverage',
       '.coverage',
