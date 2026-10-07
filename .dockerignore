@@ -21,7 +21,9 @@ node_modules
 **/coverage
 **/.turbo
 **/.cache
-e2e
+# e2e is a workspace member: keep its manifest so --frozen-lockfile matches importers
+e2e/*
+!e2e/package.json
 docs
 changelog
 # desktop app source is large; only package.json is needed for workspace install

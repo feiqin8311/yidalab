@@ -32,6 +32,7 @@ FROM base AS workspace-manifests
 WORKDIR /tmp/ws
 COPY packages ./packages
 COPY apps ./apps
+COPY e2e/package.json ./e2e/package.json
 RUN find packages apps -type f ! -name package.json -delete \
     && find packages apps -type d -empty -delete 2>/dev/null || true
 
@@ -83,10 +84,11 @@ ENV NODE_OPTIONS="--max-old-space-size=4096" \
 
 WORKDIR /app
 
-COPY package.json pnpm-workspace.yaml .npmrc ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY patches ./patches
 COPY --from=workspace-manifests /tmp/ws/packages ./packages
 COPY --from=workspace-manifests /tmp/ws/apps ./apps
+COPY --from=workspace-manifests /tmp/ws/e2e ./e2e
 
 RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
     set -e && \
@@ -98,18 +100,21 @@ RUN --mount=type=cache,id=yidalab-pnpm-store,target=/pnpm/store \
     export COREPACK_NPM_REGISTRY=$(npm config get registry | sed 's/\/$//') && \
     npm i -g corepack@latest && \
     corepack enable && \
-    corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json) && \
+    # `corepack enable` already pins pnpm via packageManager; `corepack use` would run
+    # a second full install against a different store.
+    PACKAGE_MANAGER=$(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json) && \
     pnpm config set store-dir /pnpm/store && \
     pnpm config set confirmModulesPurge false && \
-    pnpm i && \
+    pnpm i --frozen-lockfile && \
     mkdir -p /deps && \
     cd /deps && \
-    echo '{"name":"deps","private":true}' > package.json && \
+    # Same pnpm here too; without packageManager corepack fetches the latest major.
+    echo "{\"name\":\"deps\",\"private\":true,\"packageManager\":\"${PACKAGE_MANAGER}\"}" > package.json && \
     pnpm add --ignore-workspace \
-      pg \
-      drizzle-orm \
-      mammoth@^1.12.0 \
-      word-extractor@^1.0.4 \
+      pg@8.23.1 \
+      drizzle-orm@0.45.3 \
+      mammoth@1.13.0 \
+      word-extractor@1.0.4 \
       xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
 COPY . .
