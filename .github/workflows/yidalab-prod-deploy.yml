@@ -29,7 +29,7 @@ jobs:
   deploy:
     if: ${{ inputs.verify_only != true && inputs.verify_only != 'true' }}
     runs-on: [self-hosted, yidalab-prod]
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       # No actions/checkout: prod host cannot reliably reach github.com:443.
       - name: Pull image and restart
@@ -48,10 +48,10 @@ jobs:
           echo "pull $REF"
           # The prod host's link to GHCR's blob CDN sometimes stalls at "Pulling fs layer"
           # with zero progress, and docker pull never times out on its own. A healthy pull
-          # of the ~345MB layer takes under a minute, so kill stalled attempts and retry.
+          # of the ~345MB layer takes 0.5–4 min, so kill attempts after 7 min and retry.
           pulled=0
           for attempt in 1 2 3 4 5; do
-            if timeout --kill-after=10 300 docker pull "$REF"; then
+            if timeout --kill-after=10 420 docker pull "$REF"; then
               pulled=1
               break
             fi
