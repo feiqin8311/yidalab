@@ -29,7 +29,7 @@ jobs:
   deploy:
     if: ${{ inputs.verify_only != true && inputs.verify_only != 'true' }}
     runs-on: [self-hosted, yidalab-prod]
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       # No actions/checkout: prod host cannot reliably reach github.com:443.
       - name: Pull image and restart
@@ -46,7 +46,22 @@ jobs:
           REF="${IMAGE}:${TAG}"
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
           echo "pull $REF"
-          docker pull "$REF"
+          # The prod host's link to GHCR's blob CDN sometimes stalls at "Pulling fs layer"
+          # with zero progress, and docker pull never times out on its own. A healthy pull
+          # of the ~345MB layer takes under a minute, so kill stalled attempts and retry.
+          pulled=0
+          for attempt in 1 2 3 4 5; do
+            if timeout --kill-after=10 300 docker pull "$REF"; then
+              pulled=1
+              break
+            fi
+            echo "::warning::docker pull attempt ${attempt} failed or stalled; retrying"
+            sleep 5
+          done
+          if [ "$pulled" != 1 ]; then
+            echo "::error::docker pull failed after 5 attempts; prod keeps the previous image"
+            exit 1
+          fi
           docker image inspect "$REF" --format 'id={{.Id}} created={{.Created}} size={{.Size}}'
           /opt/actions-runner/apply-ghcr-image.sh "$REF"
 
